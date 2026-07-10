@@ -37,12 +37,22 @@ Three.js vendored locally in `lib/three.min.js` (UMD global build).
 ## Features
 
 - **Click-to-move** pathing with facing + procedural walk animation.
-- **Skills**: Woodcutting, Mining, Attack — RS-style XP curve, level-ups, 28-slot inventory.
-- **Combat**: hitsplats (hit/crit/miss/dodge), floating enemy HP bars, death & respawn, player HP globe.
-- **Enemy AI**: mutants wander, aggro & chase within range, leash back home.
+- **Six skills**: Attack, Strength, Defence, Woodcutting, Mining, Fishing — RS-style XP
+  curve, level-ups, 28-slot inventory. Strength drives max hit, Defence mitigates damage.
+- **Level-gated content**: higher-tier trees (Blightwood), ore (Plutonium), fishing pools,
+  and mutants (Mutant → Ghoul → Hell Brute) that need a skill level to harvest/fight.
+- **Weapons & loot**: ruined buildings hold chests → Scrap Sword, Rusty Pistol, and the
+  **Fanny Pack of Doom** (strongest — instakills). Equipped weapon shown in the HUD.
+- **Combat**: hitsplats (hit/crit/miss/dodge), floating enemy HP bars, death & respawn,
+  player HP globe; damage scales with Strength + weapon, accuracy with Attack + weapon.
+- **Enemy AI**: mutants wander, aggro & chase within range, leash home; die into a
+  **fiery hell portal** (sink + spin + red light).
 - **Dodge roll** with invulnerability frames (Shift).
-- **Death sequence**: dance → backflip → collapse → "YOU DIED" → respawn.
-- **Multiplayer** (WebSocket): see other players move in real time, with nameplates.
+- **Death sequence**: dance → backflip → collapse → "YOU DIED" → respawn; player shouts a
+  Flemish line (`o nee godverdomme ik ben dood`) via TTS.
+- **Multiplayer** (WebSocket): see other players in real time with nameplates.
+- **Server-authoritative world**: enemies and resource depletion live on the server, so all
+  players see the same mutants, deaths, and depleted trees.
 - **PvP**: click another player to fight them; victim-authoritative damage, respects dodge.
 - **Flavor**: dying mutants shout **"Arigatou Gozaimasu"** (on-screen bubble + browser TTS).
 - **Live-reload** during dev (browser polls `/__mtime`).
@@ -59,23 +69,36 @@ js/
   world.js           renderer, scene, toxic fog, terrain (height-sampled), lights, haze
   camera.js          orbit-follow camera rig (WASD/arrows/QE/wheel)
   player.js          local player: click-to-move, actions, dodge, death anim
-  entities.js        trees/rocks/barrels/mutants + enemy AI + resource respawn
-  net.js             multiplayer client: WS, remote avatars, PvP attack/hit, nameplates
-  skills.js          Woodcutting/Mining/Attack XP + inventory
-  combat.js          damage rolls, hitsplats, enemy attacks, PvP attack/receive
+  entities.js        tiered trees/rocks/pools/mutants, barrels, buildings+chests,
+                     enemy AI, resource respawn, hell-death, server-driven render path
+  net.js             multiplayer client: WS, remote avatars, PvP + world sync, nameplates
+  skills.js          6 skills + XP, inventory, items, equippable weapons
+  combat.js          damage rolls (Strength/Defence/weapon), hitsplats, enemy/PvP attacks
   ui.js              HUD wiring: vitals, skills, inventory, hitsplats, labels, speech, death
   selftest.js        headless end-to-end self-test (see below)
   main.js            bootstrap, input routing (raycast), game loop
 ```
 
-### Multiplayer model
+### Multiplayer / authority model
 
-The server holds an authoritative **player registry** and broadcasts a snapshot
-of everyone's pose ~15×/sec. Clients stream their own pose ~12×/sec. **Each client
-is authoritative over its own HP/death** — a PvP attack is sent to the server, which
-relays a `hit` event; the victim's client applies the damage (and can dodge it).
-Mutants and gathering are simulated **client-side** (the world layout is identical on
-every client thanks to a fixed RNG seed), so kills/resources are local per player.
+The server (`server.js`) is authoritative for the **shared world**:
+
+- **Players**: server holds a registry, broadcasts a pose snapshot ~15×/sec; clients stream
+  their pose ~12×/sec. Each client is authoritative over **its own HP/death** — incoming
+  damage (PvP or from a mutant) arrives as a `hit` event and the victim applies it (and can
+  dodge it with i-frames).
+- **Enemies**: server runs the mutant AI (wander/aggro/chase/attack/leash), HP, death, and
+  respawn, and includes them in the snapshot. Clients render enemies from the snapshot when
+  online. A player's hit is sent as `attackEnemy`; the server applies it and broadcasts
+  `enemyHit` / `enemyDead` / `enemyRespawn`.
+- **Resources**: server owns depletion/respawn. A successful harvest sends `gather`; the
+  server decrements and broadcasts a `resource` deplete/restore event.
+- Enemy/resource **indices** are shared: the client builds the same count & tier order
+  locally, so index `i` refers to the same creature/resource everywhere. Enemy positions
+  come from the server; resource positions are local (identical across clients via a fixed
+  RNG seed) and only their active-state is synced.
+- **Offline fallback**: with no server (e.g. self-test, or a dropped connection) the client
+  runs the full local simulation. `Game.online` toggles between the two paths.
 
 ## Testing / validation
 
@@ -92,7 +115,7 @@ Two automated harnesses back this project — run them after changes:
    see each other + PvP relay works (kept in the dev scratchpad; re-create with two
    `WebSocket`s to `/ws` if needed).
 
-Current status: **logic self-test 34/34, multiplayer/PvP test 14/14.**
+Current status: **logic self-test 50/50, multiplayer/world WS test 23/23.**
 
 ## For the next agent / dev notes
 
@@ -105,5 +128,11 @@ Current status: **logic self-test 34/34, multiplayer/PvP test 14/14.**
 - The Bun server must be **restarted manually** after editing `server.js` (client
   live-reload only reloads the browser). Client-file edits auto-reload via `/__mtime`.
 - LAN access needs the Windows Firewall to allow inbound TCP 8080 for the Bun process.
-- Ideas not yet done: server-authoritative enemies, chat (server already relays a
-  `chat` message type), item drops, more skills, sound polish.
+- `autopull.ps1` (run in the background) fetches + rebases from `origin/main` every 5 min
+  and logs to `autopull.log`; conflicts are logged as `CONFLICT` for an agent to resolve.
+- Enemy/resource **indices must stay aligned** between `server.js` (ENEMY_PLAN / RES counts)
+  and the client's `Entities.init` spawn order. If you change counts or tier order in one,
+  change both, or online play will address the wrong object.
+- Ideas not yet done: shared player inventories/trading, chat UI (server already relays a
+  `chat` message type), item drops on the ground, more skills, sound/music polish,
+  server-authoritative fishing pools & chests.
