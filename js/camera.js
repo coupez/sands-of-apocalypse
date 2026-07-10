@@ -1,12 +1,13 @@
 // ============================================================
 // camera.js — RuneScape-style orbit-follow camera rig
-//   A/D or ←/→ : orbit yaw     W/S or ↑/↓ : pitch
+//   A/D or ←/→ : orbit yaw     W/S or ↑/↓ : pull back & up / push in & down
 //   Q/E        : rotate yaw     wheel      : zoom
 // ============================================================
 
 var CameraRig = (function () {
   var camera;
-  var target = new THREE.Vector3(0, 1, 0);   // point the camera looks at (player)
+  var target = new THREE.Vector3(0, 0, 0);   // player's feet position (set each frame)
+  var FOCUS_HEIGHT = 1.7; // orbit pivot AND look-at point, this far above the feet
   var yaw = 0.6;         // horizontal angle
   var pitch = 0.9;       // vertical angle (radians from horizon-ish)
   var dist = 22;         // zoom distance
@@ -39,28 +40,30 @@ var CameraRig = (function () {
     var up    = keys['KeyW'] || keys['ArrowUp'];
     var down  = keys['KeyS'] || keys['ArrowDown'];
 
-    if (left)  yaw += ORBIT_SPEED * dt;
-    if (right) yaw -= ORBIT_SPEED * dt;
-    if (keys['KeyQ']) yaw += ORBIT_SPEED * dt;
-    if (keys['KeyE']) yaw -= ORBIT_SPEED * dt;
+    if (left)  yaw -= ORBIT_SPEED * dt;
+    if (right) yaw += ORBIT_SPEED * dt;
+    if (keys['KeyQ']) yaw -= ORBIT_SPEED * dt;
+    if (keys['KeyE']) yaw += ORBIT_SPEED * dt;
 
-    // W/S dolly + subtly change pitch for a cinematic push-in
-    if (up)   { dist = Utils.clamp(dist - ZOOM_KEY_SPEED * dt, minDist, maxDist); pitch = Utils.clamp(pitch - 0.4 * dt, minPitch, maxPitch); }
-    if (down) { dist = Utils.clamp(dist + ZOOM_KEY_SPEED * dt, minDist, maxDist); pitch = Utils.clamp(pitch + 0.4 * dt, minPitch, maxPitch); }
+    // W/S dolly + subtly change pitch: W pulls back & up, S pushes in & down
+    if (up)   { dist = Utils.clamp(dist + ZOOM_KEY_SPEED * dt, minDist, maxDist); pitch = Utils.clamp(pitch + 0.4 * dt, minPitch, maxPitch); }
+    if (down) { dist = Utils.clamp(dist - ZOOM_KEY_SPEED * dt, minDist, maxDist); pitch = Utils.clamp(pitch - 0.4 * dt, minPitch, maxPitch); }
 
     if (!camera) return;
+    // orbit around AND look at the same raised focus point above the player
+    var fx = target.x, fy = target.y + FOCUS_HEIGHT, fz = target.z;
     var horiz = Math.cos(pitch) * dist;
     var vert = Math.sin(pitch) * dist;
     var desired = new THREE.Vector3(
-      target.x + Math.sin(yaw) * horiz,
-      target.y + vert,
-      target.z + Math.cos(yaw) * horiz
+      fx + Math.sin(yaw) * horiz,
+      fy + vert,
+      fz + Math.cos(yaw) * horiz
     );
     // smooth follow
     camera.position.x = Utils.damp(camera.position.x, desired.x, 8, dt);
     camera.position.y = Utils.damp(camera.position.y, desired.y, 8, dt);
     camera.position.z = Utils.damp(camera.position.z, desired.z, 8, dt);
-    camera.lookAt(target.x, target.y + 1.2, target.z);
+    camera.lookAt(fx, fy, fz);
   }
 
   return {
