@@ -10,9 +10,12 @@ var Player = (function () {
   var moveTarget = null;        // THREE.Vector3 ground destination
   var interaction = null;       // { entity, type } — walk to & act on
   var actionTimer = 0;
-  var actionKind = null;        // 'chop' | 'mine' | 'attack'
+  var actionKind = null;        // 'chop' | 'mine' | 'fish' | 'attack'
   var animPhase = 0;
-  var swing = 0;
+  var swingFired = false;       // has this swing's effect fired yet?
+  // swing timing (fractions of the action interval)
+  var WINDUP_END = 0.48;        // reach the raised/wound-up pose by here
+  var IMPACT = 0.72;            // the strike connects here — effect fires now
 
   var stats = { hp: 20, maxHp: 20, attackTick: 0 };
 
@@ -190,7 +193,7 @@ var Player = (function () {
         faceTowards(dest.x, dest.z, dt);
         moving = true;
         state = 'moving';
-        actionKind = null;
+        actionKind = null; actionTimer = 0; swingFired = false;
       } else {
         // arrived
         if (ent) {
@@ -200,15 +203,17 @@ var Player = (function () {
             interaction = null; state = 'idle'; actionKind = null;
           } else {
             state = 'acting';
-            actionKind = ent.type === 'tree' ? 'chop'
-                       : ent.type === 'rock' ? 'mine'
-                       : ent.type === 'fishpool' ? 'fish' : 'attack';
+            var newKind = ent.type === 'tree' ? 'chop'
+                        : ent.type === 'rock' ? 'mine'
+                        : ent.type === 'fishpool' ? 'fish' : 'attack';
+            if (newKind !== actionKind) { actionTimer = 0; swingFired = false; } // fresh swing on a new target/action
+            actionKind = newKind;
             doActionTick(dt, ent);
           }
         } else {
           moveTarget = null;
           state = 'idle';
-          actionKind = null;
+          actionKind = null; actionTimer = 0; swingFired = false;
         }
       }
     } else {
@@ -222,38 +227,84 @@ var Player = (function () {
     CameraRig.setTarget(group.position);
   }
 
+  function actionInterval() {
+    return (actionKind === 'attack') ? 1.2 : 1.05;
+  }
+
+  // fires the actual game effect exactly at the swing's impact frame
+  function fireActionEffect(ent) {
+    if (actionKind === 'chop') { Skills.doWoodcut(ent); SFX.chop(); }
+    else if (actionKind === 'mine') { Skills.doMine(ent); SFX.mine(); }
+    else if (actionKind === 'fish') { Skills.doFish(ent); SFX.mine(); }
+    else if (actionKind === 'attack') {
+      if (ent.type === 'player') Combat.playerAttackPlayer(ent);
+      else Combat.playerAttack(ent);
+      SFX.hit();
+    }
+  }
+
   function doActionTick(dt, ent) {
     actionTimer += dt;
-    var interval = (actionKind === 'attack') ? 1.2 : 1.05;
-    swing = Math.min(1, swing + dt * 6);
-    if (actionTimer >= interval) {
-      actionTimer = 0;
-      swing = 0;
-      if (actionKind === 'chop') { Skills.doWoodcut(ent); SFX.chop(); }
-      else if (actionKind === 'mine') { Skills.doMine(ent); SFX.mine(); }
-      else if (actionKind === 'fish') { Skills.doFish(ent); SFX.mine(); }
-      else if (actionKind === 'attack') {
-        if (ent.type === 'player') Combat.playerAttackPlayer(ent);
-        else Combat.playerAttack(ent);
-        SFX.hit();
-      }
+    var interval = actionInterval();
+    var prog = actionTimer / interval;
+    // the strike lands mid-swing: fire the effect once, at the impact frame,
+    // so the hit is synced to the animation (not to the end of the cycle)
+    if (!swingFired && prog >= IMPACT) {
+      swingFired = true;
+      fireActionEffect(ent);
     }
+    if (actionTimer >= interval) {   // new swing begins
+      actionTimer -= interval;
+      swingFired = false;
+    }
+  }
+
+  // ease helpers
+  function smooth(x) { x = Utils.clamp(x, 0, 1); return x * x * (3 - 2 * x); }
+  function lerp(a, b, x) { return a + (b - a) * x; }
+
+  // windup -> strike(impact) -> recover pose for the swinging arm, per action
+  function swingAngle(prog, back, strike) {
+    if (prog < WINDUP_END) {
+      return lerp(0, back, smooth(prog / WINDUP_END));              // raise/wind up
+    } else if (prog < IMPACT) {
+      return lerp(back, strike, smooth((prog - WINDUP_END) / (IMPACT - WINDUP_END))); // swing through to contact
+    }
+    return lerp(strike, 0, smooth((prog - IMPACT) / (1 - IMPACT))); // recover to rest
   }
 
   function animate(dt, t, moving) {
     animPhase += dt * (moving ? 10 : 3);
     if (state === 'acting' && actionKind) {
-      // big swing on the arm + weapon
-      var s = Math.sin(actionTimer * 10) * 0.9 - 0.5;
-      rightArm.rotation.x = s;
-      leftArm.rotation.x = -s * 0.3;
-      rightLeg.rotation.x = 0; leftLeg.rotation.x = 0;
+      var prog = Utils.clamp(actionTimer / actionInterval(), 0, 1);
+      if (actionKind === 'fish') {
+        // gentle rhythmic cast/reel — rod held in both hands, no hard strike
+        var f = Math.sin(prog * Math.PI * 2);
+        rightArm.rotation.x = -0.55 + f * 0.35;
+        leftArm.rotation.x = -0.4 + f * 0.2;
+        torso.rotation.x = f * 0.05;
+        rightLeg.rotation.x = 0; leftLeg.rotation.x = 0;
+      } else {
+        // windup -> strike(impact) -> recover, distinct amplitudes per action
+        var back, strike, la;
+        if (actionKind === 'attack') { back = -2.2; strike = 1.0; la = 0.35; }      // overhead weapon swing
+        else if (actionKind === 'chop') { back = -2.5; strike = 1.15; la = 0.85; }  // big two-handed chop
+        else { back = -1.7; strike = 1.05; la = 0.55; }                             // mine: shorter pick strike
+        var a = swingAngle(prog, back, strike);
+        rightArm.rotation.x = a;
+        leftArm.rotation.x = a * la;
+        // torso leans into the blow (peaks at impact), legs plant for weight
+        var lean = smooth(prog < IMPACT ? prog / IMPACT : 1 - (prog - IMPACT) / (1 - IMPACT));
+        torso.rotation.x = lean * 0.18;
+        rightLeg.rotation.x = -0.15; leftLeg.rotation.x = 0.2;
+      }
     } else if (moving) {
       var s2 = Math.sin(animPhase);
       rightLeg.rotation.x = s2 * 0.7;
       leftLeg.rotation.x = -s2 * 0.7;
       rightArm.rotation.x = -s2 * 0.5;
       leftArm.rotation.x = s2 * 0.5;
+      torso.rotation.x = Utils.damp(torso.rotation.x, 0, 6, dt);
     } else {
       // idle breathing
       var b = Math.sin(t * 2) * 0.05;
@@ -261,6 +312,7 @@ var Player = (function () {
       leftArm.rotation.x = Utils.damp(leftArm.rotation.x, -b, 6, dt);
       rightLeg.rotation.x = Utils.damp(rightLeg.rotation.x, 0, 6, dt);
       leftLeg.rotation.x = Utils.damp(leftLeg.rotation.x, 0, 6, dt);
+      torso.rotation.x = Utils.damp(torso.rotation.x, 0, 6, dt);
     }
   }
 
