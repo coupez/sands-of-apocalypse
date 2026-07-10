@@ -87,13 +87,27 @@ var Main = (function () {
     return null;
   }
 
+  // returns null if allowed, or a "need level" message if gated
+  function gateMessage(ref) {
+    var s = Skills.data;
+    if (ref.type === 'tree' && s.woodcutting.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Woodcutting for ' + ref.name + '.';
+    if (ref.type === 'rock' && s.mining.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Mining for ' + ref.name + '.';
+    if (ref.type === 'fishpool' && s.fishing.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Fishing for ' + ref.name + '.';
+    if (ref.type === 'enemy' && s.attack.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Attack to fight the ' + ref.name + '.';
+    return null;
+  }
+
   function handleClick() {
     var ref = pickInteractable(ndc);
     if (ref) {
+      var gate = gateMessage(ref);
+      if (gate) { UI.showActionText(gate); return; }
       Player.interactWith(ref);
-      if (ref.type === 'tree') UI.showActionText('You approach the dead tree…');
-      else if (ref.type === 'rock') UI.showActionText('You approach the ore vein…');
-      else if (ref.type === 'enemy') UI.showActionText('You move to attack the mutant!');
+      if (ref.type === 'tree') UI.showActionText('You approach the ' + ref.name + '…');
+      else if (ref.type === 'rock') UI.showActionText('You approach the ' + ref.name + '…');
+      else if (ref.type === 'fishpool') UI.showActionText('You wade to the ' + ref.name + '…');
+      else if (ref.type === 'chest') UI.showActionText('You head for the chest…');
+      else if (ref.type === 'enemy') UI.showActionText('You move to attack the ' + ref.name + '!');
       else if (ref.type === 'player') UI.showActionText('You challenge ' + ref.name + '!');
       return;
     }
@@ -110,9 +124,9 @@ var Main = (function () {
     var ref = pickInteractable(hoverNdc);
     if (ref) {
       document.body.style.cursor = 'pointer';
-      if (ref.type === 'enemy') UI.setTarget(ref.name + '  (' + Math.ceil(ref.hp) + '/' + ref.maxHp + ')');
-      else if (ref.type === 'tree') UI.setTarget('Dead Tree');
-      else if (ref.type === 'rock') UI.setTarget('Ore Vein');
+      if (ref.type === 'enemy') UI.setTarget(ref.name + ' (Lv ' + ref.reqLevel + ')  ' + Math.ceil(ref.hp) + '/' + ref.maxHp + ' hp');
+      else if (ref.type === 'tree' || ref.type === 'rock' || ref.type === 'fishpool') UI.setTarget(ref.name + (ref.reqLevel > 1 ? ' (Lv ' + ref.reqLevel + ')' : ''));
+      else if (ref.type === 'chest') UI.setTarget('🎁 Supply Chest');
       else if (ref.type === 'player') UI.setTarget('⚔ ' + ref.name + '  (' + Math.ceil(ref.hp) + ' hp)');
     } else {
       document.body.style.cursor = 'crosshair';

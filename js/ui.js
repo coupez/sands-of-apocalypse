@@ -27,10 +27,42 @@ var UI = (function () {
     hitLayer = $('hitsplat-layer');
     labelLayer = $('label-layer');
 
+    el.skillsList = $('skills-list');
+    el.weaponIcon = $('weapon-icon');
+    el.weaponName = $('weapon-name');
+
+    buildSkills();
     buildInventory();
     updateVitals();
     updateSkills();
     updateInventory();
+    updateWeapon();
+  }
+
+  // ---------- skills panel (built from Skills.SKILL_ORDER) ----------
+  function buildSkills() {
+    if (!el.skillsList) return;
+    el.skillsList.innerHTML = '';
+    var order = Skills.SKILL_ORDER;
+    for (var i = 0; i < order.length; i++) {
+      var k = order[i];
+      var d = Skills.data[k];
+      var row = document.createElement('div');
+      row.className = 'skill-row';
+      row.innerHTML =
+        '<span class="skill-icon">' + d.icon + '</span>' +
+        '<span class="skill-name">' + d.name + '</span>' +
+        '<span class="skill-level"><b id="lvl-' + k + '">1</b>/99</span>' +
+        '<div class="xp-bar"><div class="xp-fill" id="xp-' + k + '"></div></div>';
+      el.skillsList.appendChild(row);
+    }
+  }
+
+  function updateWeapon() {
+    var w = Game.equipped;
+    if (!w || !el.weaponIcon) return;
+    el.weaponIcon.textContent = w.icon;
+    el.weaponName.textContent = w.name;
   }
 
   // ---------- inventory ----------
@@ -77,7 +109,7 @@ var UI = (function () {
   // ---------- skills ----------
   function updateSkills() {
     var s = Skills.data;
-    ['woodcutting', 'mining', 'attack'].forEach(function (k) {
+    Skills.SKILL_ORDER.forEach(function (k) {
       var d = s[k];
       var lvlEl = $('lvl-' + k);
       var barEl = $('xp-' + k);
@@ -198,7 +230,7 @@ var UI = (function () {
   return {
     init: init,
     updateVitals: updateVitals, updateSkills: updateSkills,
-    updateInventory: updateInventory, toast: toast,
+    updateInventory: updateInventory, updateWeapon: updateWeapon, toast: toast,
     showActionText: showActionText, setTarget: setTarget,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,

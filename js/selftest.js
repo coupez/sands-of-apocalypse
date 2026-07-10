@@ -67,6 +67,21 @@ var SelfTest = (function () {
           Game.inventory.some(function (i) { return i.id === 'ore'; }));
       }
 
+      // -- new skills exist --
+      assert('skill: strength', !!Skills.data.strength);
+      assert('skill: defence', !!Skills.data.defence);
+      assert('skill: fishing', !!Skills.data.fishing);
+
+      // -- fishing --
+      var pool = Entities.pools.filter(function (p) { return p.active; })[0];
+      assert('found fishing pool', !!pool, Entities.pools.length + ' pools');
+      if (pool) {
+        var fxp0 = Skills.data.fishing.xp;
+        for (var fi = 0; fi < 50; fi++) Skills.doFish(pool);
+        assert('fishing xp gained', Skills.data.fishing.xp > fxp0, 'xp=' + Skills.data.fishing.xp);
+        assert('fish in inventory', Game.inventory.some(function (i) { return i.id === 'fish'; }));
+      }
+
       assert('inventory populated', Game.inventory.length > 0, Game.inventory.length + ' stacks');
 
       // -- combat --
@@ -95,6 +110,45 @@ var SelfTest = (function () {
       // -- enemy aggro: enemy chased the player during combat --
       assert('enemy attacked player (aggro)',
         Game.log.some(function (l) { return l.indexOf('enemyAttack:') === 0; }));
+
+      // -- combat trains Strength & Defence --
+      assert('strength trained by dealing damage', Skills.data.strength.xp > 0, 'xp=' + Skills.data.strength.xp);
+      assert('defence trained by being attacked', Skills.data.defence.xp > 0, 'xp=' + Skills.data.defence.xp);
+
+      // -- level gating: high-tier tree yields nothing at low level --
+      var hardTree = Entities.trees.filter(function (t) { return t.reqLevel > 1; })[0];
+      assert('high-tier tree exists', !!hardTree, 'reqLevel ' + (hardTree ? hardTree.reqLevel : '?'));
+      if (hardTree) {
+        var wcG = Skills.data.woodcutting.xp;
+        for (var gi = 0; gi < 25; gi++) Skills.doWoodcut(hardTree);
+        assert('gated tree yields no xp when under-levelled', Skills.data.woodcutting.xp === wcG);
+      }
+
+      // -- weapons: Fanny Pack of Doom instakills --
+      invadeInvulnerable();
+      Skills.equip('fanny');
+      assert('fanny pack equipped', Game.equipped && Game.equipped.instakill === true);
+      var victim = Entities.enemies.filter(function (e) { return e.active; })[0];
+      assert('found a victim for fanny pack', !!victim);
+      if (victim) {
+        var killsBefore = Game.log.filter(function (l) { return l === 'enemy:killed'; }).length;
+        Combat.playerAttack(victim);
+        assert('fanny pack instakills in one hit',
+          victim.hp <= 0 && Game.log.filter(function (l) { return l === 'enemy:killed'; }).length > killsBefore);
+      }
+      Skills.equip('fists');
+
+      // -- chests grant weapons --
+      var chest = Entities.chests.filter(function (c) { return c.active; })[0];
+      assert('supply chest exists', !!chest, Entities.chests.length + ' chests');
+      if (chest) {
+        var wid = chest.weaponId;
+        Entities.openChest(chest);
+        assert('chest opens and equips its weapon',
+          Game.log.indexOf('chestOpened:' + wid) >= 0 && Game.equipped.id === wid,
+          'equipped=' + Game.equipped.id);
+        Skills.equip('fists');
+      }
 
       // -- PvP (player-vs-player) --
       Player.stats.maxHp = 50; Player.stats.hp = 50;

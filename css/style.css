@@ -181,6 +181,29 @@ html, body {
 .globe.low .globe-fill { animation: hurt 0.6s ease-in-out infinite; }
 @keyframes hurt { 0%,100%{filter:brightness(1);} 50%{filter:brightness(1.6);} }
 
+/* Equipped weapon slot under the HP globe */
+#weapon-slot {
+  margin-top: 10px;
+  width: 78px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 6px 4px;
+}
+#weapon-icon { font-size: 22px; line-height: 1; }
+#weapon-name {
+  margin-top: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--toxic);
+  text-align: center;
+  text-shadow: 0 0 5px var(--toxic-glow);
+}
+
 /* Skills panel */
 #skills-panel {
   position: absolute;

@@ -195,9 +195,16 @@ var Player = (function () {
         // arrived
         if (ent) {
           faceTowards(ent.position.x, ent.position.z, dt);
-          state = 'acting';
-          actionKind = ent.type === 'tree' ? 'chop' : ent.type === 'rock' ? 'mine' : 'attack';
-          doActionTick(dt, ent);
+          if (ent.type === 'chest') {
+            Entities.openChest(ent);
+            interaction = null; state = 'idle'; actionKind = null;
+          } else {
+            state = 'acting';
+            actionKind = ent.type === 'tree' ? 'chop'
+                       : ent.type === 'rock' ? 'mine'
+                       : ent.type === 'fishpool' ? 'fish' : 'attack';
+            doActionTick(dt, ent);
+          }
         } else {
           moveTarget = null;
           state = 'idle';
@@ -224,6 +231,7 @@ var Player = (function () {
       swing = 0;
       if (actionKind === 'chop') { Skills.doWoodcut(ent); SFX.chop(); }
       else if (actionKind === 'mine') { Skills.doMine(ent); SFX.mine(); }
+      else if (actionKind === 'fish') { Skills.doFish(ent); SFX.mine(); }
       else if (actionKind === 'attack') {
         if (ent.type === 'player') Combat.playerAttackPlayer(ent);
         else Combat.playerAttack(ent);

@@ -26,36 +26,23 @@
 
   <!-- HUD -->
   <div id="hud">
-    <!-- Top-left: health globe + prayer/energy -->
+    <!-- Top-left: health globe + equipped weapon -->
     <div id="vitals">
       <div class="globe" id="hp-globe">
         <div class="globe-fill" id="hp-fill"></div>
         <div class="globe-num" id="hp-num">10</div>
         <div class="globe-label">HP</div>
       </div>
+      <div id="weapon-slot" title="Equipped weapon">
+        <span id="weapon-icon">👊</span>
+        <span id="weapon-name">Bare Fists</span>
+      </div>
     </div>
 
-    <!-- Top-right: skills panel -->
+    <!-- Top-right: skills panel (rows built by UI) -->
     <div id="skills-panel">
       <div class="panel-header">SKILLS</div>
-      <div class="skill-row" data-skill="woodcutting">
-        <span class="skill-icon">🪓</span>
-        <span class="skill-name">Woodcutting</span>
-        <span class="skill-level"><b id="lvl-woodcutting">1</b>/99</span>
-        <div class="xp-bar"><div class="xp-fill" id="xp-woodcutting"></div></div>
-      </div>
-      <div class="skill-row" data-skill="mining">
-        <span class="skill-icon">⛏️</span>
-        <span class="skill-name">Mining</span>
-        <span class="skill-level"><b id="lvl-mining">1</b>/99</span>
-        <div class="xp-bar"><div class="xp-fill" id="xp-mining"></div></div>
-      </div>
-      <div class="skill-row" data-skill="attack">
-        <span class="skill-icon">⚔️</span>
-        <span class="skill-name">Attack</span>
-        <span class="skill-level"><b id="lvl-attack">1</b>/99</span>
-        <div class="xp-bar"><div class="xp-fill" id="xp-attack"></div></div>
-      </div>
+      <div id="skills-list"></div>
     </div>
 
     <!-- Bottom-right: inventory -->
