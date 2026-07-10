@@ -10,6 +10,12 @@ var Main = (function () {
   var canvas, ground, clock;
   var hoverAccum = 0;
 
+  // frame-rate cap + FPS meter
+  var FPS_CAP = 60;
+  var frameInterval = 1 / FPS_CAP;
+  var frameAccum = 0;
+  var fpsAccum = 0, fpsFrames = 0, fpsEl;
+
   function init() {
     var params = new URLSearchParams(location.search);
     Game.selftest = params.has('selftest');
@@ -17,6 +23,7 @@ var Main = (function () {
     Game.headless = Game.selftest && params.get('selftest') !== 'visual';
 
     canvas = document.getElementById('game-canvas');
+    fpsEl = document.getElementById('fps-counter');
     var w = World.init(canvas);
     ground = w.ground;
 
@@ -147,11 +154,30 @@ var Main = (function () {
   function frame() {
     if (!Game.running) return;
     requestAnimationFrame(frame);
-    var dt = Math.min(clock.getDelta(), 0.05);
+
+    var elapsed = clock.getDelta();
+    fpsAccum += elapsed; // real wall-clock time, every animation tick
+
+    // throttle to FPS_CAP: skip the tick until a full frame interval has elapsed
+    frameAccum += elapsed;
+    if (frameAccum < frameInterval) return;
+    // consume whole intervals only; carry the sub-interval remainder for pacing
+    var remainder = frameAccum % frameInterval;
+    var dt = Math.min(frameAccum - remainder, 0.05);
+    frameAccum = remainder;
+
     Game.time += dt;
     step(dt, Game.time);
     updateHover(dt);
     World.render();
+
+    // rolling average FPS, refreshed twice a second
+    fpsFrames++;
+    if (fpsEl && fpsAccum >= 0.5) {
+      fpsEl.textContent = Math.round(fpsFrames / fpsAccum) + ' FPS';
+      fpsAccum = 0;
+      fpsFrames = 0;
+    }
   }
 
   // deterministic fixed-step advance for the self-test
