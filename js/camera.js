@@ -7,7 +7,7 @@
 var CameraRig = (function () {
   var camera;
   var target = new THREE.Vector3(0, 0, 0);   // player's feet position (set each frame)
-  var FOCUS_HEIGHT = 1.7; // orbit pivot AND look-at point, this far above the feet
+  var FOCUS_HEIGHT = 1.0; // orbit pivot AND look-at point, this far above the feet (waist-ish, not above the head)
   var yaw = 0.6;         // horizontal angle
   var pitch = 0.9;       // vertical angle (radians from horizon-ish)
   var dist = 22;         // zoom distance
