@@ -128,25 +128,40 @@ var Voice = (function () {
     refresh();
     window.speechSynthesis.onvoiceschanged = refresh;
   }
-  function scream(text) {
+  // pick the first installed voice whose lang/name matches a preference
+  function pickVoice(prefs) {
+    if (!prefs) return null;
+    for (var p = 0; p < prefs.length; p++) {
+      var pref = prefs[p].toLowerCase();
+      for (var i = 0; i < voices.length; i++) {
+        if ((voices[i].lang + ' ' + voices[i].name).toLowerCase().indexOf(pref) >= 0) return voices[i];
+      }
+    }
+    return null;
+  }
+
+  function speak(text, opts) {
     if (Game.headless || !('speechSynthesis' in window)) return;
     try {
+      opts = opts || {};
       if (!voices.length) refresh();
       var u = new SpeechSynthesisUtterance(text);
-      // prefer a Japanese voice if the OS has one, else default
-      var jp = null;
-      for (var i = 0; i < voices.length; i++) {
-        if (/ja|japanese/i.test(voices[i].lang + ' ' + voices[i].name)) { jp = voices[i]; break; }
-      }
-      if (jp) u.voice = jp;
-      u.lang = jp ? jp.lang : 'ja-JP';
-      u.volume = 1.0;   // as loud as allowed
-      u.rate = 1.05;
-      u.pitch = 1.7;    // strained, screamed delivery
+      var v = pickVoice(opts.langs);
+      if (v) { u.voice = v; u.lang = v.lang; }
+      else if (opts.lang) { u.lang = opts.lang; }
+      u.volume = opts.volume == null ? 1.0 : opts.volume;
+      u.rate = opts.rate == null ? 1.0 : opts.rate;
+      u.pitch = opts.pitch == null ? 1.0 : opts.pitch;
       window.speechSynthesis.cancel(); // don't queue overlaps
       window.speechSynthesis.speak(u);
-      SFX.screamFx();
     } catch (e) {}
   }
-  return { init: init, scream: scream };
+
+  // mutant's screamed thank-you
+  function scream(text) {
+    speak(text, { langs: ['ja', 'japanese'], lang: 'ja-JP', volume: 1.0, rate: 1.05, pitch: 1.7 });
+    SFX.screamFx();
+  }
+
+  return { init: init, speak: speak, scream: scream };
 })();

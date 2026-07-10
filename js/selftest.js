@@ -138,6 +138,7 @@ var SelfTest = (function () {
       Player.stats.hp = 5;
       Player.takeDamage(999);
       assert('death started', Game.log.indexOf('death:start') >= 0);
+      assert('flemish death line triggered', Game.log.indexOf('deathLine') >= 0);
       Main.advance(5.0);
       assert('player is dead', Player.isDead);
       assert('death animation completed', Game.log.indexOf('death:done') >= 0);

@@ -277,6 +277,16 @@ var Player = (function () {
     death.baseY = group.position.y;
     death.onDone = onDone || null;
     SFX.dead();
+    // dying words — Flemish (West-Flanders flavored)
+    Game.log.push('deathLine');
+    Voice.speak('o nee godverdomme ik ben dood', {
+      langs: ['nl-be', 'vlaams', 'flemish', 'nl', 'dutch'], lang: 'nl-BE',
+      volume: 1.0, rate: 0.98, pitch: 0.82
+    });
+    if (window.UI) {
+      UI.spawnSpeech(new THREE.Vector3(group.position.x, group.position.y + 3.2, group.position.z),
+        'o nee godverdomme ik ben dood…');
+    }
     Game.log.push('death:start');
   }
 
