@@ -129,6 +129,9 @@ function simWorld(dt) {
       if (e.atkT >= e.atkInt) {
         e.atkT = 0;
         const dmg = (Math.random() < 0.6) ? (1 + Math.floor(Math.random() * e.maxHit)) : 0;
+        // broadcast the strike so every client plays this enemy's attack swing
+        // in sync with the actual hit (not just the victim)
+        server.publish("game", JSON.stringify({ type: "enemyAttack", i: e.i }));
         server.publish("game", JSON.stringify({ type: "hit", from: "enemy" + e.i, target: np.p.id, dmg }));
       }
     } else if (st === "returning") { tx = e.home.x; tz = e.home.z; speed = e.speed * 0.8; if (dHome < 1) { e.state = "wander"; e.wander = null; } }

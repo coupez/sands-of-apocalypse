@@ -518,7 +518,7 @@ var Entities = (function () {
       faceMesh(ent, pp.x, pp.z, dt);
       ent.ai.attackTimer += dt;
       if (distToPlayer > ent.attackRange * 1.15) ent.state = 'chase';
-      if (ent.ai.attackTimer >= ent.attackInterval) { ent.ai.attackTimer = 0; Combat.enemyAttack(ent); ent.parts.armR.rotation.x = -2.2; }
+      if (ent.ai.attackTimer >= ent.attackInterval) { ent.ai.attackTimer = 0; Combat.enemyAttack(ent); ent._swing = 1; }
     } else if (ent.state === 'returning') {
       tx = ent.home.x; tz = ent.home.z; speed = ent.speedChase * 0.8;
       if (distFromHome < 1.0) { ent.state = 'wander'; ent.ai.wanderTarget = null; }
@@ -542,11 +542,40 @@ var Entities = (function () {
     var diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
     ent.mesh.rotation.y = cur + diff * Utils.clamp(10 * dt, 0, 1);
   }
+  // A strike is a one-shot: ent._swing is set to 1 at the exact moment the
+  // enemy lands a hit (offline: when Combat.enemyAttack fires; online: on the
+  // server's `enemyAttack` broadcast, so every client's swing is synced to the
+  // real hit). It decays to 0 over ~0.35s, driving a windup->slam->recover pose.
   function animateEnemy(ent, dt, t, moving) {
     ent.animPhase += dt * (moving ? 9 : 2);
     var s = Math.sin(ent.animPhase), p = ent.parts;
-    if (ent.state === 'attack') { p.armR.rotation.x = Utils.damp(p.armR.rotation.x, Math.sin(ent.ai.attackTimer * 12) * 0.6, 8, dt); p.armL.rotation.x = Math.sin(t * 3) * 0.2; }
-    else { p.legL.rotation.x = s * 0.6; p.legR.rotation.x = -s * 0.6; p.armL.rotation.x = -s * 0.4; p.armR.rotation.x = s * 0.4; }
+    if (!p) return;
+    if (ent._swing === undefined) ent._swing = 0;
+    if (ent._bodyBase === undefined && p.body) ent._bodyBase = p.body.rotation.x; // keep the tier's hunch
+    if (ent._swing > 0) ent._swing = Math.max(0, ent._swing - dt / 0.35);
+    var k = ent._swing;
+    if (k > 0) {
+      var pr = 1 - k;                 // 0 at the strike trigger .. 1 when recovered
+      var ang = (pr < 0.35)
+        ? (-1.4 + (1.3 - (-1.4)) * (pr / 0.35))       // raise through slam
+        : (1.3 + (0 - 1.3) * ((pr - 0.35) / 0.65));   // recover to rest
+      p.armR.rotation.x = ang;
+      p.armL.rotation.x = ang * 0.4;
+      p.legL.rotation.x = Utils.damp(p.legL.rotation.x, -0.12, 8, dt);
+      p.legR.rotation.x = Utils.damp(p.legR.rotation.x, 0.16, 8, dt);
+      if (p.body) p.body.rotation.x = ent._bodyBase + 0.28 * Math.sin(pr * Math.PI); // lunge into the blow
+    } else {
+      p.legL.rotation.x = s * 0.6; p.legR.rotation.x = -s * 0.6;
+      p.armL.rotation.x = -s * 0.4; p.armR.rotation.x = s * 0.4;
+      if (p.body) p.body.rotation.x = Utils.damp(p.body.rotation.x, ent._bodyBase, 6, dt);
+    }
+  }
+
+  // trigger a synced attack swing on enemy i (called from the server's enemyAttack event)
+  function enemyAttackAnim(i) {
+    var e = enemies[i];
+    if (!e || e.state === 'dead' || e.state === 'hidden') return;
+    e._swing = 1;
   }
 
   function update(dt, t) {
@@ -647,6 +676,7 @@ var Entities = (function () {
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
     serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,
+    enemyAttackAnim: enemyAttackAnim,
     initDeadEnemy: initDeadEnemy,
     setResourceState: setResourceState, goOffline: goOffline,
     get interactMeshes() { return interactMeshes; },

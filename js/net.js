@@ -67,6 +67,7 @@ var Net = (function () {
       }
       else if (msg.type === 'leave') { removeOther(msg.id); }
       else if (msg.type === 'hit') { onHit(msg); }
+      else if (msg.type === 'enemyAttack') { Entities.enemyAttackAnim(msg.i); }
       else if (msg.type === 'enemyHit') { Entities.serverEnemyHit(msg.i, msg.dmg); }
       else if (msg.type === 'enemyDead') { Entities.serverEnemyDead(msg.i, msg.x, msg.z, msg.by === myId); }
       else if (msg.type === 'enemyRespawn') { Entities.serverEnemyRespawn(msg.i, msg.x, msg.z); }
