@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sands of Apocalypse</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- 3D canvas host -->
+  <div id="game-root">
+    <canvas id="game-canvas"></canvas>
+    <div id="vignette"></div>
+    <div id="hitsplat-layer"></div>
+    <div id="label-layer"></div>
+  </div>
+
+  <!-- Loading / boot screen -->
+  <div id="boot">
+    <div class="boot-inner">
+      <div class="boot-title">SANDS OF APOCALYPSE</div>
+      <div class="boot-sub">contaminated zone &mdash; entering&hellip;</div>
+      <div id="boot-status">loading toxic wasteland&hellip;</div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <!-- Top-left: health globe + prayer/energy -->
+    <div id="vitals">
+      <div class="globe" id="hp-globe">
+        <div class="globe-fill" id="hp-fill"></div>
+        <div class="globe-num" id="hp-num">10</div>
+        <div class="globe-label">HP</div>
+      </div>
+    </div>
+
+    <!-- Top-right: skills panel -->
+    <div id="skills-panel">
+      <div class="panel-header">SKILLS</div>
+      <div class="skill-row" data-skill="woodcutting">
+        <span class="skill-icon">🪓</span>
+        <span class="skill-name">Woodcutting</span>
+        <span class="skill-level"><b id="lvl-woodcutting">1</b>/99</span>
+        <div class="xp-bar"><div class="xp-fill" id="xp-woodcutting"></div></div>
+      </div>
+      <div class="skill-row" data-skill="mining">
+        <span class="skill-icon">⛏️</span>
+        <span class="skill-name">Mining</span>
+        <span class="skill-level"><b id="lvl-mining">1</b>/99</span>
+        <div class="xp-bar"><div class="xp-fill" id="xp-mining"></div></div>
+      </div>
+      <div class="skill-row" data-skill="attack">
+        <span class="skill-icon">⚔️</span>
+        <span class="skill-name">Attack</span>
+        <span class="skill-level"><b id="lvl-attack">1</b>/99</span>
+        <div class="xp-bar"><div class="xp-fill" id="xp-attack"></div></div>
+      </div>
+    </div>
+
+    <!-- Bottom-right: inventory -->
+    <div id="inventory-panel">
+      <div class="panel-header">INVENTORY <span id="inv-count">0/28</span></div>
+      <div id="inventory-grid"></div>
+    </div>
+
+    <!-- Bottom-center: action / hint text -->
+    <div id="action-text"></div>
+
+    <!-- Top-center: target / status readout -->
+    <div id="target-readout"></div>
+
+    <!-- Bottom-left: controls hint -->
+    <div id="controls-hint">
+      <b>Left-click</b> move / interact &nbsp;•&nbsp;
+      <b>WASD / Arrows</b> camera &nbsp;•&nbsp;
+      <b>Q / E</b> rotate &nbsp;•&nbsp;
+      <b>Wheel</b> zoom &nbsp;•&nbsp;
+      <b>Shift</b> dodge roll
+    </div>
+
+    <!-- level-up toast -->
+    <div id="toast-layer"></div>
+  </div>
+
+  <!-- Death overlay -->
+  <div id="death-screen">
+    <div class="death-inner">
+      <div class="death-title">YOU DIED</div>
+      <div class="death-sub">the wasteland claims another&hellip;</div>
+      <button id="respawn-btn">RESPAWN</button>
+    </div>
+  </div>
+
+  <!-- Engine -->
+  <script src="lib/three.min.js"></script>
+
+  <!-- Live reload (dev only; no-op over file://) -->
+  <script src="js/livereload.js"></script>
+
+  <!-- Game modules (classic scripts, shared globals, order matters) -->
+  <script src="js/utils.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/entities.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/skills.js"></script>
+  <script src="js/combat.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/selftest.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

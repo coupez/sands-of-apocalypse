@@ -1,0 +1,11 @@
+# dependencies (none currently — Bun runs server.js directly)
+node_modules/
+
+# logs / temp
+*.log
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
