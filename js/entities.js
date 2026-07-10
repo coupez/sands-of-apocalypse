@@ -235,19 +235,29 @@ var Entities = (function () {
   }
 
   // ---------- spawning ----------
+  // Always returns exactly n points. Tries to honour minSep, relaxing it if
+  // space is tight, then falls back to unconstrained placement so downstream
+  // counts (which the server relies on for index alignment) never come up short.
   function scatter(n, minR, maxR, avoidList, minSep) {
-    var out = [], attempts = 0;
-    while (out.length < n && attempts < n * 40) {
-      attempts++;
+    var out = [];
+    var sep = minSep || 3;
+    var guard = 0;
+    while (out.length < n && guard < n * 200) {
+      guard++;
+      if (guard % (n * 40) === 0) sep *= 0.7; // loosen if we keep failing
       var a = Utils.randRange(0, Math.PI * 2), r = Utils.randRange(minR, maxR);
       var x = Math.cos(a) * r, z = Math.sin(a) * r, ok = true;
       var all = out.concat(avoidList || []);
       for (var i = 0; i < all.length; i++) {
         var p = all[i].position || all[i];
         var dx = p.x - x, dz = p.z - z;
-        if (dx * dx + dz * dz < (minSep || 3) * (minSep || 3)) { ok = false; break; }
+        if (dx * dx + dz * dz < sep * sep) { ok = false; break; }
       }
       if (ok) out.push({ x: x, z: z });
+    }
+    while (out.length < n) { // absolute guarantee of count
+      var a2 = Utils.randRange(0, Math.PI * 2), r2 = Utils.randRange(minR, maxR);
+      out.push({ x: Math.cos(a2) * r2, z: Math.sin(a2) * r2 });
     }
     return out;
   }

@@ -149,6 +149,14 @@ var SelfTest = (function () {
           'equipped=' + Game.equipped.id);
         Skills.equip('fists');
       }
+      // the strongest weapon must actually exist somewhere in the world
+      assert('fanny pack exists in a chest',
+        Entities.chests.some(function (c) { return c.weaponId === 'fanny'; }),
+        'chest weapons: ' + Entities.chests.map(function (c) { return c.weaponId; }).join(','));
+      // counts must match the server's authoritative indices
+      assert('entity counts match server indices',
+        Entities.trees.length === 17 && Entities.rocks.length === 13 && Entities.enemies.length === 13,
+        't' + Entities.trees.length + ' r' + Entities.rocks.length + ' e' + Entities.enemies.length);
 
       // -- PvP (player-vs-player) --
       Player.stats.maxHp = 50; Player.stats.hp = 50;
