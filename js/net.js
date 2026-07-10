@@ -51,12 +51,19 @@ var Net = (function () {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.type === 'welcome') { myId = msg.id; }
-      else if (msg.type === 'snapshot') { sync(msg.players); }
+      else if (msg.type === 'snapshot') {
+        sync(msg.players);
+        if (msg.enemies) Entities.applyServerEnemies(msg.enemies);
+      }
       else if (msg.type === 'leave') { removeOther(msg.id); }
       else if (msg.type === 'hit') { onHit(msg); }
+      else if (msg.type === 'enemyHit') { Entities.serverEnemyHit(msg.i, msg.dmg); }
+      else if (msg.type === 'enemyDead') { Entities.serverEnemyDead(msg.i, msg.x, msg.z); }
+      else if (msg.type === 'enemyRespawn') { Entities.serverEnemyRespawn(msg.i, msg.x, msg.z); }
+      else if (msg.type === 'resource') { Entities.setResourceState(msg.kind, msg.i, msg.active); }
       else if (msg.type === 'chat') { /* reserved */ }
     };
-    ws.onclose = function () { connected = false; setStatus(); scheduleReconnect(); };
+    ws.onclose = function () { connected = false; if (window.Entities) Entities.goOffline(); setStatus(); scheduleReconnect(); };
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
   }
 
@@ -130,6 +137,14 @@ var Net = (function () {
   function sendAttack(targetId, dmg) {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'attack', target: targetId, dmg: dmg | 0 }));
+  }
+  function sendAttackEnemy(i, dmg) {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'attackEnemy', i: i | 0, dmg: dmg | 0 }));
+  }
+  function sendGather(kind, i) {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'gather', kind: kind, i: i | 0 }));
   }
 
   function sync(list) {
@@ -246,6 +261,7 @@ var Net = (function () {
 
   return {
     init: init, update: update, sendAttack: sendAttack,
+    sendAttackEnemy: sendAttackEnemy, sendGather: sendGather,
     get enabled() { return enabled; },
     get myName() { return myName; },
     get remoteMeshes() { return remoteMeshes; }

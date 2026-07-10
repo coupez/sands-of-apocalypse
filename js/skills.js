@@ -77,10 +77,10 @@ var Skills = (function () {
     if (Utils.rand() > successChance(data.woodcutting.level, tree.reqLevel || 1)) return;
     if (addItem(tree.itemId || 'log')) {
       addXp('woodcutting', tree.xp || 25);
-      tree.amount--;
       Game.log.push('woodcut');
       if (window.UI) UI.showActionText('You cut some ' + (ITEMS[tree.itemId || 'log'].name) + '.');
-      if (tree.amount <= 0) Entities.depleteResource(tree);
+      if (Game.online) { if (window.Net && Net.sendGather) Net.sendGather('tree', tree.index); }
+      else { tree.amount--; if (tree.amount <= 0) Entities.depleteResource(tree); }
     } else if (window.UI) UI.showActionText('Your inventory is full!');
   }
 
@@ -90,10 +90,10 @@ var Skills = (function () {
     if (Utils.rand() > successChance(data.mining.level, rock.reqLevel || 1)) return;
     if (addItem(rock.itemId || 'ore')) {
       addXp('mining', rock.xp || 35);
-      rock.amount--;
       Game.log.push('mine');
       if (window.UI) UI.showActionText('You mine some ' + (ITEMS[rock.itemId || 'ore'].name) + '.');
-      if (rock.amount <= 0) Entities.depleteResource(rock);
+      if (Game.online) { if (window.Net && Net.sendGather) Net.sendGather('rock', rock.index); }
+      else { rock.amount--; if (rock.amount <= 0) Entities.depleteResource(rock); }
     } else if (window.UI) UI.showActionText('Your inventory is full!');
   }
 

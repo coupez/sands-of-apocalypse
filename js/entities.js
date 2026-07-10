@@ -274,6 +274,11 @@ var Entities = (function () {
     var bspots = scatter(4, 16, 50, placed, 12);
     var loot = ['sword', 'gun', 'sword', 'fanny'];
     bspots.forEach(function (p, i) { makeBuilding(p.x, p.z, loot[i % loot.length]); placed.push(p); });
+
+    // stable indices so the server can address the same object on every client
+    trees.forEach(function (e, i) { e.index = i; });
+    rocks.forEach(function (e, i) { e.index = i; });
+    enemies.forEach(function (e, i) { e.index = i; });
   }
 
   // ---------- resource depletion ----------
@@ -337,25 +342,52 @@ var Entities = (function () {
     tag(ent.mesh, ent);
   }
 
+  // ---------- death (hell portal) animation, shared by offline + online ----------
+  function runDeath(ent, dt, t) {
+    ent.dying -= dt * 0.7;
+    ent.mesh.rotation.z += dt * 5;
+    ent.mesh.rotation.y += dt * 3;
+    var sink = (1 - Math.max(ent.dying, 0)) * 2.6;
+    ent.mesh.position.y = terrainY(ent.mesh.position.x, ent.mesh.position.z) - sink;
+    ent.mesh.scale.setScalar(Math.max(ent.dying, 0.01) * ent.tierScale);
+    if (ent._portal) {
+      var pulse = 0.7 + 0.3 * Math.sin(t * 12);
+      ent._portal.disc.material.opacity = Math.max(ent.dying, 0) * pulse;
+      ent._portal.light.intensity = 2.4 * Math.max(ent.dying, 0) * (0.7 + pulse * 0.5);
+      ent._portal.group.rotation.y += dt * 2;
+    }
+    return ent.dying <= 0;
+  }
+
+  // ---------- server-driven rendering (when online) ----------
+  function updateEnemyOnline(ent, dt, t) {
+    if (ent.state === 'hidden' || ent.state === 'respawning') return;
+    var s = ent._srv;
+    if (!s) return;
+    ent.state = s.state;
+    var px = ent.mesh.position.x, pz = ent.mesh.position.z;
+    ent.mesh.position.x = Utils.damp(px, s.x, 10, dt);
+    ent.mesh.position.z = Utils.damp(pz, s.z, 10, dt);
+    ent.mesh.position.y = terrainY(ent.mesh.position.x, ent.mesh.position.z);
+    var cur = ent.mesh.rotation.y, diff = Math.atan2(Math.sin(s.ry - cur), Math.cos(s.ry - cur));
+    ent.mesh.rotation.y = cur + diff * Utils.clamp(10 * dt, 0, 1);
+    ent.mesh.scale.setScalar(ent.tierScale);
+    ent.hp = s.hp;
+    var moving = Math.hypot(ent.mesh.position.x - px, ent.mesh.position.z - pz) > 0.003;
+    animateEnemy(ent, dt, t, moving);
+  }
+
   // ---------- AI + animation ----------
   function updateEnemy(ent, dt, t) {
     if (ent.state === 'dead') {
-      // dragged down into a fiery portal
-      ent.dying -= dt * 0.7;
-      ent.mesh.rotation.z += dt * 5;
-      ent.mesh.rotation.y += dt * 3;
-      var sink = (1 - Math.max(ent.dying, 0)) * 2.6;
-      ent.mesh.position.y = terrainY(ent.mesh.position.x, ent.mesh.position.z) - sink;
-      ent.mesh.scale.setScalar(Math.max(ent.dying, 0.01) * ent.tierScale);
-      if (ent._portal) {
-        var pulse = 0.7 + 0.3 * Math.sin(t * 12);
-        ent._portal.disc.material.opacity = Math.max(ent.dying, 0) * pulse;
-        ent._portal.light.intensity = 2.4 * Math.max(ent.dying, 0) * (0.7 + pulse * 0.5);
-        ent._portal.group.rotation.y += dt * 2;
+      if (runDeath(ent, dt, t)) {
+        ent.mesh.visible = false; removePortal(ent);
+        if (Game.online) { ent.state = 'hidden'; }
+        else { ent.state = 'respawning'; ent.respawn = Utils.randRange(4, 7); }
       }
-      if (ent.dying <= 0) { ent.mesh.visible = false; removePortal(ent); ent.state = 'respawning'; ent.respawn = Utils.randRange(4, 7); }
       return;
     }
+    if (Game.online) { updateEnemyOnline(ent, dt, t); return; }
     if (ent.state === 'respawning') { ent.respawn -= dt; if (ent.respawn <= 0) respawnEnemy(ent); return; }
 
     var player = Game.player;
@@ -422,11 +454,63 @@ var Entities = (function () {
 
   function update(dt, t) {
     var i;
-    for (i = 0; i < trees.length; i++) if (!trees[i].active && trees[i].respawn > 0) { trees[i].respawn -= dt; if (trees[i].respawn <= 0) restoreResource(trees[i]); }
-    for (i = 0; i < rocks.length; i++) if (!rocks[i].active && rocks[i].respawn > 0) { rocks[i].respawn -= dt; if (rocks[i].respawn <= 0) restoreResource(rocks[i]); }
+    if (!Game.online) {  // server owns resource respawn when connected
+      for (i = 0; i < trees.length; i++) if (!trees[i].active && trees[i].respawn > 0) { trees[i].respawn -= dt; if (trees[i].respawn <= 0) restoreResource(trees[i]); }
+      for (i = 0; i < rocks.length; i++) if (!rocks[i].active && rocks[i].respawn > 0) { rocks[i].respawn -= dt; if (rocks[i].respawn <= 0) restoreResource(rocks[i]); }
+    }
     for (i = 0; i < barrels.length; i++) { var b = barrels[i]; b.light.intensity = b.baseIntensity * (0.7 + 0.5 * Math.abs(Math.sin(t * 3 + i)) + Utils.rand() * 0.1); }
     for (i = 0; i < pools.length; i++) { pools[i].disc.material.emissiveIntensity = 0.45 + 0.25 * Math.abs(Math.sin(t * 2 + i)); }
     for (i = 0; i < enemies.length; i++) updateEnemy(enemies[i], dt, t);
+  }
+
+  // ---------- applied from server (net.js) ----------
+  function applyServerEnemies(list) {
+    Game.online = true;
+    for (var i = 0; i < list.length; i++) {
+      var s = list[i], e = enemies[s.i];
+      if (!e) continue;
+      e._srv = s;
+      if (e.state !== 'dead' && e.state !== 'hidden') e.hp = s.hp;
+    }
+  }
+  function serverEnemyHit(i, dmg) {
+    var e = enemies[i];
+    if (!e || !window.UI) return;
+    var head = new THREE.Vector3(e.mesh.position.x, e.mesh.position.y + 2.6, e.mesh.position.z);
+    UI.spawnHitsplat(head, dmg, dmg > 0 ? 'hit' : 'miss');
+  }
+  function serverEnemyDead(i, x, z) {
+    var e = enemies[i];
+    if (!e || e.state === 'dead') return;
+    e.mesh.position.set(x, terrainY(x, z), z);
+    e.active = true;      // ensure killEnemy runs its visual
+    killEnemy(e);         // portal + arigato + sink; online path parks it 'hidden'
+  }
+  function serverEnemyRespawn(i, x, z) {
+    var e = enemies[i];
+    if (!e) return;
+    removePortal(e);
+    e.mesh.position.set(x, terrainY(x, z), z);
+    e.mesh.rotation.set(0, 0, 0);
+    e.mesh.scale.setScalar(e.tierScale);
+    e.mesh.visible = true;
+    e.hp = e.maxHp; e.active = true; e.state = 'wander'; e.dying = 0;
+    e._srv = { i: i, x: x, z: z, ry: 0, state: 'wander', hp: e.maxHp };
+    tag(e.mesh, e);
+  }
+  function setResourceState(kind, i, active) {
+    var arr = kind === 'tree' ? trees : kind === 'rock' ? rocks : null;
+    if (!arr || !arr[i]) return;
+    if (active) restoreResource(arr[i]); else depleteResource(arr[i]);
+  }
+  function goOffline() {
+    // server dropped: let local sim take back over from current positions
+    Game.online = false;
+    for (var i = 0; i < enemies.length; i++) {
+      var e = enemies[i];
+      if (e.state === 'hidden') { e.state = 'respawning'; e.respawn = 1; }
+      e._srv = null;
+    }
   }
 
   function reset() {
@@ -438,6 +522,9 @@ var Entities = (function () {
   return {
     init: init, update: update, reset: reset,
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
+    applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
+    serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,
+    setResourceState: setResourceState, goOffline: goOffline,
     get interactMeshes() { return interactMeshes; },
     get trees() { return trees; }, get rocks() { return rocks; },
     get enemies() { return enemies; }, get barrels() { return barrels; },

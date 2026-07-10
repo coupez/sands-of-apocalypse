@@ -7,6 +7,7 @@ var Game = {
   running: false,
   headless: false,      // true in ?selftest mode (skips heavy rendering assumptions)
   selftest: false,
+  online: false,        // true once the server is driving the shared world
   time: 0,              // seconds since start
   paused: false,
   scene: null,

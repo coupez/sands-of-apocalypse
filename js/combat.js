@@ -28,15 +28,21 @@ var Combat = (function () {
       dmg = Utils.randInt(1, maxHit);
       type = (dmg >= maxHit) ? 'crit' : 'hit';
     }
-    enemy.hp = Math.max(0, enemy.hp - dmg);
-
-    _v.set(enemy.position.x, enemy.position.y + 2.6, enemy.position.z);
-    if (window.UI) UI.spawnHitsplat(_v, eq.instakill ? '☠' : dmg, type);
 
     Skills.addXp('attack', 4 + Math.floor(dmg * 2));
     Skills.addXp('strength', 2 + Math.floor(dmg * 2));
     Game.log.push('playerAttack:' + dmg);
 
+    if (Game.online) {
+      // authoritative: server applies damage + death; splat comes back via enemyHit
+      if (window.Net && Net.sendAttackEnemy) Net.sendAttackEnemy(enemy.index, eq.instakill ? 9999 : dmg);
+      return;
+    }
+
+    // offline / single-player
+    enemy.hp = Math.max(0, enemy.hp - dmg);
+    _v.set(enemy.position.x, enemy.position.y + 2.6, enemy.position.z);
+    if (window.UI) UI.spawnHitsplat(_v, eq.instakill ? '☠' : dmg, type);
     if (enemy.hp <= 0) {
       Entities.killEnemy(enemy);
       Skills.addXp('attack', 15);
