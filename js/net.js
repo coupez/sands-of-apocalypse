@@ -225,7 +225,10 @@ var Net = (function () {
         o.group.rotation.x = Utils.damp(o.group.rotation.x, 0, 8, dt);
         o.group.position.y = baseY;
         if (o.state === 'acting') {
-          o.armR.rotation.x = Math.sin(o.phase * 3) * 0.9 - 0.4;
+          // repeated windup -> strike -> recover overhead swing
+          var cyc = (o.phase * 0.5) % 1;
+          var ang = cyc < 0.5 ? (-2.0 + 3.0 * (cyc / 0.5)) : (1.0 - 1.0 * ((cyc - 0.5) / 0.5));
+          o.armR.rotation.x = ang; o.armL.rotation.x = ang * 0.4;
           o.legL.rotation.x = 0; o.legR.rotation.x = 0;
         } else {
           o.legL.rotation.x = moving ? s * 0.7 : 0;

@@ -158,6 +158,32 @@ var SelfTest = (function () {
         Entities.trees.length === 17 && Entities.rocks.length === 13 && Entities.enemies.length === 13,
         't' + Entities.trees.length + ' r' + Entities.rocks.length + ' e' + Entities.enemies.length);
 
+      // -- enemy visuals keep the animatable skeleton the anim system drives --
+      var e0 = Entities.enemies[0];
+      assert('enemy has animatable parts skeleton',
+        !!(e0.parts && e0.parts.armL && e0.parts.armR && e0.parts.legL && e0.parts.legR && e0.parts.body),
+        'keys ' + (e0.parts ? Object.keys(e0.parts).join(',') : 'none'));
+
+      // -- enemy attack swing trigger (this is exactly what the server syncs across clients) --
+      var eAlive = Entities.enemies.filter(function (e) { return e.active && e.state !== 'dead'; })[0] || Entities.enemies[0];
+      eAlive.state = 'wander'; eAlive._swing = 0;
+      Entities.enemyAttackAnim(eAlive.index);
+      assert('enemyAttackAnim triggers a strike swing', eAlive._swing === 1, 'swing=' + eAlive._swing);
+
+      // -- building roof lifts when the player is inside its footprint, restores outside --
+      var bld = Entities.buildings[0];
+      assert('building has a roof + footprint', !!(bld && bld.roof), 'building0=' + !!bld);
+      if (bld) {
+        Player.stop();
+        Player.group.position.set(bld.position.x, 0, bld.position.z);
+        Main.advance(0.1);
+        assert('roof hidden while player stands inside building', bld.roof.visible === false, 'visible=' + bld.roof.visible);
+        Player.group.position.set(bld.position.x + 50, 0, bld.position.z + 50);
+        Main.advance(0.1);
+        assert('roof restored when player leaves building', bld.roof.visible === true, 'visible=' + bld.roof.visible);
+        Player.group.position.set(0, 0, 0);
+      }
+
       // -- PvP (player-vs-player) --
       Player.stats.maxHp = 50; Player.stats.hp = 50;
       var sent = null;
