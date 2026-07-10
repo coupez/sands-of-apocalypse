@@ -153,7 +153,8 @@ var Entities = (function () {
     g.rotation.y = Utils.randRange(0, Math.PI * 2);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
-    buildings.push({ mesh: g, position: g.position });
+    // store roof + footprint so we can lift the roof when the player steps inside
+    buildings.push({ mesh: g, position: g.position, roof: roof, halfW: w / 2, halfD: d / 2, rotY: g.rotation.y });
 
     // chest inside
     var chest = makeChest(0, 0, weaponId, g);
@@ -203,21 +204,106 @@ var Entities = (function () {
   }
 
   // ---------- mutant enemy ----------
+  // limb as a shoulder/hip-pivoted Group: rotation.x swings the whole limb.
+  // Tapered cylinder reads far more organic than a box.
+  function makeLimb(mat, topR, botR, len, px, py, pz) {
+    var grp = new THREE.Group();
+    grp.position.set(px, py, pz);
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(topR, botR, len, 6), mat);
+    m.position.y = -len / 2;
+    grp.add(m);
+    grp.userData.len = len;
+    return grp;
+  }
+  // a few short claw cones at a limb's "hand" so they swing with the arm
+  function addClaws(limbGrp, mat, n, size) {
+    var hy = -limbGrp.userData.len;
+    for (var i = 0; i < n; i++) {
+      var c = new THREE.Mesh(new THREE.ConeGeometry(size * 0.4, size * 1.6, 4), mat);
+      c.position.set((i - (n - 1) / 2) * size * 0.7, hy - size * 0.5, 0.05);
+      c.rotation.x = Math.PI * 0.92;
+      limbGrp.add(c);
+    }
+  }
+
   function makeEnemy(x, z, tierIdx) {
     var T = ENEMY_TIERS[tierIdx];
     var g = new THREE.Group();
     var flesh = new THREE.MeshStandardMaterial({ color: T.color, roughness: 1, flatShading: true });
     var dark = new THREE.MeshStandardMaterial({ color: 0x2a2214, roughness: 1, flatShading: true });
-    var eyeMat = new THREE.MeshStandardMaterial({ color: 0x120800, emissive: T.eye, emissiveIntensity: 1.6 });
-    var body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.2, 0.7), flesh); body.position.y = 1.35; body.rotation.x = 0.15; g.add(body);
-    var head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 0.7), flesh); head.position.set(0, 2.05, 0.15); g.add(head);
-    var eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.06), eyeMat), eyeR = eyeL.clone();
-    eyeL.position.set(-0.16, 2.08, 0.5); eyeR.position.set(0.16, 2.08, 0.5); g.add(eyeL); g.add(eyeR);
-    for (var i = 0; i < 3; i++) { var lump = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(0.18, 0.32), 0), dark); lump.position.set(Utils.randRange(-0.5, 0.5), 1.4 + Utils.randRange(-0.3, 0.6), Utils.randRange(-0.4, 0.4)); g.add(lump); }
-    var armL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.0, 0.24), flesh), armR = armL.clone();
-    armL.position.set(-0.62, 1.35, 0.1); armR.position.set(0.62, 1.35, 0.1); g.add(armL); g.add(armR);
-    var legL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.3), dark), legR = legL.clone();
-    legL.position.set(-0.26, 0.45, 0); legR.position.set(0.26, 0.45, 0); g.add(legL); g.add(legR);
+    var bone = new THREE.MeshStandardMaterial({ color: 0xc9bfa2, roughness: 1, flatShading: true });
+    var claw = new THREE.MeshStandardMaterial({ color: 0x141018, roughness: 0.8, flatShading: true });
+    var eyeMat = new THREE.MeshStandardMaterial({ color: 0x120800, emissive: T.eye, emissiveIntensity: 1.7 });
+    var body, head, armL, armR, legL, legR;
+    var eyeY, eyeZ, eyeSpread, eyeR;
+
+    if (tierIdx === 0) {
+      // ---- Mutant — lanky, emaciated, hunched wretch ----
+      body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.52, 1.3, 7), flesh);
+      body.position.set(0, 1.42, 0.05); body.rotation.x = 0.24; g.add(body);
+      for (var mi = 0; mi < 3; mi++) { // knobbly spine
+        var knob = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(0.12, 0.2), 0), dark);
+        knob.position.set(Utils.randRange(-0.2, 0.2), 1.15 + mi * 0.32, -0.28); g.add(knob);
+      }
+      head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.33, 0), flesh);
+      head.position.set(0, 2.0, 0.22); head.scale.set(0.9, 1.05, 1.15); g.add(head);
+      armL = makeLimb(flesh, 0.09, 0.13, 1.1, -0.42, 1.8, 0.06);
+      armR = makeLimb(flesh, 0.09, 0.13, 1.1, 0.42, 1.8, 0.06);
+      addClaws(armL, claw, 3, 0.1); addClaws(armR, claw, 3, 0.1);
+      legL = makeLimb(dark, 0.12, 0.16, 0.98, -0.2, 0.98, 0);
+      legR = makeLimb(dark, 0.12, 0.16, 0.98, 0.2, 0.98, 0);
+      eyeY = 2.03; eyeZ = 0.5; eyeSpread = 0.14; eyeR = 0.06;
+    } else if (tierIdx === 1) {
+      // ---- Ghoul — hunched, gaunt ribcage, long clawed arms ----
+      body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), flesh);
+      body.scale.set(0.98, 1.2, 0.72); body.position.set(0, 1.4, 0); body.rotation.x = 0.32; g.add(body);
+      for (var gi = 0; gi < 4; gi++) { // exposed spine ridge
+        var sp = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.26, 4), bone);
+        sp.position.set(0, 1.05 + gi * 0.26, -0.32); sp.rotation.x = -0.5; g.add(sp);
+      }
+      head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), flesh);
+      head.position.set(0, 1.92, 0.34); head.scale.set(0.85, 0.95, 1.25); head.rotation.x = 0.3; g.add(head);
+      var jaw = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), flesh);
+      jaw.position.set(0, 1.74, 0.5); jaw.rotation.x = Math.PI * 0.5; g.add(jaw);
+      armL = makeLimb(flesh, 0.1, 0.13, 1.35, -0.46, 1.78, 0.08);
+      armR = makeLimb(flesh, 0.1, 0.13, 1.35, 0.46, 1.78, 0.08);
+      addClaws(armL, claw, 3, 0.14); addClaws(armR, claw, 3, 0.14);
+      legL = makeLimb(dark, 0.13, 0.17, 0.95, -0.22, 0.98, 0);
+      legR = makeLimb(dark, 0.13, 0.17, 0.95, 0.22, 0.98, 0);
+      eyeY = 1.98; eyeZ = 0.66; eyeSpread = 0.14; eyeR = 0.065;
+    } else {
+      // ---- Hell Brute — bulky, horned, heavy shoulders, back spikes ----
+      body = new THREE.Mesh(new THREE.DodecahedronGeometry(0.78, 0), flesh);
+      body.scale.set(1.3, 1.0, 0.95); body.position.set(0, 1.5, 0); g.add(body);
+      var chest = new THREE.Mesh(new THREE.IcosahedronGeometry(0.55, 0), flesh);
+      chest.position.set(0, 1.35, 0.32); chest.scale.set(1.3, 0.9, 0.7); g.add(chest);
+      for (var hi = 0; hi < 4; hi++) { // back spikes
+        var bs = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.5, 5), bone);
+        bs.position.set((hi % 2 ? 0.22 : -0.22), 1.55 + Math.floor(hi / 2) * 0.34, -0.42); bs.rotation.x = -0.7; g.add(bs);
+      }
+      head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), flesh);
+      head.position.set(0, 2.12, 0.16); head.scale.set(1.05, 0.95, 1.0); g.add(head);
+      for (var ci = 0; ci < 2; ci++) { // horns
+        var horn = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.55, 5), bone);
+        horn.position.set(ci ? 0.24 : -0.24, 2.42, 0.05); horn.rotation.z = ci ? -0.5 : 0.5; horn.rotation.x = -0.3; g.add(horn);
+      }
+      // heavy shoulder pauldrons (static, over the shoulders)
+      var paL = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), dark); paL.position.set(-0.62, 1.95, 0.02); g.add(paL);
+      var paR = paL.clone(); paR.position.x = 0.62; g.add(paR);
+      armL = makeLimb(flesh, 0.19, 0.24, 1.05, -0.66, 1.86, 0.05);
+      armR = makeLimb(flesh, 0.19, 0.24, 1.05, 0.66, 1.86, 0.05);
+      addClaws(armL, claw, 3, 0.16); addClaws(armR, claw, 3, 0.16);
+      legL = makeLimb(dark, 0.22, 0.28, 0.92, -0.3, 1.0, 0);
+      legR = makeLimb(dark, 0.22, 0.28, 0.92, 0.3, 1.0, 0);
+      eyeY = 2.16; eyeZ = 0.5; eyeSpread = 0.17; eyeR = 0.08;
+    }
+
+    // glowing eyes
+    var eyeL = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 6, 6), eyeMat), eyeRm = eyeL.clone();
+    eyeL.position.set(-eyeSpread, eyeY, eyeZ); eyeRm.position.set(eyeSpread, eyeY, eyeZ);
+    g.add(eyeL); g.add(eyeRm);
+
+    g.add(armL); g.add(armR); g.add(legL); g.add(legR);
     g.scale.setScalar(T.scale);
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
@@ -471,6 +557,19 @@ var Entities = (function () {
     }
     for (i = 0; i < barrels.length; i++) { var b = barrels[i]; b.light.intensity = b.baseIntensity * (0.7 + 0.5 * Math.abs(Math.sin(t * 3 + i)) + Utils.rand() * 0.1); }
     for (i = 0; i < pools.length; i++) { pools[i].disc.material.emissiveIntensity = 0.45 + 0.25 * Math.abs(Math.sin(t * 2 + i)); }
+    // lift the roof off whichever building the local player is standing inside
+    var pl = Game.player;
+    if (pl && pl.position) {
+      for (i = 0; i < buildings.length; i++) {
+        var bld = buildings[i];
+        if (!bld.roof) continue;
+        var lx = pl.position.x - bld.position.x, lz = pl.position.z - bld.position.z;
+        var ca = Math.cos(bld.rotY), sa = Math.sin(bld.rotY);
+        var rx = lx * ca - lz * sa, rz = lx * sa + lz * ca; // into building-local space
+        var inside = Math.abs(rx) < bld.halfW + 0.3 && Math.abs(rz) < bld.halfD + 0.3;
+        bld.roof.visible = !inside;
+      }
+    }
     for (i = 0; i < enemies.length; i++) updateEnemy(enemies[i], dt, t);
   }
 
