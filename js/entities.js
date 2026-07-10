@@ -349,6 +349,7 @@ var Entities = (function () {
     ent.mesh.visible = true;
     ent.hp = ent.maxHp; ent.active = true; ent.state = 'wander';
     ent.ai.wanderTarget = null; ent.ai.attackTimer = 0; ent.dying = 0;
+    untag(ent);           // avoid duplicate raycast entries if it was still tagged
     tag(ent.mesh, ent);
   }
 
@@ -489,12 +490,24 @@ var Entities = (function () {
     var head = new THREE.Vector3(e.mesh.position.x, e.mesh.position.y + 2.6, e.mesh.position.z);
     UI.spawnHitsplat(head, dmg, dmg > 0 ? 'hit' : 'miss');
   }
-  function serverEnemyDead(i, x, z) {
+  function serverEnemyDead(i, x, z, byMe) {
     var e = enemies[i];
     if (!e || e.state === 'dead') return;
     e.mesh.position.set(x, terrainY(x, z), z);
     e.active = true;      // ensure killEnemy runs its visual
     killEnemy(e);         // portal + arigato + sink; online path parks it 'hidden'
+    if (byMe) {           // the killer gets the same kill bonus as offline
+      Skills.addXp('attack', 15);
+      Skills.addXp('strength', 10);
+      if (window.UI) UI.showActionText('The mutant is dragged to hell.');
+    }
+  }
+  // reconcile an enemy the server reports as already dead when we join
+  function initDeadEnemy(i) {
+    var e = enemies[i];
+    if (!e) return;
+    e.mesh.visible = false; e.active = false; e.state = 'hidden';
+    untag(e); removePortal(e);
   }
   function serverEnemyRespawn(i, x, z) {
     var e = enemies[i];
@@ -524,6 +537,7 @@ var Entities = (function () {
   }
 
   function reset() {
+    if (Game.online) return; // server owns the shared world; don't touch it locally
     for (var i = 0; i < trees.length; i++) restoreResource(trees[i]);
     for (var j = 0; j < rocks.length; j++) restoreResource(rocks[j]);
     for (var k = 0; k < enemies.length; k++) { if (enemies[k].state !== 'wander') respawnEnemy(enemies[k]); }
@@ -534,6 +548,7 @@ var Entities = (function () {
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
     serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,
+    initDeadEnemy: initDeadEnemy,
     setResourceState: setResourceState, goOffline: goOffline,
     get interactMeshes() { return interactMeshes; },
     get trees() { return trees; }, get rocks() { return rocks; },

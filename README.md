@@ -132,7 +132,14 @@ Current status: **logic self-test 50/50, multiplayer/world WS test 23/23.**
   and logs to `autopull.log`; conflicts are logged as `CONFLICT` for an agent to resolve.
 - Enemy/resource **indices must stay aligned** between `server.js` (ENEMY_PLAN / RES counts)
   and the client's `Entities.init` spawn order. If you change counts or tier order in one,
-  change both, or online play will address the wrong object.
+  change both, or online play will address the wrong object. `scatter()` guarantees the
+  requested count so this holds.
+- **Intentional tradeoff**: online, the harvesting client credits its own item/XP on a local
+  success roll for snappy feedback, while the server owns depletion/respawn. With several
+  players on one resource, total items extracted can slightly exceed its amount before the
+  depletion broadcast lands. Fine for a demo; make gathering server-confirmed if it matters.
+- Enemy damage online is client-computed then applied server-side (clamped) — authoritative
+  over enemy HP/state, not over the damage number. Add server-side rolls to make it cheat-proof.
 - Ideas not yet done: shared player inventories/trading, chat UI (server already relays a
   `chat` message type), item drops on the ground, more skills, sound/music polish,
   server-authoritative fishing pools & chests.

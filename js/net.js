@@ -51,6 +51,16 @@ var Net = (function () {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
       if (msg.type === 'welcome') { myId = msg.id; }
+      else if (msg.type === 'worldInit') {
+        // reconcile the current shared-world state before the first snapshot
+        Game.online = true;
+        var d;
+        if (msg.deadEnemies) for (d = 0; d < msg.deadEnemies.length; d++) Entities.initDeadEnemy(msg.deadEnemies[d]);
+        if (msg.resources) {
+          if (msg.resources.tree) for (d = 0; d < msg.resources.tree.length; d++) if (!msg.resources.tree[d]) Entities.setResourceState('tree', d, false);
+          if (msg.resources.rock) for (d = 0; d < msg.resources.rock.length; d++) if (!msg.resources.rock[d]) Entities.setResourceState('rock', d, false);
+        }
+      }
       else if (msg.type === 'snapshot') {
         sync(msg.players);
         if (msg.enemies) Entities.applyServerEnemies(msg.enemies);
@@ -58,7 +68,7 @@ var Net = (function () {
       else if (msg.type === 'leave') { removeOther(msg.id); }
       else if (msg.type === 'hit') { onHit(msg); }
       else if (msg.type === 'enemyHit') { Entities.serverEnemyHit(msg.i, msg.dmg); }
-      else if (msg.type === 'enemyDead') { Entities.serverEnemyDead(msg.i, msg.x, msg.z); }
+      else if (msg.type === 'enemyDead') { Entities.serverEnemyDead(msg.i, msg.x, msg.z, msg.by === myId); }
       else if (msg.type === 'enemyRespawn') { Entities.serverEnemyRespawn(msg.i, msg.x, msg.z); }
       else if (msg.type === 'resource') { Entities.setResourceState(msg.kind, msg.i, msg.active); }
       else if (msg.type === 'chat') { /* reserved */ }

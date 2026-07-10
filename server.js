@@ -218,6 +218,13 @@ const server = Bun.serve({
       players.set(id, { id, name: "Wanderer", color: "#8dff3a", x: 0, z: 0, ry: 0, state: "idle", hp: 20, ready: false });
       ws.subscribe("game");
       ws.send(JSON.stringify({ type: "welcome", id }));
+      // reconcile current world state so a late joiner doesn't see dead mutants
+      // as alive or depleted resources as full
+      ws.send(JSON.stringify({
+        type: "worldInit",
+        deadEnemies: enemies.filter((e) => e.state === "dead").map((e) => e.i),
+        resources: { tree: RES.tree.map((r) => r.active), rock: RES.rock.map((r) => r.active) },
+      }));
       console.log(`[ws] join ${id}  (online: ${players.size})`);
     },
     message(ws, raw) {
