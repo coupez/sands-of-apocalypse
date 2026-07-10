@@ -434,7 +434,7 @@ var Entities = (function () {
     ent.mesh.scale.setScalar(ent.tierScale);
     ent.mesh.visible = true;
     ent.hp = ent.maxHp; ent.active = true; ent.state = 'wander';
-    ent.ai.wanderTarget = null; ent.ai.attackTimer = 0; ent.dying = 0;
+    ent.ai.wanderTarget = null; ent.ai.attackTimer = 0; ent.dying = 0; ent._swing = 0;
     untag(ent);           // avoid duplicate raycast entries if it was still tagged
     tag(ent.mesh, ent);
   }
@@ -555,15 +555,18 @@ var Entities = (function () {
     if (ent._swing > 0) ent._swing = Math.max(0, ent._swing - dt / 0.35);
     var k = ent._swing;
     if (k > 0) {
-      var pr = 1 - k;                 // 0 at the strike trigger .. 1 when recovered
-      var ang = (pr < 0.35)
-        ? (-1.4 + (1.3 - (-1.4)) * (pr / 0.35))       // raise through slam
-        : (1.3 + (0 - 1.3) * ((pr - 0.35) / 0.65));   // recover to rest
+      // _swing is set to 1 the instant damage lands (offline: with Combat.enemyAttack;
+      // online: on the server's enemyAttack broadcast), so pr=0 == contact. The arm is
+      // thrown forward ON impact and retracts — the strike is synced to the actual hit,
+      // not delayed by a post-hit windup.
+      var pr = 1 - k;                       // 0 at the hit .. 1 fully recovered
+      var ease = pr * pr * (3 - 2 * pr);    // smoothstep recovery
+      var ang = 1.4 * (1 - ease);           // slammed forward at contact -> back to rest
       p.armR.rotation.x = ang;
       p.armL.rotation.x = ang * 0.4;
       p.legL.rotation.x = Utils.damp(p.legL.rotation.x, -0.12, 8, dt);
       p.legR.rotation.x = Utils.damp(p.legR.rotation.x, 0.16, 8, dt);
-      if (p.body) p.body.rotation.x = ent._bodyBase + 0.28 * Math.sin(pr * Math.PI); // lunge into the blow
+      if (p.body) p.body.rotation.x = ent._bodyBase + 0.22 * (1 - ease); // lunge held on impact, eases back
     } else {
       p.legL.rotation.x = s * 0.6; p.legR.rotation.x = -s * 0.6;
       p.armL.rotation.x = -s * 0.4; p.armR.rotation.x = s * 0.4;
@@ -645,7 +648,7 @@ var Entities = (function () {
     e.mesh.rotation.set(0, 0, 0);
     e.mesh.scale.setScalar(e.tierScale);
     e.mesh.visible = true;
-    e.hp = e.maxHp; e.active = true; e.state = 'wander'; e.dying = 0;
+    e.hp = e.maxHp; e.active = true; e.state = 'wander'; e.dying = 0; e._swing = 0;
     e._srv = { i: i, x: x, z: z, ry: 0, state: 'wander', hp: e.maxHp };
     tag(e.mesh, e);
   }
