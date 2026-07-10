@@ -46,7 +46,14 @@ Three.js vendored locally in `lib/three.min.js` (UMD global build).
 - **Combat**: hitsplats (hit/crit/miss/dodge), floating enemy HP bars, death & respawn,
   player HP globe; damage scales with Strength + weapon, accuracy with Attack + weapon.
 - **Enemy AI**: mutants wander, aggro & chase within range, leash home; die into a
-  **fiery hell portal** (sink + spin + red light).
+  **fiery hell portal** (sink + spin + red light). Three visually **distinct low-poly
+  silhouettes** per tier (lanky Mutant, gaunt clawed Ghoul, bulky horned Hell Brute).
+- **Impact-timed animations**: player chop / mine / fish / attack and enemy strikes each
+  have distinct windup→strike→recover motion whose contact frame is synced to the actual
+  hit. Enemy strikes are **server-broadcast** (`enemyAttack`) so every client sees the swing
+  in sync with the real damage.
+- **Buildings**: the sagging roof **lifts off automatically** when you step inside, so you
+  can see the chest and loot within.
 - **Dodge roll** with invulnerability frames (Shift).
 - **Death sequence**: dance → backflip → collapse → "YOU DIED" → respawn; player shouts a
   Flemish line (`o nee godverdomme ik ben dood`) via TTS.
@@ -90,7 +97,9 @@ The server (`server.js`) is authoritative for the **shared world**:
 - **Enemies**: server runs the mutant AI (wander/aggro/chase/attack/leash), HP, death, and
   respawn, and includes them in the snapshot. Clients render enemies from the snapshot when
   online. A player's hit is sent as `attackEnemy`; the server applies it and broadcasts
-  `enemyHit` / `enemyDead` / `enemyRespawn`.
+  `enemyHit` / `enemyDead` / `enemyRespawn`. When a server enemy lands a blow it also
+  broadcasts `enemyAttack {i}`, so every client plays that enemy's strike swing in sync
+  with the actual damage (not just the victim).
 - **Resources**: server owns depletion/respawn. A successful harvest sends `gather`; the
   server decrements and broadcasts a `resource` deplete/restore event.
 - Enemy/resource **indices** are shared: the client builds the same count & tier order
@@ -115,7 +124,10 @@ Two automated harnesses back this project — run them after changes:
    see each other + PvP relay works (kept in the dev scratchpad; re-create with two
    `WebSocket`s to `/ws` if needed).
 
-Current status: **logic self-test 50/50, multiplayer/world WS test 23/23.**
+Current status: **logic self-test 57/57**. A 2-browser (CDP-driven headless Chrome) sync
+test confirms combat is server-authoritative end-to-end: attacking an enemy on one client
+drops its HP and kills it on the other client; the `enemyAttack` broadcast reaches every
+client. WS relay tests (combat + enemyAttack) pass.
 
 ## For the next agent / dev notes
 
