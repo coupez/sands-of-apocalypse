@@ -85,6 +85,7 @@ var Net = (function () {
       else if (msg.type === 'restart') { if (window.Entities) Entities.newRound(); }
       else if (msg.type === 'mode') { if (window.Mode) Mode.setMode(msg.mode, msg.coop); }
       else if (msg.type === 'sigil') { if (window.Coop) Coop.onSigil(msg.which, msg.lit, msg.ritualReady); }
+      else if (msg.type === 'build') { if (window.Coop) Coop.onBuild(msg.id, msg.x, msg.z); }
       else if (msg.type === 'bossState') { if (window.Coop) Coop.onBossState(msg); }
       else if (msg.type === 'bossSlam') { if (window.Coop) Coop.onBossSlam(msg); }
       else if (msg.type === 'bossHit') { if (window.Coop) Coop.onBossHit(msg.part, msg.dmg, msg.hp); }
@@ -230,6 +231,10 @@ var Net = (function () {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'ritualStart' }));
   }
+  function sendBuild(id, x, z) {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'build', id: id, x: x, z: z }));
+  }
   function sendBossHit(part, style, dmg) {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'bossHit', part: part, style: style, dmg: dmg | 0 }));
@@ -358,7 +363,7 @@ var Net = (function () {
     init: init, update: update, sendAttack: sendAttack,
     sendAttackEnemy: sendAttackEnemy, sendGather: sendGather, sendWin: sendWin, sendLevel: sendLevel,
     sendChooseMode: sendChooseMode, sendSigil: sendSigil,
-    sendRitualStart: sendRitualStart, sendBossHit: sendBossHit,
+    sendRitualStart: sendRitualStart, sendBossHit: sendBossHit, sendBuild: sendBuild,
     get enabled() { return enabled; },
     get myName() { return myName; },
     get remoteMeshes() { return remoteMeshes; }

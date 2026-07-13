@@ -93,15 +93,33 @@ var Combat = (function () {
     if (!ent || !ent.active) return;
     if (window.Player && Player.canAttack && !Player.canAttack()) return;
     var ranged = isRangedAttack();
-    if (ent.part === 'heart' && !ranged) { if (window.UI) UI.showActionText("Too high to reach — loose an arrow at the heart!"); return; }
-    if (ent.part === 'hand' && ranged) { if (window.UI) UI.showActionText('Get in close with a blade to strike the hand!'); return; }
+    // wrong tool → tell them and stop, so they don't loop uselessly
+    if (ent.part === 'heart' && !ranged) { if (window.UI) UI.showActionText("Too high to reach — loose an arrow at the heart!"); if (window.Player && Player.stop) Player.stop(); return; }
+    if (ent.part === 'hand' && ranged) { if (window.UI) UI.showActionText('Get in close with a blade to strike the hand!'); if (window.Player && Player.stop) Player.stop(); return; }
+    // right tool, but Mahrûk is only vulnerable during a slam → show it's shielded, keep aiming
+    if (window.Coop && Coop.bossVulnerable && !Coop.bossVulnerable()) {
+      var vv = ent.position; _v.set(vv.x, vv.y + 1.4, vv.z);
+      if (window.UI) UI.spawnHitsplat(_v, '⛨', 'miss');
+      return;
+    }
     var mx = playerMaxHit();
     var dmg = Utils.randInt(Math.max(1, Math.floor(mx * 0.5)), mx);
     awardHitXp(dmg);
     if (window.Coop && Coop.hitBoss) Coop.hitBoss(ent, dmg);
-    var v = ent.position;
-    _v.set(v.x, v.y + 1.6, v.z);
     Game.log.push('bossAttack:' + ent.part + ':' + dmg);
+  }
+
+  // ---- ballista: a heavy bolt at the demon heart (built in co-op) ----
+  function fireBallista(ent) {
+    if (!ent) return;
+    if (ent.cooldown > 0) { if (window.UI) UI.showActionText('The ballista is winching back…'); return; }
+    ent.cooldown = 2.5;
+    if (window.Coop && Coop.bossActive && Coop.bossActive()) {
+      Coop.hitBoss({ part: 'heart', ballista: true }, 45);
+      if (window.Skills) Skills.addXp('ranged', 8);
+      if (window.UI) UI.showActionText('THUNK — a ballista bolt slams into Mahrûk!');
+    } else if (window.UI) UI.showActionText('You loose a bolt into the dunes.');
+    Game.log.push('ballista:fire');
   }
 
   // ---- PvP ----
@@ -135,7 +153,7 @@ var Combat = (function () {
   }
 
   return {
-    playerAttack: playerAttack, enemyAttack: enemyAttack, attackBoss: attackBoss,
+    playerAttack: playerAttack, enemyAttack: enemyAttack, attackBoss: attackBoss, fireBallista: fireBallista,
     playerAttackPlayer: playerAttackPlayer, receivePvpDamage: receivePvpDamage,
     playerMaxHit: playerMaxHit
   };

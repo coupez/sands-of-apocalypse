@@ -393,6 +393,32 @@ var UI = (function () {
     m.style.display = 'block';
   }
 
+  // ---------- co-op build menu ----------
+  function openBuildMenu() {
+    if (Game.headless || !window.Coop) return;
+    var m = ensureSmithMenu();
+    m.innerHTML = '';
+    var head = document.createElement('div');
+    head.className = 'smith-title';
+    head.innerHTML = 'Build <span class="smith-lvl">construct in the world (B)</span>';
+    m.appendChild(head);
+    var list = document.createElement('div'); list.className = 'smith-list'; m.appendChild(list);
+    var bps = Coop.BLUEPRINTS || [];
+    for (var i = 0; i < bps.length; i++) {
+      (function (bp) {
+        var can = Object.keys(bp.cost).every(function (k) { return Skills.countItem(k) >= bp.cost[k]; });
+        var costStr = Object.keys(bp.cost).map(function (k) { return bp.cost[k] + '× ' + (Skills.ITEMS[k] ? Skills.ITEMS[k].name : k) + ' (' + Skills.countItem(k) + ')'; }).join(', ');
+        var row = document.createElement('div');
+        row.className = 'smith-item' + (can ? '' : ' disabled');
+        row.innerHTML = '<span class="si-icon">' + bp.icon + '</span><span class="si-name">' + bp.name + '</span>' +
+          '<span class="si-cost">' + costStr + '</span><span class="si-note">' + (can ? 'Build' : 'Need materials') + '</span>';
+        if (can) row.addEventListener('click', function () { Coop.build(bp.id); closeSmithMenu(); });
+        list.appendChild(row);
+      })(bps[i]);
+    }
+    m.style.display = 'block';
+  }
+
   // ---------- merchant sell menu ----------
   function openSellMenu(merchantEnt) {
     if (Game.headless) return;
@@ -702,6 +728,7 @@ var UI = (function () {
     updateInventory: updateInventory,
     updateEquipment: updateEquipment, setActiveTab: setActiveTab, toast: toast,
     updateGold: updateGold, openSmithMenu: openSmithMenu, openSellMenu: openSellMenu, openStationMenu: openStationMenu,
+    openBuildMenu: openBuildMenu,
     showActionText: showActionText, setTarget: setTarget, announce: announce,
     showTip: showTip, hideTip: hideTip, showCountdown: showCountdown, clearOverlays: clearOverlays,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,

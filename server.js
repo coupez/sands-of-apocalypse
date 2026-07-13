@@ -48,7 +48,7 @@ let roundOver = false;      // a player has won; a restart is scheduled
 let restartTimer = null;    // pending win-countdown timeout
 let hostId = null;          // first player to join — chooses the game mode
 let mode = "pending";       // 'pending' | 'versus' | 'coop' (write-once per session)
-let coop = { sigils: {}, ritualReady: false, boss: null };   // shared co-op state
+let coop = { sigils: {}, ritualReady: false, boss: null, builds: [], won: false };   // shared co-op state
 
 // ============================================================
 // Authoritative shared world: enemies + resource depletion.
@@ -126,7 +126,8 @@ function simBoss(dt) {
   if (b.stage === "idle") {
     b.timer -= dt;
     if (b.timer <= 0) {
-      const np = [...players.values()].find((p) => p.ready && (p.hp == null || p.hp > 0) && p.state !== "dead");
+      const live = [...players.values()].filter((p) => p.ready && (p.hp == null || p.hp > 0) && p.state !== "dead");
+      const np = live.length ? live[Math.floor(Math.random() * live.length)] : null;
       const px = np ? np.x : 0, pz = np ? np.z : 0, d = Math.hypot(px, pz) || 1;
       b.hx = +(px / d * BOSS.reach).toFixed(2); b.hz = +(pz / d * BOSS.reach).toFixed(2);
       b.hand = Math.random() < 0.5 ? "L" : "R";
@@ -151,7 +152,13 @@ function bossHit(part, dmg) {
   if (part !== "hand" && part !== "heart") return;
   b.hp = Math.max(0, b.hp - Math.max(0, Math.min(80, Math.floor(dmg))));
   server.publish("game", JSON.stringify({ type: "bossHit", part, dmg: Math.floor(dmg), hp: b.hp }));
-  if (b.hp <= 0) { b.active = false; server.publish("game", JSON.stringify({ type: "bossDead" })); coop.boss = null; }
+  if (b.hp <= 0) {
+    b.active = false;
+    coop.boss = null;
+    coop.ritualReady = false;   // victory is final — no re-summon loop
+    coop.won = true;
+    server.publish("game", JSON.stringify({ type: "bossDead" }));
+  }
 }
 
 function nearestPlayer(x, z) {
@@ -361,6 +368,12 @@ const server = Bun.serve({
           coop.ritualReady = valid.filter((k) => coop.sigils[k]).length >= 3;
           server.publish("game", JSON.stringify({ type: "sigil", which: msg.which, lit: true, ritualReady: coop.ritualReady }));
         }
+      } else if (msg.type === "build" && mode === "coop" && typeof msg.id === "string" && Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
+        if (coop.builds.length < 40) {
+          const b = { id: msg.id.slice(0, 16), x: +msg.x, z: +msg.z };
+          coop.builds.push(b);
+          server.publish("game", JSON.stringify({ type: "build", id: b.id, x: b.x, z: b.z }));
+        }
       } else if (msg.type === "ritualStart" && mode === "coop" && coop.ritualReady && (!coop.boss || !coop.boss.active)) {
         startBoss();
       } else if (msg.type === "bossHit" && mode === "coop") {
@@ -392,7 +405,7 @@ const server = Bun.serve({
       }
       // empty session → back to a clean pending state for the next lobby
       if (players.size === 0) {
-        mode = "pending"; hostId = null; coop = { sigils: {}, ritualReady: false, boss: null };
+        mode = "pending"; hostId = null; coop = { sigils: {}, ritualReady: false, boss: null, builds: [], won: false };
         roundOver = false;
         if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
       }

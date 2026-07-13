@@ -526,6 +526,14 @@ var SelfTest = (function () {
       assert('online sigil completion relays to the server', sentSigil === 'deep' && !Coop.state.sigils.deep);
       Net.sendSigil = realSendSigil; Game.online = false;
 
+      // -- build system: construct a ballista from materials --
+      clearBag();
+      Skills.addItem('log'); Skills.addItem('log'); Skills.addItem('log'); Skills.addItem('log');
+      Skills.addItem('ironbar'); Skills.addItem('ironbar');
+      var buildsBefore = Entities.builds.length;
+      assert('building a ballista consumes materials', Coop.build('ballista') === true && Entities.builds.length === buildsBefore + 1);
+      assert('the ballista is a usable structure', Entities.builds[Entities.builds.length - 1].type === 'ballista');
+
       // -- co-op finale: summon Mahrûk, fight the slam windows, defeat it --
       assert('the ritual is ready to summon', Coop.state.ritualReady === true);
       Skills.data.strength.xp = 0; Skills.addXp('strength', 9999999);   // hit hard so the fight is quick
@@ -545,6 +553,16 @@ var SelfTest = (function () {
       }
       assert('striking the hands during slams defeats Mahrûk',
         Coop.bossActive() === false && Game.log.indexOf('coop:bossDead') >= 0);
+      // victory is final — the ritual can't be re-run
+      assert('co-op victory is final', Coop.state.won === true && Coop.state.ritualReady === false);
+      Entities.useObelisk();
+      assert('Mahrûk cannot be re-summoned after victory', Coop.bossActive() === false);
+
+      // -- late join mid-fight: applyState rebuilds an active server boss --
+      Coop.applyState({ sigils: { hunt: true, devotion: true, forge: true }, ritualReady: true,
+        boss: { active: true, hp: 300, maxHp: 600, phase: 1, stage: 'idle', hand: 'L', hx: 0, hz: 0 } });
+      assert('a mid-fight late joiner reconstructs the boss',
+        Coop.bossActive() === true && Coop.boss.hp === 300 && Coop.boss.simLocal === false);
 
     } catch (err) {
       assert('NO EXCEPTIONS', false, (err && err.stack) ? err.stack : String(err));

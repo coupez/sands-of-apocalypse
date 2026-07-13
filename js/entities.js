@@ -14,6 +14,7 @@ var Entities = (function () {
   var obelisk = null;   // the central endgame monument
   var bandits = [], banditCamps = [], drops = [];   // E/W bandit-camp wave system
   var rats = [], birds = [];   // ambient critters (attackable rats) + flying birds
+  var builds = [];             // co-op constructables (ballista, …)
 
   // No roaming enemies in the open field — combat lives at the E/W bandit camps
   // (and rats). Enemies still spawn hidden so the self-test + server indices align.
@@ -646,6 +647,7 @@ var Entities = (function () {
     // Co-op: the Obelisk is the ritual site — begin the summon when 3 sigils are lit
     if (window.Coop && Coop.active) {
       if (Coop.bossActive && Coop.bossActive()) { if (window.UI) UI.showActionText('Mahrûk rages — strike its heart and hands!'); return; }
+      if (Coop.state && Coop.state.won) { if (window.UI) UI.showActionText('Mahrûk is banished — the sands are at peace.'); return; }
       if (Coop.state && Coop.state.ritualReady) { Coop.startRitual(); return; }
       if (window.UI) UI.showActionText('The Obelisk is dormant — light three sigils to begin the ritual.');
       return;
@@ -708,6 +710,33 @@ var Entities = (function () {
     banditCamps.push(camp);
     spawnWave(camp);
     return camp;
+  }
+
+  // ---------- co-op constructables ----------
+  function makeBallista(x, z) {
+    var g = new THREE.Group();
+    var wood = new THREE.MeshStandardMaterial({ color: 0x6a4a24, roughness: 1, flatShading: true });
+    var metal = new THREE.MeshStandardMaterial({ color: 0x565a60, roughness: 0.5, metalness: 0.6, flatShading: true });
+    var base = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.35, 1.5), wood); base.position.y = 0.5; g.add(base);
+    for (var i = 0; i < 4; i++) { var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.0, 5), wood); leg.position.set((i % 2 ? 1 : -1) * 0.55, 0.25, (i < 2 ? 1 : -1) * 0.55); leg.rotation.z = (i % 2 ? 1 : -1) * 0.2; leg.rotation.x = (i < 2 ? 1 : -1) * 0.2; g.add(leg); }
+    var mount = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.5), wood); mount.position.y = 0.95; g.add(mount);
+    var stock = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 2.6), wood); stock.position.set(0, 1.25, 0.5); stock.rotation.x = -0.12; g.add(stock);
+    var limb = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.14, 0.2), metal); limb.position.set(0, 1.35, 1.3); g.add(limb);
+    var bolt = new THREE.Mesh(new THREE.ConeGeometry(0.13, 1.5, 6), metal); bolt.rotation.x = Math.PI / 2; bolt.position.set(0, 1.32, 1.7); g.add(bolt);
+    g.position.set(x, terrainY(x, z), z);
+    g.rotation.y = Math.atan2(0 - x, 0 - z);   // aim at the plaza centre (demon)
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g); markOccluder(g);
+    var ent = { type: 'ballista', name: 'Ballista', mesh: g, bolt: bolt, position: g.position, active: true, interactRange: 2.8, cooldown: 0 };
+    tag(g, ent); builds.push(ent);
+    return ent;
+  }
+  function spawnBuild(id, x, z) {
+    if (id === 'ballista') return makeBallista(x, z);
+    return null;
+  }
+  function updateBuilds(dt) {
+    for (var i = 0; i < builds.length; i++) { var b = builds[i]; if (b.cooldown > 0) b.cooldown = Math.max(0, b.cooldown - dt); }
   }
 
   // Co-op: a bandit raid marches on the shared camp (reuses the bandit AI).
@@ -1547,6 +1576,7 @@ var Entities = (function () {
     }
     updateBanditCamps(dt, t);
     updateCritters(dt, t);
+    updateBuilds(dt);
     // lift the roof off whichever building the local player is standing inside
     // (kept from the parallel branch; no-op while the town uses camps, not buildings)
     var pl = Game.player;
@@ -1705,7 +1735,8 @@ var Entities = (function () {
     sendCaravan: sendCaravan, merchantBusy: merchantBusy,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
     pickupDrop: pickupDrop, spawnRaid: spawnRaid, tagExternal: tagExternal, untagExternal: untagExternal,
-    get bandits() { return bandits; }, get banditCamps() { return banditCamps; },
+    spawnBuild: spawnBuild,
+    get bandits() { return bandits; }, get banditCamps() { return banditCamps; }, get builds() { return builds; },
     get drops() { return drops; }, get rats() { return rats; },
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
     serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,

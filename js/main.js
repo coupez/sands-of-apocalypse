@@ -121,6 +121,8 @@ var Main = (function () {
         Skills.addItem('orb');
         if (window.UI) UI.showActionText('[debug] The Heart of the Obelisk appears in your pack.');
       }
+      // "B" opens the co-op build menu
+      if ((e.key === 'b' || e.key === 'B') && Game.mode === 'coop' && window.UI && UI.openBuildMenu) UI.openBuildMenu();
     });
     var btn = document.getElementById('respawn-btn');
     if (btn) btn.addEventListener('click', function () {

@@ -280,6 +280,9 @@ var Player = (function () {
           } else if (ent.type === 'drop') {
             Entities.pickupDrop(ent);
             interaction = null; state = 'idle'; actionKind = null;
+          } else if (ent.type === 'ballista') {
+            Combat.fireBallista(ent);
+            interaction = null; state = 'idle'; actionKind = null;
           } else {
             state = 'acting';
             var newKind = ent.type === 'tree' ? 'chop'

@@ -57,11 +57,20 @@ var Coop = (function () {
     state.sigils = coop.sigils || {};
     state.ritualReady = !!coop.ritualReady;
     Game.coop = state;
+    state.won = !!coop.won;
+    // reconstruct any shared builds we haven't spawned yet (late join)
+    if (coop.builds && window.Entities && Entities.spawnBuild) {
+      for (var i = builtCount; i < coop.builds.length; i++) Entities.spawnBuild(coop.builds[i].id, coop.builds[i].x, coop.builds[i].z);
+      builtCount = coop.builds.length;
+    }
     if (active) { refreshBraziers(); updateHud(); }
+    // reconstruct an in-progress boss for a mid-fight late joiner
+    if (coop.boss && coop.boss.active && (!boss || !boss.active)) onBossState(coop.boss);
   }
 
   // ---- a sigil is confirmed lit (from server, or locally when offline) ----
   function onSigil(which, lit, ritualReady) {
+    _pendingSigil[which] = false;
     if (lit && !state.sigils[which]) {
       state.sigils[which] = true;
       lightBrazier(which);
@@ -74,9 +83,10 @@ var Coop = (function () {
   }
 
   // client detected an objective is complete → tell the server (or apply offline)
+  var _pendingSigil = {};
   function completeSigil(which) {
-    if (state.sigils[which]) return;
-    if (Game.online && window.Net && Net.sendSigil) Net.sendSigil(which);
+    if (state.sigils[which] || _pendingSigil[which]) return;
+    if (Game.online && window.Net && Net.sendSigil) { _pendingSigil[which] = true; Net.sendSigil(which); }
     else onSigil(which, true, (litCount() + 1) >= THRESHOLD);
   }
 
@@ -92,7 +102,10 @@ var Coop = (function () {
       if (pr && pr.level >= (pr.max || 12)) completeSigil('devotion');
     }
     animateBraziers(dt);
-    if (boss && boss.active) { if (!Game.online) simBoss(dt); animateDemon(dt); }
+    // Only ever locally-sim a boss WE started (offline sandbox). A server-born
+    // boss (simLocal false) is never taken over by local sim, even if the socket
+    // drops — that would run its undefined timers to NaN and freeze/cheat it.
+    if (boss && boss.active) { if (!Game.online && boss.simLocal) simBoss(dt); animateDemon(dt); }
   }
 
   function spawnRaid() {
@@ -166,6 +179,29 @@ var Coop = (function () {
     hudEl.innerHTML = html;
   }
 
+  // ---- constructables (build menu) ----
+  var BLUEPRINTS = [
+    { id: 'ballista', name: 'Ballista', icon: '🏹', cost: { log: 4, ironbar: 2 }, desc: 'A siege weapon that batters the demon during the fight.' }
+  ];
+  var builtCount = 0;   // shared builds spawned locally (late-join dedup)
+  function blueprint(id) { for (var i = 0; i < BLUEPRINTS.length; i++) if (BLUEPRINTS[i].id === id) return BLUEPRINTS[i]; return null; }
+  function build(id) {
+    var bp = blueprint(id); if (!bp || !window.Skills) return false;
+    for (var k in bp.cost) if (Skills.countItem(k) < bp.cost[k]) { if (window.UI) UI.showActionText('You lack the materials for the ' + bp.name + '.'); return false; }
+    for (var k2 in bp.cost) for (var n = 0; n < bp.cost[k2]; n++) Skills.removeItem(k2);
+    var p = Game.player && Game.player.position ? Game.player.position : { x: 0, z: 20 };
+    var sx = Math.round(p.x), sz = Math.round(p.z);
+    if (Game.online && window.Net && Net.sendBuild) Net.sendBuild(id, sx, sz);
+    else onBuild(id, sx, sz);
+    Game.log.push('coop:build:' + id);
+    return true;
+  }
+  function onBuild(id, x, z) {
+    builtCount++;
+    if (window.Entities && Entities.spawnBuild) Entities.spawnBuild(id, x, z);
+    if (window.UI && UI.showActionText) UI.showActionText('You raise a ' + id + '!');
+  }
+
   // ---- summoning the ritual (from the Obelisk when ready) ----
   function startRitual() {
     if (!active || !state.ritualReady || (boss && boss.active)) return;
@@ -175,7 +211,7 @@ var Coop = (function () {
     Game.log.push('coop:ritualStart');
   }
   function startBossLocal() {
-    boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, phase: 1,
+    boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, phase: 1, simLocal: true,
       stage: 'idle', hand: 'L', hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval, rise: 0 };
     buildDemon();
     if (window.UI && UI.showBossBar) UI.showBossBar('Mahrûk, the Buried Demon', boss.hp, boss.maxHp);
@@ -306,7 +342,8 @@ var Coop = (function () {
     if (!s.active) onBossDead();
   }
   function startBossFromServer(s) {
-    boss = { active: true, hp: s.hp, maxHp: s.maxHp, phase: s.phase, stage: s.stage, hand: s.hand || 'L', hx: s.hx || 0, hz: s.hz || 0, rise: 0 };
+    boss = { active: true, hp: s.hp, maxHp: s.maxHp, phase: s.phase, simLocal: false, timer: 0, vulnT: 0,
+      stage: s.stage, hand: s.hand || 'L', hx: s.hx || 0, hz: s.hz || 0, rise: 0 };
     buildDemon();
     if (window.UI && UI.showBossBar) UI.showBossBar('Mahrûk, the Buried Demon', boss.hp, boss.maxHp);
   }
@@ -335,10 +372,13 @@ var Coop = (function () {
     closeWindow();
     if (b.mesh && scene) scene.remove(b.mesh);
     if (b.heartEnt && window.Entities && Entities.untagExternal) Entities.untagExternal(b.heartEnt);
+    // victory is final — the ritual can't be re-run (no re-summon loop)
+    state.ritualReady = false; state.won = true;
     if (window.UI) { if (UI.hideBossBar) UI.hideBossBar(); if (UI.showVictory) UI.showVictory('The party', true, 'You banished Mahrûk and saved the sands!'); }
     Game.log.push('coop:bossDead');
     boss = null;
   }
+  function bossVulnerable() { return !!(boss && boss.active && boss.stage === 'vuln'); }
 
   // ---- player struck a weak point (called from combat) ----
   function hitBoss(ent, dmg) {
@@ -360,8 +400,9 @@ var Coop = (function () {
   return {
     onMode: onMode, applyState: applyState, onSigil: onSigil, completeSigil: completeSigil,
     update: update, teardown: teardown, startRitual: startRitual,
+    build: build, onBuild: onBuild, BLUEPRINTS: BLUEPRINTS,
     onBossState: onBossState, onBossSlam: onBossSlam, onBossHit: onBossHit, onBossDead: onBossDead,
-    onBossHp: onBossHp, hitBoss: hitBoss, bossActive: bossActive,
+    onBossHp: onBossHp, hitBoss: hitBoss, bossActive: bossActive, bossVulnerable: bossVulnerable,
     get state() { return state; }, get active() { return active; }, get boss() { return boss; },
     litCount: litCount, THRESHOLD: THRESHOLD, SIGILS: SIGILS
   };
