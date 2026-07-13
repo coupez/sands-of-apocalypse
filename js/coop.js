@@ -21,6 +21,8 @@ var Coop = (function () {
   var active = false;
   var raidCount = 0;
   var scene = null;
+  var _regenT = 0;
+  function hasSigil(k) { return !!state.sigils[k]; }
 
   // ---- Buried Demon boss (Mahrûk) ----
   // Shared tuning; the server owns the authoritative sim online, the client sims
@@ -108,6 +110,11 @@ var Coop = (function () {
     if (!state.sigils.plenty && (Game.cooked || 0) >= 3) completeSigil('plenty'); // cooked a feast this run
     if (!state.sigils.deep && Game.minedGold) completeSigil('deep');              // mined the deep gold
     animateBraziers(dt);
+    // Sigil of Plenty empowers the party with regen during the boss fight
+    if (bossActive() && state.sigils.plenty && window.Player && Player.heal) {
+      _regenT += dt;
+      if (_regenT >= 2) { _regenT = 0; Player.heal(3); }
+    }
     // Only ever locally-sim a boss WE started (offline sandbox). A server-born
     // boss (simLocal false) is never taken over by local sim, even if the socket
     // drops — that would run its undefined timers to NaN and freeze/cheat it.
@@ -221,6 +228,7 @@ var Coop = (function () {
       stage: 'idle', hand: 'L', hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval, rise: 0 };
     buildDemon();
     updateAtmosphere();
+    announceBoons();
     if (window.UI && UI.showBossBar) UI.showBossBar('Mahrûk, the Buried Demon', boss.hp, boss.maxHp);
     Game.log.push('coop:bossStart');
   }
@@ -305,6 +313,17 @@ var Coop = (function () {
     }
   }
 
+  // announce which sigil boons are active for the fight (your 3 = a boss loadout)
+  function announceBoons() {
+    if (!window.UI || !UI.announce) return;
+    var b = [];
+    if (state.sigils.forge) b.push('Forge (+stagger)');
+    if (state.sigils.devotion) b.push('Devotion (+heart dmg)');
+    if (state.sigils.plenty) b.push('Plenty (regen)');
+    if (state.sigils.deep) b.push('Deep (siege bolts)');
+    if (state.sigils.hunt) b.push('Hunt (fewer imps)');
+    if (b.length) UI.announce('Your sigils empower you — ' + b.join(', '), false);
+  }
   // day → dusk as the ritual advances; full blood-dusk during the boss
   function updateAtmosphere() {
     if (!window.World || !World.setDusk) return;
@@ -326,7 +345,8 @@ var Coop = (function () {
       b.phase = ph;
       if (ph === 3 && !b._imped) {
         b._imped = true;
-        if (window.Entities && Entities.spawnImps) Entities.spawnImps(3);
+        // Sigil of the Hunt eases the enrage (fewer imps)
+        if (window.Entities && Entities.spawnImps) Entities.spawnImps(state.sigils.hunt ? 2 : 3);
         if (window.UI && UI.announce) UI.announce('Mahrûk shrieks — imps claw up from the cracks!', false);
       }
     }
@@ -412,6 +432,7 @@ var Coop = (function () {
       stage: s.stage, hand: s.hand || 'L', hx: s.hx || 0, hz: s.hz || 0, rise: 0 };
     buildDemon();
     updateAtmosphere();
+    announceBoons();
     if (window.UI && UI.showBossBar) UI.showBossBar('Mahrûk, the Buried Demon', boss.hp, boss.maxHp);
   }
   function onBossSlam(msg) {
@@ -488,7 +509,7 @@ var Coop = (function () {
     update: update, teardown: teardown, startRitual: startRitual,
     build: build, onBuild: onBuild, BLUEPRINTS: BLUEPRINTS,
     onBossState: onBossState, onBossSlam: onBossSlam, onBossHit: onBossHit, onBossDead: onBossDead,
-    onBossHp: onBossHp, hitBoss: hitBoss, bossActive: bossActive, bossVulnerable: bossVulnerable,
+    onBossHp: onBossHp, hitBoss: hitBoss, bossActive: bossActive, bossVulnerable: bossVulnerable, hasSigil: hasSigil,
     get state() { return state; }, get active() { return active; }, get boss() { return boss; },
     litCount: litCount, THRESHOLD: THRESHOLD, SIGILS: SIGILS
   };

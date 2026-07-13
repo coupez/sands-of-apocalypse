@@ -563,6 +563,7 @@ var SelfTest = (function () {
       Player.stop();
       Entities.useObelisk();
       assert('summoning begins the boss fight', Coop.bossActive() === true && Coop.boss.hp === Coop.boss.maxHp);
+      assert('lit sigils empower the fight (loadout)', Coop.hasSigil('devotion') === true && Coop.hasSigil('forge') === true);
       invadeInvulnerable();
       Main.advance(8.8);       // idle(7) → windup(1.1) → vulnerable
       assert('the boss opens a slam window',

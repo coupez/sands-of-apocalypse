@@ -108,6 +108,11 @@ var Combat = (function () {
     // melee on the hand builds the stagger meter (scaled by weapon speed so all
     // archetypes fill it at a similar rate); bow on the heart deals real HP damage
     var stag = (ent.part === 'hand') ? Math.round(14 * (window.Skills && Skills.weaponSpeed ? Skills.weaponSpeed() : 1)) : 0;
+    // sigil empowerments: Devotion boosts heart damage, Forge boosts stagger
+    if (window.Coop && Coop.hasSigil) {
+      if (ent.part === 'heart' && Coop.hasSigil('devotion')) dmg = Math.round(dmg * 1.3);
+      if (ent.part === 'hand' && Coop.hasSigil('forge')) stag = Math.round(stag * 1.3);
+    }
     if (window.Coop && Coop.hitBoss) Coop.hitBoss(ent, dmg, stag);
     Game.log.push('bossAttack:' + ent.part + ':' + dmg);
   }
@@ -119,7 +124,8 @@ var Combat = (function () {
     ent.cooldown = 2.5;
     if (window.Coop && Coop.bossActive && Coop.bossActive()) {
       if (Coop.bossVulnerable && !Coop.bossVulnerable()) { if (window.UI) UI.showActionText("The bolt glances off Mahrûk's hide — strike during a slam."); return; }
-      Coop.hitBoss({ part: 'heart', ballista: true }, 45, 30);   // heavy heart damage + big stagger
+      var deep = Coop.hasSigil && Coop.hasSigil('deep');   // Sigil of the Deep → stronger siege bolts
+      Coop.hitBoss({ part: 'heart', ballista: true }, deep ? 65 : 45, deep ? 42 : 30);   // heavy heart damage + big stagger
       if (window.Skills) Skills.addXp('ranged', 8);
       if (window.UI) UI.showActionText('THUNK — a ballista bolt staggers Mahrûk!');
     } else if (window.UI) UI.showActionText('You loose a bolt into the dunes.');
