@@ -310,7 +310,8 @@ var Player = (function () {
   }
 
   function actionInterval() {
-    return (actionKind === 'attack') ? 1.2 : 1.05;
+    if (actionKind === 'attack') return 1.2 * (window.Skills && Skills.weaponSpeed ? Skills.weaponSpeed() : 1);
+    return 1.05;
   }
 
   // fires the actual game effect exactly at the swing's impact frame

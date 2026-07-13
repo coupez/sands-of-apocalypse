@@ -478,7 +478,7 @@ var Entities = (function () {
           var cp = COOK_PLAN[ci];
           if (!Skills.hasItem(cp.raw)) continue;
           if (ent.level < cp.tier) { cgated = 'Upgrade the campfire to Lv ' + cp.tier + ' to cook ' + Skills.ITEMS[cp.raw].name + '.'; continue; }
-          Skills.removeItem(cp.raw); Skills.addItem(Skills.COOK[cp.raw]); Skills.addXp('cooking', 6 + cp.tier * 4); cooked = cp.raw; break;
+          Skills.removeItem(cp.raw); Skills.addItem(Skills.COOK[cp.raw]); Skills.addXp('cooking', 6 + cp.tier * 4); cooked = cp.raw; Game.cooked = (Game.cooked || 0) + 1; break;
         }
         msg = cooked ? 'You cook the catch over the fire.' : (cgated || 'You have no raw catch to cook.');
       }

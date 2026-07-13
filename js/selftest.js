@@ -503,28 +503,41 @@ var SelfTest = (function () {
 
       // -- co-op: Ritual of Five Sigils (Mode.setMode(coop) activated Coop) --
       assert('Coop module present & active', !!window.Coop && Coop.active === true);
-      Coop.onSigil('forge', true, false);
-      assert('an inbound sigil lights (forge)', Coop.state.sigils.forge === true && Coop.litCount() >= 1);
-      Coop.applyState({ sigils: { forge: true, plenty: true }, ritualReady: false });
-      assert('applyState reconciles lit sigils (late join)', Coop.state.sigils.plenty === true && Coop.litCount() === 2);
-      // objective detection: clearing both bandit camps lights Hunt AND raids the camp
+      // weapon archetypes: fast dagger < scimitar < heavy greatsword
+      assert('three melee weapon archetypes exist',
+        !!Skills.GEAR.bronze_dagger && !!Skills.GEAR.bronze_scimitar && !!Skills.GEAR.bronze_greatsword);
+      assert('archetypes have distinct attack speeds',
+        Skills.GEAR.bronze_dagger.speed < Skills.GEAR.bronze_scimitar.speed && Skills.GEAR.bronze_scimitar.speed < Skills.GEAR.bronze_greatsword.speed);
+      clearBag(); Skills.addItem('bronze_greatsword'); Skills.equipFromInventory(invIndexOf('bronze_greatsword'));
+      assert('the equipped weapon sets the attack speed', Skills.weaponSpeed() === Skills.GEAR.bronze_greatsword.speed);
+      Skills.unequip('rhand');
+      // Forge/Plenty auto-detect (nothing auto-lights yet: camps uncleared, prayer low)
+      Game.forgedRitual = true; Coop.update(0.1);
+      assert('smithing a greatsword lights the Forge sigil', Coop.state.sigils.forge === true);
+      Game.cooked = 3; Coop.update(0.1);
+      assert('cooking three fish lights the Plenty sigil', Coop.state.sigils.plenty === true);
+      // inbound sigil + late-join reconciliation
+      Coop.onSigil('deep', true, false);
+      assert('an inbound sigil lights (deep)', Coop.state.sigils.deep === true);
+      // Hunt: clearing both bandit camps lights it AND raids the camp
       var raidBefore = Entities.bandits.length;
       Entities.banditCamps.forEach(function (c) { c.cleared = true; });
       Coop.update(0.1);
       assert('clearing both camps lights the Hunt sigil', Coop.state.sigils.hunt === true);
       assert('lighting a sigil raids the camp', Entities.bandits.length > raidBefore, 'bandits ' + raidBefore + '->' + Entities.bandits.length);
-      // Devotion: maxing Prayer lights it
+      // Devotion: maxing Prayer lights it → ritual ready
       Skills.data.prayer.xp = 0; Skills.addXp('prayer', 9999999);
       Coop.update(0.1);
       assert('maxing Prayer lights the Devotion sigil', Coop.state.sigils.devotion === true);
-      assert('three sigils ready the ritual', Coop.litCount() >= 3 && Coop.state.ritualReady === true, 'lit=' + Coop.litCount());
+      assert('three+ sigils ready the ritual', Coop.litCount() >= 3 && Coop.state.ritualReady === true, 'lit=' + Coop.litCount());
       // online: completing a sigil relays to the server rather than applying locally
       Game.online = true;
+      Coop.state.sigils.plenty = false;   // pretend not yet lit for the relay check
       var sentSigil = null, realSendSigil = Net.sendSigil;
       Net.sendSigil = function (w) { sentSigil = w; };
-      Coop.completeSigil('deep');
-      assert('online sigil completion relays to the server', sentSigil === 'deep' && !Coop.state.sigils.deep);
-      Net.sendSigil = realSendSigil; Game.online = false;
+      Coop.completeSigil('plenty');
+      assert('online sigil completion relays to the server', sentSigil === 'plenty' && !Coop.state.sigils.plenty);
+      Net.sendSigil = realSendSigil; Coop.state.sigils.plenty = true; Game.online = false;
 
       // -- build system: construct a ballista from materials --
       clearBag();

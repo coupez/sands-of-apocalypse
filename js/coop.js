@@ -9,9 +9,9 @@
 
 var Coop = (function () {
   var SIGILS = [
-    { key: 'forge',    name: 'Forge',    icon: '⚒️', color: 0xff7a2a, desc: 'Smith a ritual weapon' },
+    { key: 'forge',    name: 'Forge',    icon: '⚒️', color: 0xff7a2a, desc: 'Smith a greatsword' },
     { key: 'hunt',     name: 'Hunt',     icon: '⚔️', color: 0xd23a3a, desc: 'Clear both bandit camps' },
-    { key: 'plenty',   name: 'Plenty',   icon: '🍲', color: 0x6ac06a, desc: 'Cook a great feast' },
+    { key: 'plenty',   name: 'Plenty',   icon: '🍲', color: 0x6ac06a, desc: 'Cook three fish' },
     { key: 'deep',     name: 'Deep',     icon: '🌊', color: 0x3aa6ff, desc: 'Bridge to the sunken shrine' },
     { key: 'devotion', name: 'Devotion', icon: '🙏', color: 0xb98aff, desc: 'Reach the height of Prayer' }
   ];
@@ -101,6 +101,8 @@ var Coop = (function () {
       var pr = Skills.data.prayer;
       if (pr && pr.level >= (pr.max || 12)) completeSigil('devotion');
     }
+    if (!state.sigils.forge && Game.forgedRitual) completeSigil('forge');       // smithed a greatsword
+    if (!state.sigils.plenty && (Game.cooked || 0) >= 3) completeSigil('plenty'); // cooked a feast
     animateBraziers(dt);
     // Only ever locally-sim a boss WE started (offline sandbox). A server-born
     // boss (simLocal false) is never taken over by local sim, even if the socket

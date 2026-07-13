@@ -86,13 +86,18 @@ var Skills = (function () {
     { key: 'gold',   name: 'Gold',   bar: 'goldbar',   level: 4, color: 0xffd24a }
   ];
   var METAL_COLOR = { bronze: 0xc87838, iron: 0x8a8f96, silver: 0xd8dce2, gold: 0xffd24a };
+  // Three melee weapon archetypes give a real "choose your feel": the dagger
+  // swings fast for small hits, the greatsword is slow but hits huge, the
+  // scimitar sits between. `speed` scales the attack interval (lower = faster).
   var GTYPES = [
     { key: 'helmet',    slot: 'head',  name: 'Helmet',    icon: '⛑️', bars: 1, per: { def: 2, hp: 1 } },
     { key: 'platebody', slot: 'body',  name: 'Platebody', icon: '🦺', bars: 3, per: { def: 4, hp: 3 } },
     { key: 'platelegs', slot: 'legs',  name: 'Platelegs', icon: '👖', bars: 2, per: { def: 3, hp: 2 } },
     { key: 'boots',     slot: 'feet',  name: 'Boots',     icon: '🥾', bars: 1, per: { def: 1, hp: 1 } },
     { key: 'shield',    slot: 'lhand', name: 'Shield',    icon: '🛡️', bars: 2, per: { def: 3, hp: 2 } },
-    { key: 'scimitar',  slot: 'rhand', name: 'Scimitar',  icon: '⚔️', bars: 2, per: { maxHit: 2, acc: 0.04 } }
+    { key: 'dagger',    slot: 'rhand', name: 'Dagger',    icon: '🗡️', bars: 1, per: { maxHit: 1, acc: 0.07 }, speed: 0.62 },
+    { key: 'scimitar',  slot: 'rhand', name: 'Scimitar',  icon: '⚔️', bars: 2, per: { maxHit: 3, acc: 0.03 }, speed: 1.0 },
+    { key: 'greatsword',slot: 'rhand', name: 'Greatsword',icon: '🔪', bars: 4, per: { maxHit: 6, acc: 0.0 },  speed: 1.7 }
   ];
   // ore -> bar produced when smelted (each ore makes its own metal bar)
   var SMELT = { ore: 'bronzebar', iron: 'ironbar', silver: 'silverbar', pore: 'goldbar' };
@@ -108,6 +113,7 @@ var Skills = (function () {
         // each gear TYPE has its own icon (helmet/sword/…) so pieces are
         // distinguishable at a glance; the metal tint still marks the tier.
         GEAR[id] = { id: id, name: M.name + ' ' + T.name, icon: T.icon, tint: M.color, slot: T.slot, bonus: bonus };
+        if (T.speed) GEAR[id].speed = T.speed;   // weapon attack-speed (archetype feel)
         SMITH_RECIPES.push({ id: id, name: M.name + ' ' + T.name, icon: T.icon, tint: M.color,
           bar: M.bar, barName: M.name + ' Bar', bars: T.bars, level: M.level });
       }
@@ -130,6 +136,7 @@ var Skills = (function () {
     if (why) { if (window.UI) UI.showActionText(why); return false; }
     for (var b = 0; b < r.bars; b++) removeItem(r.bar);   // frees slots, so the result always fits
     addItem(r.id);
+    if (r.id.indexOf('_greatsword') >= 0) Game.forgedRitual = true;   // the co-op "ritual weapon" (Forge sigil)
     addXp('smithing', 8 + r.level * 4);
     if (window.UI) UI.showActionText('You smith a ' + r.name + '.');
     Game.log.push('smith:' + r.id);
@@ -272,6 +279,8 @@ var Skills = (function () {
   var WOOD_SET = { log: 1, palmwood: 1, blog: 1, elderwood: 1 };
   // is the equipped right-hand weapon a ranged weapon (bow)?
   function isRanged() { var g = GEAR[Game.equipment && Game.equipment.rhand]; return !!(g && g.ranged); }
+  // attack-speed multiplier of the equipped weapon (lower = faster; 1 = default)
+  function weaponSpeed() { var g = GEAR[Game.equipment && Game.equipment.rhand]; return (g && g.speed) ? g.speed : 1; }
 
   // Drop an item out of slot `index`.
   function dropItem(index) {
@@ -399,7 +408,7 @@ var Skills = (function () {
     doWoodcut: doWoodcut, doMine: doMine, doFish: doFish,
     equipFromInventory: equipFromInventory, unequip: unequip,
     eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
-    bury: bury, isBones: isBones, craftBow: craftBow, isRanged: isRanged,
+    bury: bury, isBones: isBones, craftBow: craftBow, isRanged: isRanged, weaponSpeed: weaponSpeed,
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
     smith: smith, canSmith: canSmith, smithRecipe: smithRecipe, countItem: countItem,
     appearance: appearance,
