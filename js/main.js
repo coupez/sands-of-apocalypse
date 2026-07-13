@@ -115,6 +115,11 @@ var Main = (function () {
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         if (!Player.isDead) Player.dodge();
       }
+      // debug: press "2" to grant the Heart of the Obelisk
+      if (e.key === '2' && window.Skills) {
+        Skills.addItem('orb');
+        if (window.UI) UI.showActionText('[debug] The Heart of the Obelisk appears in your pack.');
+      }
     });
     var btn = document.getElementById('respawn-btn');
     if (btn) btn.addEventListener('click', function () {
