@@ -50,7 +50,7 @@ let hostId = null;          // first player to join — chooses the game mode
 let mode = "pending";       // 'pending' | 'versus' | 'coop' (write-once per session)
 let coop = { sigils: {}, ritualReady: false, boss: null, builds: [], won: false };   // shared co-op state
 let versus = { altars: {}, scores: {} };   // versus: altar key -> ownerId; id -> points
-const ALTAR_KEYS = ["bandit", "merchant"];
+const ALTAR_KEYS = ["bandit", "merchant", "rock"];
 
 // ============================================================
 // Authoritative shared world: enemies + resource depletion.

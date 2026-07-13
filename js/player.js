@@ -286,7 +286,7 @@ var Player = (function () {
           } else {
             state = 'acting';
             var newKind = ent.type === 'tree' ? 'chop'
-                        : ent.type === 'rock' ? 'mine'
+                        : (ent.type === 'rock' || ent.type === 'crystal') ? 'mine'
                         : ent.type === 'fishpool' ? 'fish' : 'attack';
             if (newKind !== actionKind) { actionTimer = 0; swingFired = false; } // fresh swing on a new target/action
             actionKind = newKind;
@@ -317,7 +317,7 @@ var Player = (function () {
   // fires the actual game effect exactly at the swing's impact frame
   function fireActionEffect(ent) {
     if (actionKind === 'chop') { Skills.doWoodcut(ent); SFX.chop(); }
-    else if (actionKind === 'mine') { Skills.doMine(ent); SFX.mine(); }
+    else if (actionKind === 'mine') { if (ent.type === 'crystal' && window.Entities) Entities.mineCrystal(ent); else Skills.doMine(ent); SFX.mine(); }
     else if (actionKind === 'fish') { Skills.doFish(ent); SFX.mine(); }
     else if (actionKind === 'attack') {
       if (!canAttack()) { if (window.UI) UI.showActionText('You are too full to attack.'); return; }

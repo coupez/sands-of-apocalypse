@@ -15,7 +15,7 @@ var World = (function () {
 
   // The central altar-ruin is a raised rectangular platform with stairs on the
   // four cardinal sides. Terrain height lifts the player onto it via the ramps.
-  var PLAZA = { half: 9, height: 1.15, stairRun: 4.5, stairHalf: 4 };
+  var PLAZA = { half: 10, height: 1.7, stairRun: 5.5, stairHalf: 4.5 };
   function plazaHeightAt(x, z) {
     var ax = Math.abs(x), az = Math.abs(z);
     if (ax <= PLAZA.half && az <= PLAZA.half) return PLAZA.height;   // platform top

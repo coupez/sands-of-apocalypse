@@ -16,6 +16,7 @@ var Entities = (function () {
   var rats = [], birds = [];   // ambient critters (attackable rats) + flying birds
   var builds = [];             // co-op constructables (ballista, …)
   var essAltars = [];          // versus: essence altars on the central platform
+  var crystals = [];           // resonant crystal pillars (Lv12 mining → rock essence)
 
   // No roaming enemies in the open field — combat lives at the E/W bandit camps
   // (and rats). Enemies still spawn hidden so the self-test + server indices align.
@@ -30,12 +31,12 @@ var Entities = (function () {
     { name: 'Ancient Palm', reqLevel: 7,  itemId: 'blog',      xp: 70,  style: 'palm', bark: 0x5a3a1c, frond: 0x4a7a2a, dates: 0xc86a2a, h: [6.0, 7.5] },
     { name: 'Elder Palm',   reqLevel: 10, itemId: 'elderwood', xp: 120, style: 'palm', bark: 0x4a2f18, frond: 0x2e8f3a, dates: 0xffd24a, h: [8.5, 10.5], scale: 1.15 }
   ];
-  // Each vein has its own distinct silhouette (built in makeRock), not just a recolour.
+  // Each vein: a rock tinted to its ore, studded with ore-coloured diamond crystals.
   var ROCK_TIERS = [
-    { name: 'Copper Vein', reqLevel: 1,  itemId: 'ore',    xp: 30,  ore: 0xd07a30, rock: 0x9a9aa2 },  // silvery rock, copper flecks
-    { name: 'Iron Vein',   reqLevel: 4,  itemId: 'iron',   xp: 55,  ore: 0x5a5a64, rock: 0x8a7c6a },  // lumpy boulder, dark iron
-    { name: 'Silver Vein', reqLevel: 7,  itemId: 'silver', xp: 90,  ore: 0xeaeaf2, rock: 0x8890a0 },  // crystal spikes
-    { name: 'Gold Vein',   reqLevel: 10, itemId: 'pore',   xp: 140, ore: 0xffd24a, rock: 0x8a6a3c }   // glowing gold nuggets
+    { name: 'Copper Vein', reqLevel: 1,  itemId: 'ore',    xp: 30,  ore: 0xe08a3a, rock: 0x7a4a26 },  // orange
+    { name: 'Iron Vein',   reqLevel: 4,  itemId: 'iron',   xp: 55,  ore: 0x8a9098, rock: 0x4a4c52 },  // steel grey
+    { name: 'Silver Vein', reqLevel: 7,  itemId: 'silver', xp: 90,  ore: 0xeaeef6, rock: 0x8a94a6 },  // white-blue
+    { name: 'Gold Vein',   reqLevel: 10, itemId: 'pore',   xp: 140, ore: 0xffd24a, rock: 0x8a6a3c }   // gold
   ];
   // Oasis fishing spots, gated by Fishing level (ids kept: shrimp/lobster/whale).
   var FISH_TIERS = [
@@ -176,60 +177,27 @@ var Entities = (function () {
     var T = ROCK_TIERS[tierIdx];
     var g = new THREE.Group();
     var rockMat = new THREE.MeshStandardMaterial({ color: T.rock, roughness: 1, flatShading: true });
-    var veins = new THREE.Group(), body, oreMat, a, r, i;
-
-    if (tierIdx === 0) {
-      // Copper — a jagged SILVERY rock studded with copper crystal flecks
-      oreMat = new THREE.MeshStandardMaterial({ color: 0x3a2410, emissive: T.ore, emissiveIntensity: 0.85, roughness: 0.5, metalness: 0.4, flatShading: true });
-      body = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(1.0, 1.4), 0), rockMat);
-      body.position.y = 0.7; body.rotation.set(Utils.randRange(0, 1), Utils.randRange(0, 3), Utils.randRange(0, 1)); g.add(body);
-      for (i = 0; i < 7; i++) {
-        var fleck = new THREE.Mesh(new THREE.OctahedronGeometry(Utils.randRange(0.12, 0.22), 0), oreMat);
-        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.5, 1.0);
-        fleck.position.set(Math.cos(a) * r, 0.7 + Utils.randRange(-0.3, 0.6), Math.sin(a) * r);
-        fleck.rotation.set(Utils.rand(), Utils.rand(), Utils.rand());
-        veins.add(fleck);
-      }
-    } else if (tierIdx === 1) {
-      // Iron — a big, rounded, LUMPY boulder with dark metallic streaks
-      body = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(1.3, 1.7), 1), rockMat);
-      body.position.y = 0.9; body.scale.set(1.2, 0.9, 1.1); body.rotation.y = Utils.randRange(0, 3); g.add(body);
-      for (i = 0; i < 5; i++) { // bumps → boulder texture
-        var lump = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(0.3, 0.55), 0), rockMat);
-        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.7, 1.2);
-        lump.position.set(Math.cos(a) * r, 0.9 + Utils.randRange(-0.4, 0.5), Math.sin(a) * r);
-        lump.rotation.set(Utils.rand(), Utils.rand(), Utils.rand()); g.add(lump);
-      }
-      oreMat = new THREE.MeshStandardMaterial({ color: T.ore, roughness: 0.55, metalness: 0.7, flatShading: true });
-      for (i = 0; i < 5; i++) {
-        var chunk = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(0.18, 0.3), 0), oreMat);
-        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.5, 1.1);
-        chunk.position.set(Math.cos(a) * r, 0.9 + Utils.randRange(-0.3, 0.6), Math.sin(a) * r);
-        veins.add(chunk);
-      }
-    } else if (tierIdx === 2) {
-      // Silver — a cluster of bright crystal SPIKES on a low rock base
-      body = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(0.9, 1.2), 0), rockMat);
-      body.position.y = 0.5; body.scale.y = 0.65; g.add(body);
-      oreMat = new THREE.MeshStandardMaterial({ color: 0x2a3040, emissive: T.ore, emissiveIntensity: 0.55, roughness: 0.2, metalness: 0.85, flatShading: true });
-      for (i = 0; i < 7; i++) {
-        var spike = new THREE.Mesh(new THREE.ConeGeometry(Utils.randRange(0.11, 0.2), Utils.randRange(0.7, 1.4), 5), oreMat);
-        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.05, 0.6);
-        spike.position.set(Math.cos(a) * r, 0.75 + Utils.randRange(0, 0.35), Math.sin(a) * r);
-        spike.rotation.z = Utils.randRange(-0.45, 0.45); spike.rotation.x = Utils.randRange(-0.45, 0.45);
-        veins.add(spike);
-      }
-    } else {
-      // Gold — a dark rock cracked open with big GLOWING gold nuggets
-      body = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(1.1, 1.5), 0), rockMat);
-      body.position.y = 0.75; body.rotation.set(Utils.randRange(0, 1), Utils.randRange(0, 3), Utils.randRange(0, 1)); g.add(body);
-      oreMat = new THREE.MeshStandardMaterial({ color: 0x4a3410, emissive: T.ore, emissiveIntensity: 0.95, roughness: 0.3, metalness: 0.9, flatShading: true });
-      for (i = 0; i < 6; i++) {
-        var nugget = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(0.2, 0.34), 0), oreMat);
-        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.4, 0.95);
-        nugget.position.set(Math.cos(a) * r, 0.75 + Utils.randRange(-0.2, 0.6), Math.sin(a) * r);
-        veins.add(nugget);
-      }
+    // ore diamonds: dark core lit by the ore colour, faceted + a little shiny
+    var oreMat = new THREE.MeshStandardMaterial({ color: 0x181410, emissive: T.ore, emissiveIntensity: 0.85, roughness: 0.28, metalness: 0.55, flatShading: true });
+    var veins = new THREE.Group(), a, r, i;
+    // a chunky rock body tinted toward its ore
+    var body = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(1.05, 1.45), 0), rockMat);
+    body.position.y = 0.75; body.rotation.set(Utils.randRange(0, 1), Utils.randRange(0, 3), Utils.randRange(0, 1)); g.add(body);
+    // a couple of lumps for silhouette variety
+    for (i = 0; i < 3; i++) {
+      var lump = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(0.32, 0.55), 0), rockMat);
+      a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.7, 1.15);
+      lump.position.set(Math.cos(a) * r, 0.75 + Utils.randRange(-0.4, 0.4), Math.sin(a) * r);
+      lump.rotation.set(Utils.rand(), Utils.rand(), Utils.rand()); g.add(lump);
+    }
+    // ore-coloured DIAMONDS (octahedra) plastered all over it — more on richer veins
+    var nDia = 12 + tierIdx * 2;
+    for (i = 0; i < nDia; i++) {
+      var dia = new THREE.Mesh(new THREE.OctahedronGeometry(Utils.randRange(0.16, 0.30), 0), oreMat);
+      a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.5, 1.15);
+      dia.position.set(Math.cos(a) * r, 0.75 + Utils.randRange(-0.45, 0.62), Math.sin(a) * r);
+      dia.rotation.set(Utils.rand(), Utils.rand(), Utils.rand());
+      veins.add(dia);
     }
 
     g.add(veins);
@@ -620,29 +588,30 @@ var Entities = (function () {
     var g = new THREE.Group();
     var stone = new THREE.MeshStandardMaterial({ color: 0xcaa96a, roughness: 1, flatShading: true });
     var dark = new THREE.MeshStandardMaterial({ color: 0x9a7a44, roughness: 1, flatShading: true });
-    var base = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.5, 2.6), dark); base.position.y = 0.25; g.add(base);
-    var tier = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.4, 2.0), stone); tier.position.y = 0.65; g.add(tier);
-    var slab = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.35, 1.7), dark); slab.position.y = 1.0; g.add(slab);
+    var s0 = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.6, 6.2), dark); s0.position.y = 0.3; g.add(s0);
+    var s1 = new THREE.Mesh(new THREE.BoxGeometry(5.1, 0.6, 5.1), stone); s1.position.y = 0.9; g.add(s1);
+    var s2 = new THREE.Mesh(new THREE.BoxGeometry(4.1, 0.6, 4.1), dark); s2.position.y = 1.5; g.add(s2);
+    var table = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.5, 3.3), stone); table.position.y = 2.05; g.add(table);
     for (var c = 0; c < 4; c++) { // corner horns
-      var horn = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.7, 4), stone);
-      horn.position.set((c % 2 ? 1 : -1) * 1.3, 1.4, (c < 2 ? 1 : -1) * 0.6); g.add(horn);
+      var horn = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.1, 4), stone);
+      horn.position.set((c % 2 ? 1 : -1) * 1.4, 2.65, (c < 2 ? 1 : -1) * 1.4); g.add(horn);
     }
-    var socket = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 1.0),
+    var socket = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.14, 2.1),
       new THREE.MeshStandardMaterial({ color: 0x2a2036, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.4 }));
-    socket.position.y = 1.22; g.add(socket);
-    var light = new THREE.PointLight(0x8a5ad0, 0, 22, 2); light.position.set(0, 3, 0); g.add(light);
+    socket.position.y = 2.36; g.add(socket);
+    var light = new THREE.PointLight(0x8a5ad0, 0, 26, 2); light.position.set(0, 4, 0); g.add(light);
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
     markOccluder(g);
     obelisk = { type: 'obelisk', name: 'The Central Altar', mesh: g, position: g.position,
-      active: true, interactRange: 3.0, socket: socket, cap: slab, light: light, done: false, t: 0 };
+      active: true, interactRange: 3.8, socket: socket, cap: table, light: light, done: false, t: 0 };
     tag(g, obelisk);
     return obelisk;
   }
 
   // ---------- essence altars (versus: place an essence → score + lock) ----------
-  var ESS_COLOR = { essence: 0xff3a4a, messence: 0xffd24a };
+  var ESS_COLOR = { essence: 0xff3a4a, messence: 0xffd24a, rockessence: 0x9a5adf };
   function makeEssenceAltar(key, x, z, essId, name) {
     var g = new THREE.Group();
     var stone = new THREE.MeshStandardMaterial({ color: 0xbfa06a, roughness: 1, flatShading: true });
@@ -691,6 +660,51 @@ var Entities = (function () {
     Game.log.push('altar:claimed:' + key + ':' + (mine ? 'me' : 'rival'));
   }
 
+  // ---------- resonant crystal pillar (Lv12 mining → Essence of the Rock) ----------
+  function makeCrystalPillar(x, z) {
+    var g = new THREE.Group();
+    var crystalMat = new THREE.MeshStandardMaterial({ color: 0x2a1a4a, emissive: 0x9a5adf, emissiveIntensity: 1.15, roughness: 0.2, metalness: 0.4, flatShading: true, transparent: true, opacity: 0.92 });
+    var baseRock = new THREE.MeshStandardMaterial({ color: 0x3a3040, roughness: 1, flatShading: true });
+    var base = new THREE.Mesh(new THREE.DodecahedronGeometry(1.7, 0), baseRock); base.position.y = 0.6; base.scale.y = 0.6; g.add(base);
+    var shards = new THREE.Group();
+    for (var i = 0; i < 8; i++) {
+      var h = Utils.randRange(3.0, 6.5);
+      var sh = new THREE.Mesh(new THREE.ConeGeometry(Utils.randRange(0.34, 0.62), h, 5), crystalMat);
+      var a = Utils.randRange(0, Math.PI * 2), r = Utils.randRange(0.1, 1.1);
+      sh.position.set(Math.cos(a) * r, 0.8 + h / 2, Math.sin(a) * r);
+      sh.rotation.z = Utils.randRange(-0.3, 0.3); sh.rotation.x = Utils.randRange(-0.3, 0.3);
+      shards.add(sh);
+    }
+    g.add(shards);
+    var light = new THREE.PointLight(0x9a5adf, 2.6, 20, 2); light.position.y = 3.2; g.add(light);
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g); markOccluder(g);
+    var ent = { type: 'crystal', name: 'Resonant Crystal', reqLevel: 12, mesh: g, shards: shards, light: light,
+      position: g.position, active: true, interactRange: 2.8, breaks: 0, maxBreaks: 6 };
+    tag(g, ent); crystals.push(ent);
+    return ent;
+  }
+  // one mining swing on the crystal — a random chance to crack it further;
+  // six cracks shatter it and free the Essence of the Rock.
+  function mineCrystal(ent) {
+    if (!ent || !ent.active) return;
+    if (Skills.data.mining.level < ent.reqLevel) { if (window.UI) UI.showActionText('You need level ' + ent.reqLevel + ' Mining to work the ' + ent.name + '.'); return; }
+    if (Utils.rand() < 0.5) return;   // sometimes the pick just glances off — no crack
+    ent.breaks++;
+    Skills.addXp('mining', 70);
+    var frac = Math.max(0.18, 1 - ent.breaks / ent.maxBreaks);
+    ent.shards.scale.setScalar(frac);
+    if (ent.light) ent.light.intensity = 2.6 * frac;
+    if (ent.breaks >= ent.maxBreaks) {
+      ent.active = false; untag(ent);
+      ent.shards.visible = false; if (ent.light) ent.light.intensity = 0;
+      makeDrop(ent.position.x + 1.6, ent.position.z, 'rockessence', 'Essence of the Rock');
+      if (window.UI) UI.showActionText('The ' + ent.name + ' shatters — the Essence of the Rock breaks free!');
+    } else if (window.UI) UI.showActionText('The crystal cracks… (' + ent.breaks + '/' + ent.maxBreaks + ')');
+    Game.log.push('crystal:mine:' + ent.breaks);
+  }
+
   // ---------- raised ceremony platform (Egyptian altar-ruin with 4 stairs) ----------
   function makeCeremonyPlaza() {
     var P = World.PLAZA, half = P.half, H = P.height;
@@ -713,22 +727,29 @@ var Entities = (function () {
         box.receiveShadow = true; g.add(box);
       }
     });
-    // ring of broken columns on the platform top (gaps at the 4 stair openings)
-    var cols = 16;
+    // Parthenon-style colonnade: uniform fluted columns around the full edge,
+    // capped by an architrave beam ring. Gaps left at the 4 stair openings.
+    var cols = 24, colH = 6.0, cr = half - 0.9;
     for (var i = 0; i < cols; i++) {
       var a = (i / cols) * Math.PI * 2;
-      if (Math.abs(Math.cos(a)) > 0.92 || Math.abs(Math.sin(a)) > 0.92) continue;   // leave the stairs clear
-      var cr = half - 1.0, cx = Math.cos(a) * cr, cz = Math.sin(a) * cr, toppled = (i % 5 === 0);
-      var colG = new THREE.Group(), h = toppled ? Utils.randRange(2.2, 3.2) : Utils.randRange(3.5, 6.0);
-      var drums = Math.max(2, Math.round(h / 1.4));
-      for (var dd = 0; dd < drums; dd++) {
-        var drum = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, (h / drums) * 0.98, 12), sand);
-        drum.position.y = (dd + 0.5) * (h / drums); drum.castShadow = true; colG.add(drum);
-      }
-      if (!toppled) { var capB = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.45, 1.3), sandDark); capB.position.y = h + 0.2; capB.castShadow = true; colG.add(capB); }
+      if (Math.abs(Math.cos(a)) > 0.95 || Math.abs(Math.sin(a)) > 0.95) continue;   // leave the stairs clear
+      var cx = Math.cos(a) * cr, cz = Math.sin(a) * cr;
+      var colG = new THREE.Group();
+      var cbase = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.3, 1.05), sandDark); cbase.position.y = 0.15; colG.add(cbase);
+      var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.52, colH, 12), sand); shaft.position.y = 0.3 + colH / 2; colG.add(shaft);
+      var capB = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.4, 1.15), sandDark); capB.position.y = 0.3 + colH + 0.2; colG.add(capB);
       colG.position.set(cx, H, cz);
-      if (toppled) { colG.rotation.z = (Utils.rand() > 0.5 ? 1 : -1) * Math.PI / 2; colG.rotation.y = a; colG.position.y = H + 0.5; }
-      g.add(colG); if (!toppled) markOccluder(colG);
+      colG.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+      g.add(colG); markOccluder(colG);
+    }
+    // architrave: a beam ring sitting on the capitals (segments, gaps over stairs)
+    var beamY = H + 0.3 + colH + 0.6, beamSegs = 48;
+    for (var bI = 0; bI < beamSegs; bI++) {
+      var ba = (bI / beamSegs) * Math.PI * 2;
+      if (Math.abs(Math.cos(ba)) > 0.95 || Math.abs(Math.sin(ba)) > 0.95) continue;
+      var beam = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.7, 0.55), sandDark);
+      beam.position.set(Math.cos(ba) * cr, beamY, Math.sin(ba) * cr);
+      beam.rotation.y = -ba + Math.PI / 2; beam.castShadow = true; g.add(beam);
     }
     // weathered statues in two corners, facing the centre
     [[half - 1.4, half - 1.4], [-(half - 1.4), -(half - 1.4)]].forEach(function (p) {
@@ -1417,9 +1438,10 @@ var Entities = (function () {
     // --- ENDGAME: the ceremony plaza (Egyptian ruins) with the Obelisk + Altar ---
     var PLAZA_R = makeCeremonyPlaza();
     makeObelisk(0, 0); placed.push({ x: 0, z: 0 });
-    // versus essence altars on the raised platform (east = bandit, west = merchant)
-    makeEssenceAltar('bandit', 5.5, 0, 'essence', 'Altar of the Bandit');
-    makeEssenceAltar('merchant', -5.5, 0, 'messence', 'Altar of the Merchant');
+    // versus essence altars on the raised platform (bandit E, merchant W, rock N)
+    makeEssenceAltar('bandit', 6, 0, 'essence', 'Altar of the Bandit');
+    makeEssenceAltar('merchant', -6, 0, 'messence', 'Altar of the Merchant');
+    makeEssenceAltar('rock', 0, -6, 'rockessence', 'Altar of the Rock');
     stations.push(makeStation(14, 8, 'altar')); placed.push({ x: 14, z: 8 });
     var clearR = PLAZA_R + 6;   // resources / scenery stay out of the plaza
 
@@ -1427,6 +1449,8 @@ var Entities = (function () {
     var BC = World.BANDIT_CAMPS;
     makeBanditCamp(BC.east.x, BC.east.z, 'east'); placed.push({ x: BC.east.x, z: BC.east.z });
     makeBanditCamp(BC.west.x, BC.west.z, 'west'); placed.push({ x: BC.west.x, z: BC.west.z });
+    // a resonant crystal pillar rises behind the east bandit camp (Lv12 mining)
+    makeCrystalPillar(BC.east.x + 11, BC.east.z + 6); placed.push({ x: BC.east.x + 11, z: BC.east.z + 6 });
 
     // Resources spread evenly around the whole field in concentric rings, richest
     // nearest the plaza. Totals 11 trees / 8 rocks — mirrored in server.js RES.
@@ -1713,6 +1737,7 @@ var Entities = (function () {
     updateCritters(dt, t);
     updateBuilds(dt);
     for (i = 0; i < essAltars.length; i++) { var alt = essAltars[i]; if (alt.token && alt.token.visible) { alt.token.rotation.y += dt * 1.6; alt.token.position.y = 2.0 + Math.sin(t * 3 + i) * 0.1; } }
+    for (i = 0; i < crystals.length; i++) { var cr = crystals[i]; if (cr.active && cr.light) cr.light.intensity = (2.6 * Math.max(0.18, 1 - cr.breaks / cr.maxBreaks)) * (0.8 + 0.2 * Math.abs(Math.sin(t * 4 + i))); }
     // lift the roof off whichever building the local player is standing inside
     // (kept from the parallel branch; no-op while the town uses camps, not buildings)
     var pl = Game.player;
@@ -1880,6 +1905,7 @@ var Entities = (function () {
     sendCaravan: sendCaravan, merchantBusy: merchantBusy, sellToMerchant: sellToMerchant,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
     useEssenceAltar: useEssenceAltar, onAltarClaimed: onAltarClaimed, get essAltars() { return essAltars; },
+    mineCrystal: mineCrystal, get crystals() { return crystals; },
     pickupDrop: pickupDrop, spawnRaid: spawnRaid, spawnImps: spawnImps, clearRaiders: clearRaiders, tagExternal: tagExternal, untagExternal: untagExternal,
     spawnBuild: spawnBuild,
     get bandits() { return bandits; }, get banditCamps() { return banditCamps; }, get builds() { return builds; },

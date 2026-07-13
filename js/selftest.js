@@ -617,7 +617,9 @@ var SelfTest = (function () {
 
       // -- versus: essence altars (place → score a point + lock out the rival) --
       Game.mode = 'versus';
-      assert('two essence altars stand on the central platform', Entities.essAltars.length === 2);
+      assert('three essence altars stand on the central platform', Entities.essAltars.length === 3);
+      assert('the Altar of the Rock accepts the Essence of the Rock',
+        !!Entities.essAltars.filter(function (a) { return a.key === 'rock' && a.essId === 'rockessence'; })[0]);
       var bAltar = Entities.essAltars.filter(function (a) { return a.key === 'bandit'; })[0];
       assert('the bandit altar awaits a Bandit Essence', !!bAltar && bAltar.essId === 'essence');
       clearBag();
@@ -632,6 +634,22 @@ var SelfTest = (function () {
       Entities.useEssenceAltar(bAltar);
       assert('a claimed altar rejects further placements', Skills.hasItem('essence') === true);
       Game.mode = 'coop';
+
+      // -- resonant crystal pillar: Lv12 mining, 6 cracks → Essence of the Rock --
+      var crystal = Entities.crystals[0];
+      assert('a resonant crystal pillar rises behind the east camp', !!crystal && crystal.reqLevel === 12);
+      if (crystal) {
+        var breaks0 = crystal.breaks;
+        Skills.data.mining.xp = 0; Skills.data.mining.level = 1;
+        Entities.mineCrystal(crystal);   // mining level 1 → rejected
+        assert('the crystal needs Lv12 Mining', crystal.breaks === breaks0);
+        Skills.addXp('mining', 9999999);
+        assert('Mining maxes at level 12', Skills.data.mining.level === 12);
+        for (var ci = 0; ci < 300 && crystal.active; ci++) Entities.mineCrystal(crystal);
+        assert('six cracks shatter the crystal', crystal.breaks >= crystal.maxBreaks && crystal.active === false);
+        assert('the shattered crystal drops the Essence of the Rock',
+          Entities.drops.some(function (d) { return d.itemId === 'rockessence'; }));
+      }
 
     } catch (err) {
       assert('NO EXCEPTIONS', false, (err && err.stack) ? err.stack : String(err));

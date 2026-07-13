@@ -41,6 +41,7 @@ var Skills = (function () {
     essence:   { id: 'essence',   name: 'Bandit Essence',   icon: '🩸' },
     bones:     { id: 'bones',     name: 'Pile of Bones',    icon: '🦴' },
     messence:  { id: 'messence',  name: 'Essence of the Merchant', icon: '💰' },
+    rockessence:{ id: 'rockessence', name: 'Essence of the Rock', icon: '🔮' },
     orb:       { id: 'orb',       name: 'Heart of the Obelisk', icon: '❤️' }
   };
 

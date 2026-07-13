@@ -21,6 +21,7 @@ var Main = (function () {
     if (!CURSORS.tree) {
       CURSORS.tree = emojiCursor('🪓', 4, 4);
       CURSORS.rock = emojiCursor('⛏️', 4, 4);
+      CURSORS.crystal = CURSORS.rock;
       CURSORS.fishpool = emojiCursor('🎣', 4, 4);
       CURSORS.enemy = emojiCursor('⚔️', 4, 4);
       CURSORS.drop = emojiCursor('🫳', 4, 4);
@@ -35,6 +36,7 @@ var Main = (function () {
     switch (ref.type) {
       case 'tree': return 'Chop ' + ref.name;
       case 'rock': return 'Mine ' + ref.name;
+      case 'crystal': return 'Mine the ' + ref.name + ' (Lv ' + ref.reqLevel + ')';
       case 'fishpool': return 'Fish ' + ref.name;
       case 'chest': return 'Open ' + (ref.name || 'chest');
       case 'station': return 'Use ' + ref.name + (ref.lit === false && (ref.kind === 'furnace' || ref.kind === 'campfire') ? ' (unlit)' : '');
@@ -156,6 +158,7 @@ var Main = (function () {
     var s = Skills.data;
     if (ref.type === 'tree' && s.woodcutting.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Woodcutting for ' + ref.name + '.';
     if (ref.type === 'rock' && s.mining.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Mining for ' + ref.name + '.';
+    if (ref.type === 'crystal' && s.mining.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Mining to work the ' + ref.name + '.';
     if (ref.type === 'fishpool' && s.fishing.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Fishing for ' + ref.name + '.';
     if (ref.type === 'enemy' && s.attack.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Attack to fight the ' + ref.name + '.';
     return null;
