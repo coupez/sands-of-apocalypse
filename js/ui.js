@@ -10,6 +10,12 @@ var UI = (function () {
   var _targetTimer = null;
 
   function $(id) { return document.getElementById(id); }
+  function hex6(c) { return '#' + ('000000' + c.toString(16)).slice(-6); }
+  // an item's icon, tinted to its tier colour if it has one
+  function iconHtml(item) {
+    if (!item) return '';
+    return item.tint ? '<span style="color:' + hex6(item.tint) + '">' + item.icon + '</span>' : item.icon;
+  }
 
   function init() {
     el.hpFill = $('hp-fill');
@@ -110,7 +116,7 @@ var UI = (function () {
       var g = Game.equipment ? Skills.GEAR[Game.equipment[def.slot]] : null;
       if (g) {
         slot.className = 'equip-slot filled slot-' + def.slot;
-        slot.textContent = g.icon;
+        slot.innerHTML = iconHtml(g);
         slot.title = g.name + bonusText(g) + ' — click to unequip';
       } else {
         slot.className = 'equip-slot empty slot-' + def.slot;
@@ -217,7 +223,7 @@ var UI = (function () {
         count++;
         slot.className = 'inv-slot filled' + (i === poppedIndex ? ' pop' : '');
         var countTag = (item.count > 1) ? '<span class="count">' + item.count + '</span>' : '';
-        slot.innerHTML = countTag + item.icon;
+        slot.innerHTML = countTag + iconHtml(item);
         slot.title = item.name + (item.count > 1 ? ' x' + item.count : '') + ' — right-click for options';
       } else {
         slot.className = 'inv-slot';
@@ -303,7 +309,7 @@ var UI = (function () {
         var have = Skills.countItem(r.bar);
         var row = document.createElement('div');
         row.className = 'smith-item' + (why ? ' disabled' : '');
-        row.innerHTML = '<span class="si-icon">' + r.icon + '</span>' +
+        row.innerHTML = '<span class="si-icon">' + iconHtml(r) + '</span>' +
           '<span class="si-name">' + r.name + '</span>' +
           '<span class="si-cost">' + r.bars + '× ' + r.barName + ' (' + have + ')</span>' +
           '<span class="si-note">' + (why || 'Smith') + '</span>';

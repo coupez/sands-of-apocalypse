@@ -161,7 +161,7 @@ function snapshot() {
   const arr = [];
   for (const p of players.values()) {
     if (!p.ready) continue; // hasn't sent a position yet
-    arr.push({ id: p.id, name: p.name, color: p.color, x: p.x, z: p.z, ry: p.ry, state: p.state, hp: p.hp });
+    arr.push({ id: p.id, name: p.name, color: p.color, x: p.x, z: p.z, ry: p.ry, state: p.state, hp: p.hp, app: p.app || null });
   }
   const es = [];
   for (const e of enemies) {
@@ -248,6 +248,7 @@ const server = Bun.serve({
         if (Number.isFinite(msg.ry)) p.ry = msg.ry;
         if (typeof msg.state === "string") p.state = msg.state.slice(0, 12);
         if (Number.isFinite(msg.hp)) p.hp = msg.hp;
+        if (msg.app && typeof msg.app === "object") p.app = msg.app;   // equipped gear tiers
         p.ready = true;
       } else if (msg.type === "attack" && typeof msg.target === "string" && Number.isFinite(msg.dmg)) {
         // relay a PvP hit; victim's client is authoritative over its own HP

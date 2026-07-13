@@ -4,6 +4,8 @@
 
 var Player = (function () {
   var group, rightArm, leftArm, rightLeg, leftLeg, torso, head, weapon;
+  var matHead, matBody, matLegs, matWeapon;   // recoloured by equipped gear tier
+  var BASE_HEAD = 0x7fa86a, BASE_BODY = 0x3b4a2a, BASE_LEGS = 0x232b18;
   var SPEED = 6.2;
 
   var state = 'idle';           // idle | moving | acting | dead
@@ -41,17 +43,19 @@ var Player = (function () {
   function build(scene) {
     group = new THREE.Group();
 
-    var skin = new THREE.MeshStandardMaterial({ color: 0x7fa86a, roughness: 0.9, flatShading: true });
-    var cloth = new THREE.MeshStandardMaterial({ color: 0x3b4a2a, roughness: 1.0, flatShading: true });
-    var dark = new THREE.MeshStandardMaterial({ color: 0x232b18, roughness: 1.0, flatShading: true });
-    var metal = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.5, metalness: 0.6, flatShading: true });
+    matHead = new THREE.MeshStandardMaterial({ color: BASE_HEAD, roughness: 0.9, flatShading: true });
+    matBody = new THREE.MeshStandardMaterial({ color: BASE_BODY, roughness: 1.0, flatShading: true });
+    matLegs = new THREE.MeshStandardMaterial({ color: BASE_LEGS, roughness: 1.0, flatShading: true });
+    matWeapon = new THREE.MeshStandardMaterial({ color: 0xc87838, roughness: 0.4, metalness: 0.7, flatShading: true });
+    var skin = new THREE.MeshStandardMaterial({ color: BASE_HEAD, roughness: 0.9, flatShading: true }); // arms stay skin
+    var dark = new THREE.MeshStandardMaterial({ color: BASE_LEGS, roughness: 1.0, flatShading: true });  // hood
 
-    torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.5), cloth);
+    torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.5), matBody);
     torso.position.y = 1.5;
     group.add(torso);
 
-    // a ragged hood/head
-    head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), skin);
+    // head + hood
+    head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
     head.position.y = 2.35;
     group.add(head);
     var hood = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.6, 5), dark);
@@ -64,14 +68,18 @@ var Player = (function () {
     var rArmMesh = new THREE.Mesh(new THREE.BoxGeometry(0.26, 1.0, 0.26), skin);
     rArmMesh.position.y = -0.5;
     rightArm.add(rArmMesh);
-    // weapon held in right hand (a scrap pickaxe/wrench)
+    // weapon in the right hand — a scimitar, hidden until a weapon is equipped
     weapon = new THREE.Group();
-    var handle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.1, 0.1), dark);
-    handle.position.y = -0.4;
-    var headBar = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.16, 0.16), metal);
-    headBar.position.y = -0.95;
-    weapon.add(handle); weapon.add(headBar);
+    var handle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.5, 0.09),
+      new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 1, flatShading: true }));
+    handle.position.y = -0.25;
+    var guard = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.1, 0.12), matWeapon);
+    guard.position.y = -0.5;
+    var blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.3, 0.05), matWeapon);
+    blade.position.y = -1.2; blade.rotation.z = 0.25;   // slight curve
+    weapon.add(handle); weapon.add(guard); weapon.add(blade);
     weapon.position.set(0, -0.9, 0);
+    weapon.visible = false;
     rightArm.add(weapon);
     group.add(rightArm);
 
@@ -85,14 +93,14 @@ var Player = (function () {
     // legs
     rightLeg = new THREE.Group();
     rightLeg.position.set(0.24, 0.95, 0);
-    var rLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.95, 0.3), dark);
+    var rLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.95, 0.3), matLegs);
     rLegMesh.position.y = -0.47;
     rightLeg.add(rLegMesh);
     group.add(rightLeg);
 
     leftLeg = new THREE.Group();
     leftLeg.position.set(-0.24, 0.95, 0);
-    var lLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.95, 0.3), dark);
+    var lLegMesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.95, 0.3), matLegs);
     lLegMesh.position.y = -0.47;
     leftLeg.add(lLegMesh);
     group.add(leftLeg);
@@ -378,6 +386,17 @@ var Player = (function () {
   }
   function canAttack() { return eatLock <= 0 && !death.active && state !== 'dead'; }
 
+  // recolour the character to show equipped gear tiers (0/undefined = default)
+  function applyAppearance(app) {
+    if (!matHead) return;
+    app = app || {};
+    matHead.color.setHex(app.head || BASE_HEAD); matHead.metalness = app.head ? 0.6 : 0;
+    matBody.color.setHex(app.body || BASE_BODY); matBody.metalness = app.body ? 0.6 : 0;
+    matLegs.color.setHex(app.legs || BASE_LEGS); matLegs.metalness = app.legs ? 0.6 : 0;
+    if (app.weapon) { matWeapon.color.setHex(app.weapon); weapon.visible = true; }
+    else if (weapon) { weapon.visible = false; }
+  }
+
   function startDeath(onDone) {
     if (death.active) return;
     state = 'dead';
@@ -480,7 +499,7 @@ var Player = (function () {
     walkTo: walkTo, interactWith: interactWith, stop: stop,
     takeDamage: takeDamage, heal: heal, startDeath: startDeath, reset: reset,
     applyBonuses: applyBonuses, moveToCamp: moveToCamp,
-    startEating: startEating, canAttack: canAttack,
+    startEating: startEating, canAttack: canAttack, applyAppearance: applyAppearance,
     dodge: dodge_, isInvulnerable: isInvulnerable,
     get state() { return state; },
     get position() { return group ? group.position : new THREE.Vector3(); },

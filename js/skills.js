@@ -21,20 +21,20 @@ var Skills = (function () {
     palmwood: { id: 'palmwood', name: 'Palm Wood',   icon: '🪵' },
     blog:     { id: 'blog',     name: 'Ebony Log',   icon: '🟫' },
     elderwood:{ id: 'elderwood',name: 'Elderwood',   icon: '🟤' },
-    ore:      { id: 'ore',      name: 'Copper Ore',  icon: '🟠' },
-    iron:     { id: 'iron',     name: 'Iron Ore',    icon: '⬜' },
-    silver:   { id: 'silver',   name: 'Silver Ore',  icon: '⚪' },
-    pore:     { id: 'pore',     name: 'Gold Ore',    icon: '🟡' },
+    ore:      { id: 'ore',      name: 'Copper Ore',  icon: '◆', tint: 0xc87838 },
+    iron:     { id: 'iron',     name: 'Iron Ore',    icon: '◆', tint: 0x8a8f96 },
+    silver:   { id: 'silver',   name: 'Silver Ore',  icon: '◆', tint: 0xd8dce2 },
+    pore:     { id: 'pore',     name: 'Gold Ore',    icon: '◆', tint: 0xffd24a },
     shrimp:  { id: 'shrimp',  name: 'Raw Sardine',   icon: '🐟' },
     lobster: { id: 'lobster', name: 'Raw Crab',      icon: '🦀' },
     whale:   { id: 'whale',   name: 'Raw Perch',     icon: '🐠' },
     cshrimp: { id: 'cshrimp', name: 'Grilled Sardine', icon: '🍢' },
     clobster:{ id: 'clobster',name: 'Grilled Crab',    icon: '🦀' },
     cwhale:  { id: 'cwhale',  name: 'Grilled Perch',   icon: '🍖' },
-    bronzebar: { id: 'bronzebar', name: 'Bronze Bar', icon: '🟫' },
-    ironbar:   { id: 'ironbar',   name: 'Iron Bar',   icon: '⬛' },
-    silverbar: { id: 'silverbar', name: 'Silver Bar', icon: '⬜' },
-    goldbar:   { id: 'goldbar',   name: 'Gold Bar',   icon: '🟨' }
+    bronzebar: { id: 'bronzebar', name: 'Bronze Bar', icon: '▬', tint: 0xc87838 },
+    ironbar:   { id: 'ironbar',   name: 'Iron Bar',   icon: '▬', tint: 0x8a8f96 },
+    silverbar: { id: 'silverbar', name: 'Silver Bar', icon: '▬', tint: 0xd8dce2 },
+    goldbar:   { id: 'goldbar',   name: 'Gold Bar',   icon: '▬', tint: 0xffd24a }
   };
 
   // Only COOKED seafood is edible; eat raw and you gain nothing. Cook it at a
@@ -69,12 +69,15 @@ var Skills = (function () {
   };
 
   // ---- smithing: metals × gear types → generated equippable gear + recipes ----
+  // Each metal has a colour; that colour tags its ore, bar, gear icon, and the
+  // wearer's character mesh so other players can see your tier at a glance.
   var METALS = [
-    { key: 'bronze', name: 'Bronze', bar: 'bronzebar', level: 1 },
-    { key: 'iron',   name: 'Iron',   bar: 'ironbar',   level: 4 },
-    { key: 'silver', name: 'Silver', bar: 'silverbar', level: 7 },
-    { key: 'gold',   name: 'Gold',   bar: 'goldbar',   level: 10 }
+    { key: 'bronze', name: 'Bronze', bar: 'bronzebar', level: 1,  color: 0xc87838 },
+    { key: 'iron',   name: 'Iron',   bar: 'ironbar',   level: 4,  color: 0x8a8f96 },
+    { key: 'silver', name: 'Silver', bar: 'silverbar', level: 7,  color: 0xd8dce2 },
+    { key: 'gold',   name: 'Gold',   bar: 'goldbar',   level: 10, color: 0xffd24a }
   ];
+  var METAL_COLOR = { bronze: 0xc87838, iron: 0x8a8f96, silver: 0xd8dce2, gold: 0xffd24a };
   var GTYPES = [
     { key: 'helmet',    slot: 'head',  name: 'Helmet',    icon: '⛑️', bars: 1, per: { def: 2, hp: 1 } },
     { key: 'platebody', slot: 'body',  name: 'Platebody', icon: '🦺', bars: 3, per: { def: 4, hp: 3 } },
@@ -94,8 +97,9 @@ var Skills = (function () {
         var T = GTYPES[ti], bonus = {};
         for (var k in T.per) bonus[k] = (k === 'acc') ? +(T.per[k] * mult).toFixed(2) : T.per[k] * mult;
         var id = M.key + '_' + T.key;
-        GEAR[id] = { id: id, name: M.name + ' ' + T.name, icon: T.icon, slot: T.slot, bonus: bonus };
-        SMITH_RECIPES.push({ id: id, name: M.name + ' ' + T.name, icon: T.icon,
+        // one simple recoloured icon for all gear — the colour is the tier
+        GEAR[id] = { id: id, name: M.name + ' ' + T.name, icon: '■', tint: M.color, slot: T.slot, bonus: bonus };
+        SMITH_RECIPES.push({ id: id, name: M.name + ' ' + T.name, icon: '■', tint: M.color,
           bar: M.bar, barName: M.name + ' Bar', bars: T.bars, level: M.level });
       }
     }
@@ -271,9 +275,20 @@ var Skills = (function () {
     }
     return b;
   }
+  // The metal colours worn on head / body / legs / weapon (0 = none), used to
+  // recolour the character mesh (locally and for other players).
+  function tintOf(id) { var g = GEAR[id]; return (g && g.tint) ? g.tint : 0; }
+  function appearance() {
+    var e = Game.equipment || {};
+    return { head: tintOf(e.head), body: tintOf(e.body), legs: tintOf(e.legs), weapon: tintOf(e.rhand) };
+  }
+
   // Push HP bonus into the player's max HP (other bonuses are read live in combat).
   function applyEquipmentToStats() {
-    if (window.Player && Player.applyBonuses) Player.applyBonuses(equipBonus());
+    if (window.Player) {
+      if (Player.applyBonuses) Player.applyBonuses(equipBonus());
+      if (Player.applyAppearance) Player.applyAppearance(appearance());
+    }
     if (window.UI) UI.updateVitals();
   }
 
@@ -315,6 +330,7 @@ var Skills = (function () {
     eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
     smith: smith, canSmith: canSmith, smithRecipe: smithRecipe, countItem: countItem,
+    appearance: appearance,
     COOK: COOK, SMELT: SMELT, SMITH_RECIPES: SMITH_RECIPES,
     get data() { return data; },
     ITEMS: ITEMS, GEAR: GEAR, EQUIP_SLOTS: EQUIP_SLOTS, SKILL_ORDER: SKILL_ORDER
