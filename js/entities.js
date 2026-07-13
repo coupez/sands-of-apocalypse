@@ -9,8 +9,15 @@
 
 var Entities = (function () {
   var scene;
-  var trees = [], rocks = [], barrels = [], enemies = [], pools = [], chests = [], buildings = [];
+  var trees = [], rocks = [], barrels = [], enemies = [], pools = [], chests = [], buildings = [], stations = [], camps = [];
   var interactMeshes = [];
+
+  // Enemies are deactivated in the live game for now, but still spawned so the
+  // self-test's combat coverage and multiplayer index alignment stay intact.
+  // Flip ENEMIES_ENABLED back to true to bring them back into the live world.
+  var ENEMIES_ENABLED = false;
+  var enemiesLive = true;         // resolved in init(): live if enabled OR self-test
+
 
   // ---- tier definitions ----
   var TREE_TIERS = [
@@ -21,9 +28,11 @@ var Entities = (function () {
     { name: 'Ore Vein',       reqLevel: 1,  itemId: 'ore',  xp: 35, ore: 0x7cff3a, rock: 0x4a4a4a },
     { name: 'Plutonium Vein', reqLevel: 15, itemId: 'pore', xp: 70, ore: 0xb060ff, rock: 0x3a3040 }
   ];
-  var POOL_TIERS = [
-    { name: 'Toxic Pool',   reqLevel: 1,  itemId: 'fish',  xp: 30, color: 0x5cff6a },
-    { name: 'Glowing Pool', reqLevel: 20, itemId: 'bfish', xp: 65, color: 0x6affe0 }
+  // Fishing spots, gated by Fishing level: shrimp → lobster → whale.
+  var FISH_TIERS = [
+    { name: 'Shrimp Shoal', reqLevel: 1, itemId: 'shrimp',  xp: 15, color: 0xffb0a0, ring: 0.9 },
+    { name: 'Lobster Nest', reqLevel: 2, itemId: 'lobster', xp: 35, color: 0xff4a2a, ring: 1.4 },
+    { name: 'Whale Deep',   reqLevel: 3, itemId: 'whale',   xp: 90, color: 0x4ab6ff, ring: 2.1 }
   ];
   var ENEMY_TIERS = [
     { name: 'Mutant',     reqLevel: 1,  hp: 10, def: 1, maxHit: 3,  color: 0x5c7a3a, eye: 0xaaff33, scale: 1.0, aggro: 8.5 },
@@ -96,20 +105,178 @@ var Entities = (function () {
     tag(g, ent); return ent;
   }
 
-  // ---------- fishing pool ----------
-  function makeFishPool(x, z, tierIdx) {
-    var T = POOL_TIERS[tierIdx];
+  // ---------- fishing ponds (static, tiered) ----------
+  // A little pond you fish from the edge: water disc + colored tier ring +
+  // rising bubbles. Higher tiers are bigger and gated by Fishing level.
+  function makePond(x, z, tierIdx) {
+    var T = FISH_TIERS[tierIdx];
     var g = new THREE.Group();
-    var mat = new THREE.MeshStandardMaterial({ color: 0x0a1a0a, emissive: T.color, emissiveIntensity: 0.55, roughness: 0.3, transparent: true, opacity: 0.9 });
-    var disc = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.0, 0.2, 16), mat);
-    disc.position.y = 0.08; g.add(disc);
-    var rim = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.16, 6, 18), new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1, flatShading: true }));
-    rim.rotation.x = Math.PI / 2; rim.position.y = 0.12; g.add(rim);
+    var rad = 1.4 + tierIdx * 0.6;
+    var disc = new THREE.Mesh(
+      new THREE.CylinderGeometry(rad, rad * 0.85, 0.25, 20),
+      new THREE.MeshStandardMaterial({ color: 0x2f8fae, emissive: 0x1d5f74, emissiveIntensity: 0.4, roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.9 })
+    );
+    disc.position.y = 0.1; g.add(disc);
+    var rim = new THREE.Mesh(
+      new THREE.TorusGeometry(rad + 0.05, 0.14, 6, 20),
+      new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1, flatShading: true })
+    );
+    rim.rotation.x = Math.PI / 2; rim.position.y = 0.14; g.add(rim);
+    var ring = new THREE.Mesh(
+      new THREE.TorusGeometry(rad * 0.55, 0.09, 8, 20),
+      new THREE.MeshBasicMaterial({ color: T.color, transparent: true, opacity: 0.6 })
+    );
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.3; g.add(ring);
+    var pcount = 12, pgeo = new THREE.BufferGeometry(), arr = new Float32Array(pcount * 3);
+    for (var i = 0; i < pcount; i++) {
+      arr[i * 3] = Utils.randRange(-rad * 0.55, rad * 0.55);
+      arr[i * 3 + 1] = Utils.randRange(0.2, 1.2);
+      arr[i * 3 + 2] = Utils.randRange(-rad * 0.55, rad * 0.55);
+    }
+    pgeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    g.add(new THREE.Points(pgeo, new THREE.PointsMaterial({ color: T.color, size: 0.14, transparent: true, opacity: 0.85, depthWrite: false })));
     g.position.set(x, terrainY(x, z), z);
     scene.add(g);
     var ent = { type: 'fishpool', name: T.name, reqLevel: T.reqLevel, itemId: T.itemId, xp: T.xp,
-      mesh: g, position: g.position, active: true, interactRange: 2.6, disc: disc };
-    tag(g, ent); return ent;
+      mesh: g, position: g.position, active: true, interactRange: rad + 1.6,
+      parts: pgeo, ring: ring, phase: Utils.randRange(0, 6) };
+    tag(g, ent);
+    return ent;
+  }
+
+  // ---------- player camp (flag banner + nameplate) ----------
+  function makeCamp(x, z, num, color) {
+    var g = new THREE.Group();
+    var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 4.2, 6),
+      new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 1, flatShading: true }));
+    pole.position.y = 2.1; g.add(pole);
+    var flag = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.95, 0.07),
+      new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.35, roughness: 0.6, side: THREE.DoubleSide }));
+    flag.position.set(0.8, 3.5, 0); g.add(flag);
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+    var camp = { num: num, name: "Player " + num + "'s Camp",
+      colorHex: '#' + ('000000' + color.toString(16)).slice(-6),
+      mesh: g, position: g.position };
+    camps.push(camp);
+    return camp;
+  }
+
+  // ---------- crafting stations: campfire / furnace / anvil ----------
+  function makeStation(x, z, kind) {
+    var g = new THREE.Group();
+    var ent = { type: 'station', kind: kind, mesh: g, position: g.position,
+      active: true, interactRange: 2.6, lit: false };
+    if (kind === 'campfire') {
+      ent.name = 'Campfire';
+      var wood = new THREE.MeshStandardMaterial({ color: 0x5a3d1e, roughness: 1, flatShading: true });
+      for (var i = 0; i < 4; i++) {
+        var lg = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 1.3, 6), wood);
+        lg.rotation.z = Math.PI / 2; lg.rotation.y = i * Math.PI / 4; lg.position.y = 0.18; g.add(lg);
+      }
+      var pot = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.3, 0.5, 10),
+        new THREE.MeshStandardMaterial({ color: 0x24241f, roughness: 0.7, metalness: 0.3, flatShading: true }));
+      pot.position.y = 0.72; g.add(pot);
+    } else if (kind === 'furnace') {
+      ent.name = 'Furnace';
+      var stone = new THREE.MeshStandardMaterial({ color: 0x565049, roughness: 1, flatShading: true });
+      var body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 2.0, 1.5), stone); body.position.y = 1.0; g.add(body);
+      var chim = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.9, 0.55), stone); chim.position.set(0.45, 2.3, 0); g.add(chim);
+      var open = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.25),
+        new THREE.MeshStandardMaterial({ color: 0x0a0400, emissive: 0x000000, emissiveIntensity: 0, roughness: 1 }));
+      open.position.set(0, 0.85, 0.76); g.add(open);
+      ent.opening = open;
+    } else { // anvil
+      ent.name = 'Anvil';
+      var iron = new THREE.MeshStandardMaterial({ color: 0x2b2b30, roughness: 0.5, metalness: 0.6, flatShading: true });
+      var stump = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.7, 8),
+        new THREE.MeshStandardMaterial({ color: 0x4a3418, roughness: 1, flatShading: true }));
+      stump.position.y = 0.35; g.add(stump);
+      var abase = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.25, 0.9), iron); abase.position.y = 0.82; g.add(abase);
+      var atop = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.2, 1.15), iron); atop.position.y = 1.02; g.add(atop);
+      var horn = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 6), iron);
+      horn.rotation.z = -Math.PI / 2; horn.position.set(0.72, 1.02, 0); g.add(horn);
+    }
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+    tag(g, ent);
+    return ent;
+  }
+
+  // Light a campfire/furnace: add a flame + point light (and glow a furnace mouth).
+  function lightStation(ent) {
+    ent.lit = true;
+    var flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.32, 0.9, 6),
+      new THREE.MeshStandardMaterial({ color: 0xff7a1a, emissive: 0xff5a10, emissiveIntensity: 2.2, transparent: true, opacity: 0.9 })
+    );
+    if (ent.kind === 'furnace') { flame.position.set(0, 0.85, 0.66); }
+    else { flame.position.y = 0.4; }
+    ent.mesh.add(flame);
+    var light = new THREE.PointLight(0xff7a2a, 2.4, 11, 2); light.position.y = 1.2; ent.mesh.add(light);
+    ent.flame = flame; ent.fireLight = light; ent.baseFire = 2.4;
+    if (ent.kind === 'furnace' && ent.opening) {
+      ent.opening.material.emissive.setHex(0xff5a10);
+      ent.opening.material.emissiveIntensity = 1.6;
+    }
+  }
+
+  // Use a station with whatever is in the bag (item-data flow).
+  function useStation(ent) {
+    if (!window.Skills) return;
+    var msg;
+    if (ent.kind === 'furnace') {
+      if (!ent.lit) {
+        msg = (Skills.removeItem('log') || Skills.removeItem('blog'))
+          ? (lightStation(ent), 'You fire up the furnace.')
+          : 'You need a log to fire up the furnace.';
+      } else if (Skills.removeItem('ore') || Skills.removeItem('pore')) {
+        Skills.addItem('bar'); Skills.addXp('mining', 20); msg = 'You smelt a metal bar.';
+      } else { msg = 'You need ore to smelt (the furnace is lit).'; }
+    } else if (ent.kind === 'campfire') {
+      if (!ent.lit) {
+        msg = (Skills.removeItem('log') || Skills.removeItem('blog'))
+          ? (lightStation(ent), 'You light the campfire.')
+          : 'You need a log to light the campfire.';
+      } else {
+        var raw = ['shrimp', 'lobster', 'whale'], cooked = false;
+        for (var i = 0; i < raw.length; i++) {
+          if (Skills.removeItem(raw[i])) { Skills.addItem('cfish'); Skills.addXp('fishing', 10); cooked = true; break; }
+        }
+        msg = cooked ? 'You cook a fish over the fire.' : 'You have no raw fish to cook.';
+      }
+    } else if (ent.kind === 'anvil') {
+      msg = Skills.removeItem('bar')
+        ? (Skills.addItem('sword'), Skills.addXp('attack', 8), 'You smith a Scrap Sword from a bar.')
+        : 'You need a metal bar to smith on the anvil.';
+    }
+    if (window.UI && msg) UI.showActionText(msg);
+    Game.log.push('station:' + ent.kind + (ent.lit ? ':lit' : ''));
+  }
+
+  // Scatter n points near (cx,cz) within `spread`, honouring min separation.
+  function clusterAround(cx, cz, n, spread, avoidList, minSep) {
+    var out = [], sep = minSep || 3, guard = 0;
+    while (out.length < n && guard < n * 200) {
+      guard++;
+      if (guard % (n * 40) === 0) sep *= 0.7;
+      var a = Utils.randRange(0, Math.PI * 2), r = spread * Math.sqrt(Utils.rand());
+      var x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, ok = true;
+      var all = out.concat(avoidList || []);
+      for (var i = 0; i < all.length; i++) {
+        var p = all[i].position || all[i];
+        var dx = p.x - x, dz = p.z - z;
+        if (dx * dx + dz * dz < sep * sep) { ok = false; break; }
+      }
+      if (ok) out.push({ x: x, z: z });
+    }
+    while (out.length < n) {
+      var a2 = Utils.randRange(0, Math.PI * 2), r2 = spread * Math.sqrt(Utils.rand());
+      out.push({ x: cx + Math.cos(a2) * r2, z: cz + Math.sin(a2) * r2 });
+    }
+    return out;
   }
 
   // ---------- hazard barrel ----------
@@ -129,7 +296,7 @@ var Entities = (function () {
   }
 
   // ---------- ruined building + chest ----------
-  function makeBuilding(x, z, weaponId) {
+  function makeBuilding(x, z, lootId) {
     var g = new THREE.Group();
     var wallMat = new THREE.MeshStandardMaterial({ color: 0x3b3b34, roughness: 1, flatShading: true });
     var w = 6, d = 6, h = 3.2;
@@ -157,11 +324,11 @@ var Entities = (function () {
     buildings.push({ mesh: g, position: g.position, roof: roof, halfW: w / 2, halfD: d / 2, rotY: g.rotation.y });
 
     // chest inside
-    var chest = makeChest(0, 0, weaponId, g);
+    var chest = makeChest(0, 0, lootId, g);
     return chest;
   }
 
-  function makeChest(localX, localZ, weaponId, parent) {
+  function makeChest(localX, localZ, lootId, parent) {
     var g = new THREE.Group();
     var wood = new THREE.MeshStandardMaterial({ color: 0x5a3d1e, roughness: 1, flatShading: true });
     var gold = new THREE.MeshStandardMaterial({ color: 0x2a2410, emissive: 0xffcf3f, emissiveIntensity: 0.7, roughness: 0.4, metalness: 0.5 });
@@ -178,7 +345,7 @@ var Entities = (function () {
     // world position for interaction (approx parent origin)
     var ent = { type: 'chest', name: 'Supply Chest', mesh: g, lid: lid, light: glow,
       position: parent.position, interactRange: 2.6, active: true, opened: false,
-      weaponId: weaponId };
+      lootId: lootId };
     tag(g, ent);
     chests.push(ent);
     return ent;
@@ -191,16 +358,16 @@ var Entities = (function () {
     // open the lid
     chest.lid.rotation.x = -1.6;
     chest.light.color.setHex(0x8dff3a);
-    var w = Skills.WEAPONS[chest.weaponId];
-    if (w) {
-      Skills.equip(chest.weaponId);
+    var g = Skills.GEAR[chest.lootId];
+    if (g) {
+      var got = Skills.addItem(g.id);         // loot goes into the bag; equip from there
       if (window.UI) {
-        UI.toast('Looted', w.name);
+        UI.toast('Looted', g.name);
         var head = new THREE.Vector3(chest.position.x, chest.position.y + 3.0, chest.position.z);
-        UI.spawnSpeech(head, 'You found a ' + w.name + '!');
+        UI.spawnSpeech(head, got ? 'You found a ' + g.name + '!' : 'Inventory full!');
       }
     }
-    Game.log.push('chestOpened:' + chest.weaponId);
+    Game.log.push('chestOpened:' + chest.lootId);
   }
 
   // ---------- mutant enemy ----------
@@ -348,28 +515,83 @@ var Entities = (function () {
     return out;
   }
 
+  // Rectangular scatter in the N–S corridor, honouring min separation.
+  function scatterRect(n, xMin, xMax, zMin, zMax, avoid, minSep) {
+    var out = [], sep = minSep || 4, guard = 0;
+    while (out.length < n && guard < n * 200) {
+      guard++;
+      if (guard % (n * 40) === 0) sep *= 0.7;
+      var x = Utils.randRange(xMin, xMax), z = Utils.randRange(zMin, zMax), ok = true;
+      var all = out.concat(avoid || []);
+      for (var i = 0; i < all.length; i++) {
+        var p = all[i].position || all[i];
+        var dx = p.x - x, dz = p.z - z;
+        if (dx * dx + dz * dz < sep * sep) { ok = false; break; }
+      }
+      if (ok) out.push({ x: x, z: z });
+    }
+    while (out.length < n) out.push({ x: Utils.randRange(xMin, xMax), z: Utils.randRange(zMin, zMax) });
+    return out;
+  }
+
   function init(sc) {
     scene = sc;
+    enemiesLive = ENEMIES_ENABLED || Game.selftest;
     var placed = [];
-    // trees: mostly tier0, a few tier1 further out
-    scatter(12, 8, 40, placed, 4).forEach(function (p) { var e = makeTree(p.x, p.z, 0); trees.push(e); placed.push(e); });
-    scatter(5, 34, 54, placed, 5).forEach(function (p) { var e = makeTree(p.x, p.z, 1); trees.push(e); placed.push(e); });
-    // rocks
-    scatter(9, 8, 40, placed, 4).forEach(function (p) { var e = makeRock(p.x, p.z, 0); rocks.push(e); placed.push(e); });
-    scatter(4, 34, 54, placed, 5).forEach(function (p) { var e = makeRock(p.x, p.z, 1); rocks.push(e); placed.push(e); });
-    // fishing pools
-    scatter(3, 10, 30, placed, 6).forEach(function (p) { var e = makeFishPool(p.x, p.z, 0); pools.push(e); placed.push(e); });
-    scatter(2, 38, 55, placed, 6).forEach(function (p) { var e = makeFishPool(p.x, p.z, 1); pools.push(e); placed.push(e); });
-    // barrels
-    scatter(10, 6, 50, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
-    // enemies by tier (closer = weaker)
-    scatter(6, 12, 30, placed, 6).forEach(function (p) { var e = makeEnemy(p.x, p.z, 0); enemies.push(e); placed.push(e); });
-    scatter(4, 28, 44, placed, 7).forEach(function (p) { var e = makeEnemy(p.x, p.z, 1); enemies.push(e); placed.push(e); });
-    scatter(3, 42, 56, placed, 8).forEach(function (p) { var e = makeEnemy(p.x, p.z, 2); enemies.push(e); placed.push(e); });
-    // buildings with chests (fanny pack hidden in the farthest one)
-    var bspots = scatter(4, 16, 50, placed, 12);
-    var loot = ['sword', 'gun', 'sword', 'fanny'];
-    bspots.forEach(function (p, i) { makeBuilding(p.x, p.z, loot[i % loot.length]); placed.push(p); });
+    var C = World.CAMPS;   // north = player 1, south = player 2
+
+    // --- CAMPS: a flag + crafting stations at each pole ---
+    makeCamp(C.north.x, C.north.z, 1, 0x3ad1ff);   // Player 1 — cyan
+    makeCamp(C.south.x, C.south.z, 2, 0xff6a4a);   // Player 2 — red
+    [C.north, C.south].forEach(function (cp) {
+      var dir = cp.z < 0 ? 1 : -1;   // stations sit on the map-centre side of the flag
+      stations.push(makeStation(cp.x - 4, cp.z + 4 * dir, 'furnace'));
+      stations.push(makeStation(cp.x + 4, cp.z + 4 * dir, 'campfire'));
+      stations.push(makeStation(cp.x,     cp.z + 7 * dir, 'anvil'));
+      placed.push({ x: cp.x, z: cp.z });
+    });
+    stations.forEach(function (s) { placed.push({ x: s.position.x, z: s.position.z }); });
+
+    // Resources scattered between the camps, tiered by distance to the nearest
+    // camp: easy near the poles, higher tier toward the middle of the map.
+    // NOTE: tree/rock counts (11 / 8) are mirrored in server.js RES — keep aligned.
+    // Trees (11): 8 easy near the camps, 3 blightwood toward the centre.
+    scatterRect(4, -26, 26, -40, -24, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
+    scatterRect(4, -26, 26,  24,  40, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
+    scatterRect(3, -22, 22, -15,  15, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
+    // Rocks (8): 6 easy near the camps, 2 plutonium toward the centre.
+    scatterRect(3, -26, 26, -40, -24, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(3, -26, 26,  24,  40, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(2, -22, 22, -15,  15, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
+
+    // Fishing ponds (little pools): shrimp near the camps, lobster mid,
+    // a whale pond in the very middle.
+    var pondPlan = [
+      { z: -34, t: 0 }, { z: -28, t: 0 }, { z: 28, t: 0 }, { z: 34, t: 0 },  // shrimp near camps
+      { z: -16, t: 1 }, { z: 16, t: 1 },                                     // lobster mid
+      { z: 0, t: 2 }                                                          // whale centre
+    ];
+    pondPlan.forEach(function (pp) {
+      var px = Utils.randRange(-18, 18);
+      pools.push(makePond(px, pp.z, pp.t)); placed.push(pools[pools.length - 1]);
+    });
+
+    // a couple of hazard barrels at each camp for light
+    clusterAround(C.north.x, C.north.z, 1, 8, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
+    clusterAround(C.south.x, C.south.z, 1, 8, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
+
+    // enemies still spawn (for the self-test + server alignment) but are hidden
+    // in the live game unless ENEMIES_ENABLED. Placed in an outer ring.
+    scatter(4, 12, 30, placed, 6).forEach(function (p) { var e = makeEnemy(p.x, p.z, 0); enemies.push(e); placed.push(e); });
+    scatter(3, 28, 44, placed, 7).forEach(function (p) { var e = makeEnemy(p.x, p.z, 1); enemies.push(e); placed.push(e); });
+    scatter(2, 42, 56, placed, 8).forEach(function (p) { var e = makeEnemy(p.x, p.z, 2); enemies.push(e); placed.push(e); });
+    if (!enemiesLive) {
+      for (var q = 0; q < enemies.length; q++) {
+        var e = enemies[q];
+        e.mesh.visible = false; e.active = false; e.state = 'off';
+        untag(e);
+      }
+    }
 
     // stable indices so the server can address the same object on every client
     trees.forEach(function (e, i) { e.index = i; });
@@ -418,11 +640,6 @@ var Entities = (function () {
     ent.active = false; ent.state = 'dead'; ent.dying = 1.0;
     untag(ent);
     makePortal(ent);
-    if (window.UI) {
-      var head = new THREE.Vector3(ent.position.x, ent.position.y + 3.2, ent.position.z);
-      UI.spawnSpeech(head, 'ARIGATOU GOZAIMASU');
-    }
-    Voice.scream('Arigatou gozaimasu!');
     Game.log.push('enemy:killed');
   }
   function respawnEnemy(ent) {
@@ -588,8 +805,27 @@ var Entities = (function () {
       for (i = 0; i < rocks.length; i++) if (!rocks[i].active && rocks[i].respawn > 0) { rocks[i].respawn -= dt; if (rocks[i].respawn <= 0) restoreResource(rocks[i]); }
     }
     for (i = 0; i < barrels.length; i++) { var b = barrels[i]; b.light.intensity = b.baseIntensity * (0.7 + 0.5 * Math.abs(Math.sin(t * 3 + i)) + Utils.rand() * 0.1); }
-    for (i = 0; i < pools.length; i++) { pools[i].disc.material.emissiveIntensity = 0.45 + 0.25 * Math.abs(Math.sin(t * 2 + i)); }
+    // animate each fishing pond: rising bubbles + a gently pulsing ring
+    for (i = 0; i < pools.length; i++) {
+      var sp = pools[i];
+      var pp = sp.parts.attributes.position;
+      for (var k = 0; k < pp.count; k++) {
+        var y = pp.getY(k) + dt * 0.5;
+        if (y > 1.4) y -= 1.4;
+        pp.setY(k, y);
+      }
+      pp.needsUpdate = true;
+      sp.ring.material.opacity = 0.35 + 0.25 * Math.abs(Math.sin(t * 2 + sp.phase));
+    }
+    // flicker lit station fires
+    for (i = 0; i < stations.length; i++) {
+      var stn = stations[i];
+      if (!stn.lit || !stn.fireLight) continue;
+      stn.fireLight.intensity = stn.baseFire * (0.75 + 0.25 * Math.abs(Math.sin(t * 8 + i)));
+      if (stn.flame) stn.flame.scale.y = 0.85 + 0.2 * Math.abs(Math.sin(t * 10 + i));
+    }
     // lift the roof off whichever building the local player is standing inside
+    // (kept from the parallel branch; no-op while the town uses camps, not buildings)
     var pl = Game.player;
     if (pl && pl.position) {
       for (i = 0; i < buildings.length; i++) {
@@ -602,12 +838,13 @@ var Entities = (function () {
         bld.roof.visible = !inside;
       }
     }
-    for (i = 0; i < enemies.length; i++) updateEnemy(enemies[i], dt, t);
+    if (enemiesLive) for (i = 0; i < enemies.length; i++) updateEnemy(enemies[i], dt, t);
   }
 
   // ---------- applied from server (net.js) ----------
   function applyServerEnemies(list) {
     Game.online = true;
+    if (!enemiesLive) return;   // enemies deactivated in the live game
     for (var i = 0; i < list.length; i++) {
       var s = list[i], e = enemies[s.i];
       if (!e) continue;
@@ -616,12 +853,14 @@ var Entities = (function () {
     }
   }
   function serverEnemyHit(i, dmg) {
+    if (!enemiesLive) return;
     var e = enemies[i];
     if (!e || !window.UI) return;
     var head = new THREE.Vector3(e.mesh.position.x, e.mesh.position.y + 2.6, e.mesh.position.z);
     UI.spawnHitsplat(head, dmg, dmg > 0 ? 'hit' : 'miss');
   }
   function serverEnemyDead(i, x, z, byMe) {
+    if (!enemiesLive) return;
     var e = enemies[i];
     if (!e || e.state === 'dead') return;
     e.mesh.position.set(x, terrainY(x, z), z);
@@ -635,12 +874,14 @@ var Entities = (function () {
   }
   // reconcile an enemy the server reports as already dead when we join
   function initDeadEnemy(i) {
+    if (!enemiesLive) return;
     var e = enemies[i];
     if (!e) return;
     e.mesh.visible = false; e.active = false; e.state = 'hidden';
     untag(e); removePortal(e);
   }
   function serverEnemyRespawn(i, x, z) {
+    if (!enemiesLive) return;
     var e = enemies[i];
     if (!e) return;
     removePortal(e);
@@ -671,12 +912,13 @@ var Entities = (function () {
     if (Game.online) return; // server owns the shared world; don't touch it locally
     for (var i = 0; i < trees.length; i++) restoreResource(trees[i]);
     for (var j = 0; j < rocks.length; j++) restoreResource(rocks[j]);
-    for (var k = 0; k < enemies.length; k++) { if (enemies[k].state !== 'wander') respawnEnemy(enemies[k]); }
+    if (enemiesLive) for (var k = 0; k < enemies.length; k++) { if (enemies[k].state !== 'wander') respawnEnemy(enemies[k]); }
   }
 
   return {
     init: init, update: update, reset: reset,
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
+    useStation: useStation,
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
     serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,
     enemyAttackAnim: enemyAttackAnim,
@@ -685,6 +927,7 @@ var Entities = (function () {
     get interactMeshes() { return interactMeshes; },
     get trees() { return trees; }, get rocks() { return rocks; },
     get enemies() { return enemies; }, get barrels() { return barrels; },
-    get pools() { return pools; }, get chests() { return chests; }, get buildings() { return buildings; }
+    get pools() { return pools; }, get chests() { return chests; }, get buildings() { return buildings; },
+    get stations() { return stations; }, get camps() { return camps; }
   };
 })();

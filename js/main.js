@@ -10,8 +10,8 @@ var Main = (function () {
   var canvas, ground, clock;
   var hoverAccum = 0;
 
-  // frame-rate cap + FPS meter
-  var FPS_CAP = 60;
+  // frame-rate cap + FPS meter — locked to a steady 30 for consistent pacing
+  var FPS_CAP = 30;
   var frameInterval = 1 / FPS_CAP;
   var frameAccum = 0;
   var fpsAccum = 0, fpsFrames = 0, fpsEl;
@@ -33,6 +33,7 @@ var Main = (function () {
     UI.init();
     Skills.init();
     Voice.init();
+    if (!Game.selftest) Player.moveToCamp(1);   // default to P1 (north); net welcome may reassign
     if (!Game.selftest) Net.init();
 
     bindInput();
@@ -114,6 +115,7 @@ var Main = (function () {
       else if (ref.type === 'rock') UI.showActionText('You approach the ' + ref.name + '…');
       else if (ref.type === 'fishpool') UI.showActionText('You wade to the ' + ref.name + '…');
       else if (ref.type === 'chest') UI.showActionText('You head for the chest…');
+      else if (ref.type === 'station') UI.showActionText('You head to the ' + ref.name + '…');
       else if (ref.type === 'enemy') UI.showActionText('You move to attack the ' + ref.name + '!');
       else if (ref.type === 'player') UI.showActionText('You challenge ' + ref.name + '!');
       return;
@@ -134,6 +136,7 @@ var Main = (function () {
       if (ref.type === 'enemy') UI.setTarget(ref.name + ' (Lv ' + ref.reqLevel + ')  ' + Math.ceil(ref.hp) + '/' + ref.maxHp + ' hp');
       else if (ref.type === 'tree' || ref.type === 'rock' || ref.type === 'fishpool') UI.setTarget(ref.name + (ref.reqLevel > 1 ? ' (Lv ' + ref.reqLevel + ')' : ''));
       else if (ref.type === 'chest') UI.setTarget('🎁 Supply Chest');
+      else if (ref.type === 'station') UI.setTarget(ref.name + (ref.lit === false && (ref.kind === 'furnace' || ref.kind === 'campfire') ? ' (unlit)' : '') + ' — click to use');
       else if (ref.type === 'player') UI.setTarget('⚔ ' + ref.name + '  (' + Math.ceil(ref.hp) + ' hp)');
     } else {
       document.body.style.cursor = 'crosshair';
@@ -148,6 +151,7 @@ var Main = (function () {
     Entities.update(dt, t);
     World.update(dt, t);
     UI.updateLabels(Entities.enemies);
+    UI.updateCampLabels(Entities.camps);
     if (Net.enabled) Net.update(dt);
   }
 

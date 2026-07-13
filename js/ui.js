@@ -28,15 +28,95 @@ var UI = (function () {
     labelLayer = $('label-layer');
 
     el.skillsList = $('skills-list');
-    el.weaponIcon = $('weapon-icon');
-    el.weaponName = $('weapon-name');
+    el.equipGrid = $('equipment-grid');
 
     buildSkills();
     buildInventory();
+    buildEquipment();
+    wireTabs();
     updateVitals();
     updateSkills();
     updateInventory();
-    updateWeapon();
+    updateEquipment();
+    setActiveTab('inventory');   // default open panel
+  }
+
+  // ---------- right-side tab panels ----------
+  var _activeTab = null;
+  function wireTabs() {
+    var btns = document.querySelectorAll('#tab-bar .tab-btn');
+    for (var i = 0; i < btns.length; i++) {
+      (function (btn) {
+        btn.addEventListener('click', function () {
+          // clicking the open tab again closes it
+          setActiveTab(btn.getAttribute('data-tab') === _activeTab ? null : btn.getAttribute('data-tab'));
+        });
+      })(btns[i]);
+    }
+  }
+  function setActiveTab(name) {
+    _activeTab = name;
+    var panels = document.querySelectorAll('#side-panels .side-panel');
+    for (var i = 0; i < panels.length; i++) {
+      panels[i].classList.toggle('open', panels[i].getAttribute('data-tab') === name);
+    }
+    var btns = document.querySelectorAll('#tab-bar .tab-btn');
+    for (var j = 0; j < btns.length; j++) {
+      btns[j].classList.toggle('active', btns[j].getAttribute('data-tab') === name);
+    }
+  }
+
+  // ---------- equipment panel (head / body / legs / left+right hand) ----------
+  // Empty slots stay blank; click a filled slot to unequip it.
+  var EQUIP_UI = [
+    { slot: 'head',  label: 'Head' },
+    { slot: 'body',  label: 'Body' },
+    { slot: 'legs',  label: 'Legs' },
+    { slot: 'lhand', label: 'Left Hand' },
+    { slot: 'rhand', label: 'Right Hand' }
+  ];
+  function buildEquipment() {
+    if (!el.equipGrid) return;
+    el.equipGrid.innerHTML = '';
+    el.equipSlots = {};
+    for (var i = 0; i < EQUIP_UI.length; i++) {
+      (function (def) {
+        var slot = document.createElement('div');
+        slot.className = 'equip-slot empty slot-' + def.slot;
+        slot.title = def.label;
+        slot.addEventListener('click', function () { Skills.unequip(def.slot); });
+        el.equipGrid.appendChild(slot);
+        el.equipSlots[def.slot] = slot;
+      })(EQUIP_UI[i]);
+    }
+    updateEquipment();
+  }
+  function bonusText(g) {
+    var b = g.bonus || {}, parts = [];
+    if (g.instakill) parts.push('instakill');
+    if (b.maxHit) parts.push('+' + b.maxHit + ' dmg');
+    if (b.acc) parts.push('+' + Math.round(b.acc * 100) + '% acc');
+    if (b.def) parts.push('+' + b.def + ' def');
+    if (b.str) parts.push('+' + b.str + ' str');
+    if (b.hp) parts.push('+' + b.hp + ' hp');
+    return parts.length ? ' (' + parts.join(', ') + ')' : '';
+  }
+  function updateEquipment() {
+    if (!el.equipSlots) return;
+    for (var i = 0; i < EQUIP_UI.length; i++) {
+      var def = EQUIP_UI[i];
+      var slot = el.equipSlots[def.slot];
+      var g = Game.equipment ? Skills.GEAR[Game.equipment[def.slot]] : null;
+      if (g) {
+        slot.className = 'equip-slot filled slot-' + def.slot;
+        slot.textContent = g.icon;
+        slot.title = g.name + bonusText(g) + ' — click to unequip';
+      } else {
+        slot.className = 'equip-slot empty slot-' + def.slot;
+        slot.textContent = '';
+        slot.title = def.label + ' (empty)';
+      }
+    }
   }
 
   // ---------- skills panel (built from Skills.SKILL_ORDER) ----------
@@ -58,13 +138,6 @@ var UI = (function () {
     }
   }
 
-  function updateWeapon() {
-    var w = Game.equipped;
-    if (!w || !el.weaponIcon) return;
-    el.weaponIcon.textContent = w.icon;
-    el.weaponName.textContent = w.name;
-  }
-
   // ---------- inventory ----------
   function buildInventory() {
     el.invGrid.innerHTML = '';
@@ -72,27 +145,130 @@ var UI = (function () {
     for (var i = 0; i < Game.invMax; i++) {
       var slot = document.createElement('div');
       slot.className = 'inv-slot';
+      addDragHandlers(slot, i);
       el.invGrid.appendChild(slot);
       el.slots.push(slot);
     }
   }
 
+  // drag-and-drop: rearrange items into whatever slot you want
+  var _dragFrom = null;
+  function addDragHandlers(slot, index) {
+    slot.setAttribute('draggable', 'true');
+    slot.addEventListener('dragstart', function (e) {
+      if (!Game.inventory[index]) { e.preventDefault(); return; } // nothing to drag
+      _dragFrom = index;
+      slot.classList.add('dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', String(index)); } catch (err) {}
+      }
+    });
+    slot.addEventListener('dragend', function () {
+      slot.classList.remove('dragging');
+      _dragFrom = null;
+      for (var i = 0; i < el.slots.length; i++) el.slots[i].classList.remove('drag-over');
+    });
+    slot.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      slot.classList.add('drag-over');
+    });
+    slot.addEventListener('dragleave', function () { slot.classList.remove('drag-over'); });
+    // left-click runs the item's primary action (equip gear / eat food)
+    slot.addEventListener('click', function () {
+      var it = Game.inventory[index];
+      if (!it) return;
+      if (Skills.isGear(it.id)) Skills.equipFromInventory(index);
+      else if (Skills.isFood(it.id)) Skills.eat(index);
+    });
+    // right-click opens the item's action menu (Use/Equip/Eat + Drop)
+    slot.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      var it = Game.inventory[index];
+      if (it) openItemMenu(e.clientX, e.clientY, index, it);
+    });
+    slot.addEventListener('drop', function (e) {
+      e.preventDefault();
+      slot.classList.remove('drag-over');
+      var from = _dragFrom;
+      if (from === null && e.dataTransfer) {
+        var d = e.dataTransfer.getData('text/plain');
+        from = (d === '' || d == null) ? null : parseInt(d, 10);
+      }
+      if (from === null || from === index) return;
+      // swap the two slots (dropping onto an empty slot just moves the item)
+      var inv = Game.inventory;
+      var tmp = inv[index];
+      inv[index] = inv[from];
+      inv[from] = tmp;
+      updateInventory();
+    });
+  }
+
   function updateInventory(poppedIndex) {
     if (!el.slots) return;
+    var count = 0;
     for (var i = 0; i < Game.invMax; i++) {
       var slot = el.slots[i];
       var item = Game.inventory[i];
       if (item) {
+        count++;
         slot.className = 'inv-slot filled' + (i === poppedIndex ? ' pop' : '');
-        slot.innerHTML = '<span class="count">' + item.count + '</span>' + item.icon;
-        slot.title = item.name + ' x' + item.count;
+        var countTag = (item.count > 1) ? '<span class="count">' + item.count + '</span>' : '';
+        slot.innerHTML = countTag + item.icon;
+        slot.title = item.name + (item.count > 1 ? ' x' + item.count : '') + ' — right-click for options';
       } else {
         slot.className = 'inv-slot';
         slot.innerHTML = '';
         slot.title = '';
       }
     }
-    el.invCount.textContent = Game.inventory.length + '/' + Game.invMax;
+    el.invCount.textContent = count + '/' + Game.invMax;
+  }
+
+  // ---------- right-click item action menu ----------
+  var _menuEl = null;
+  function ensureMenu() {
+    if (_menuEl) return _menuEl;
+    _menuEl = document.createElement('div');
+    _menuEl.id = 'context-menu';
+    _menuEl.style.display = 'none';
+    document.body.appendChild(_menuEl);
+    document.addEventListener('pointerdown', function (e) {
+      if (_menuEl.style.display !== 'none' && !_menuEl.contains(e.target)) closeMenu();
+    });
+    window.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMenu(); });
+    window.addEventListener('blur', closeMenu);
+    return _menuEl;
+  }
+  function closeMenu() { if (_menuEl) _menuEl.style.display = 'none'; }
+  function openItemMenu(x, y, index, item) {
+    var opts = [];
+    // gear can be worn; food can be eaten; everything can be dropped
+    if (Skills.isGear(item.id)) opts.push({ label: 'Wield ' + item.name, fn: function () { Skills.equipFromInventory(index); } });
+    else if (Skills.isFood(item.id)) opts.push({ label: 'Eat ' + item.name, fn: function () { Skills.eat(index); } });
+    opts.push({ label: 'Drop ' + item.name, fn: function () { Skills.dropItem(index); } });
+    showContextMenu(x, y, opts);
+  }
+  function showContextMenu(x, y, opts) {
+    var m = ensureMenu();
+    m.innerHTML = '';
+    for (var i = 0; i < opts.length; i++) {
+      (function (o) {
+        var b = document.createElement('div');
+        b.className = 'ctx-item';
+        b.textContent = o.label;
+        b.addEventListener('click', function () { o.fn(); closeMenu(); });
+        m.appendChild(b);
+      })(opts[i]);
+    }
+    m.style.display = 'block';
+    // clamp to stay on-screen
+    m.style.left = '0px'; m.style.top = '0px';
+    var rect = m.getBoundingClientRect();
+    m.style.left = Math.min(x, window.innerWidth - rect.width - 4) + 'px';
+    m.style.top = Math.min(y, window.innerHeight - rect.height - 4) + 'px';
   }
 
   // ---------- vitals ----------
@@ -189,6 +365,26 @@ var UI = (function () {
     setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 2200);
   }
 
+  // ---------- floating camp nameplates ----------
+  function updateCampLabels(camps) {
+    if (Game.headless || !labelLayer || !camps) return;
+    for (var i = 0; i < camps.length; i++) {
+      var c = camps[i];
+      if (!c._labelEl) {
+        var d = document.createElement('div');
+        d.className = 'entity-label camp';
+        d.innerHTML = '<div class="nm" style="color:' + c.colorHex + '">🚩 ' + c.name + '</div>';
+        labelLayer.appendChild(d);
+        c._labelEl = d;
+      }
+      var s = toScreen(new THREE.Vector3(c.position.x, c.position.y + 5.2, c.position.z));
+      if (!s) { c._labelEl.style.display = 'none'; continue; }
+      c._labelEl.style.display = 'block';
+      c._labelEl.style.left = s.x + 'px';
+      c._labelEl.style.top = s.y + 'px';
+    }
+  }
+
   // ---------- floating enemy labels / hp bars ----------
   function updateLabels(enemies) {
     if (Game.headless || !labelLayer) return;
@@ -230,9 +426,11 @@ var UI = (function () {
   return {
     init: init,
     updateVitals: updateVitals, updateSkills: updateSkills,
-    updateInventory: updateInventory, updateWeapon: updateWeapon, toast: toast,
+    updateInventory: updateInventory,
+    updateEquipment: updateEquipment, setActiveTab: setActiveTab, toast: toast,
     showActionText: showActionText, setTarget: setTarget,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
+    updateCampLabels: updateCampLabels,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,
     showDeathScreen: showDeathScreen, hideDeathScreen: hideDeathScreen
   };

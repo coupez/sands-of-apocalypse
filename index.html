@@ -26,29 +26,38 @@
 
   <!-- HUD -->
   <div id="hud">
-    <!-- Top-left: health globe + equipped weapon -->
+    <!-- Top-right: health globe -->
     <div id="vitals">
       <div class="globe" id="hp-globe">
         <div class="globe-fill" id="hp-fill"></div>
         <div class="globe-num" id="hp-num">10</div>
         <div class="globe-label">HP</div>
       </div>
-      <div id="weapon-slot" title="Equipped weapon">
-        <span id="weapon-icon">👊</span>
-        <span id="weapon-name">Bare Fists</span>
+    </div>
+
+    <!-- Bottom-right: toggleable tab panels (only one open at a time) -->
+    <div id="side-panels">
+      <div id="skills-panel" class="side-panel" data-tab="skills">
+        <div class="panel-header">SKILLS</div>
+        <div id="skills-list"></div>
+      </div>
+
+      <div id="inventory-panel" class="side-panel" data-tab="inventory">
+        <div class="panel-header">INVENTORY <span id="inv-count">0/28</span></div>
+        <div id="inventory-grid"></div>
+      </div>
+
+      <div id="equipment-panel" class="side-panel" data-tab="equipment">
+        <div class="panel-header">EQUIPMENT</div>
+        <div id="equipment-grid"></div>
       </div>
     </div>
 
-    <!-- Top-right: skills panel (rows built by UI) -->
-    <div id="skills-panel">
-      <div class="panel-header">SKILLS</div>
-      <div id="skills-list"></div>
-    </div>
-
-    <!-- Bottom-right: inventory -->
-    <div id="inventory-panel">
-      <div class="panel-header">INVENTORY <span id="inv-count">0/28</span></div>
-      <div id="inventory-grid"></div>
+    <!-- Bottom-right: tab buttons to open each panel -->
+    <div id="tab-bar">
+      <button class="tab-btn" data-tab="inventory" title="Inventory">🎒</button>
+      <button class="tab-btn" data-tab="skills" title="Skills">📊</button>
+      <button class="tab-btn" data-tab="equipment" title="Equipment">🛡️</button>
     </div>
 
     <!-- Bottom-center: action / hint text -->

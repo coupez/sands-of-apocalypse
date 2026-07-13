@@ -9,17 +9,17 @@ var Combat = (function () {
   var _v = new THREE.Vector3();
 
   function playerMaxHit() {
-    var eq = Game.equipped || { maxHit: 0 };
-    return 2 + Math.floor(Skills.data.strength.level * 0.5) + (eq.maxHit || 0);
+    var b = Skills.equipBonus();
+    return 2 + Math.floor((Skills.data.strength.level + b.str) * 0.5) + b.maxHit;
   }
   function playerAccuracy(targetDef) {
-    var eq = Game.equipped || { acc: 0 };
-    return Utils.clamp(0.5 + Skills.data.attack.level * 0.02 + (eq.acc || 0) - (targetDef || 0) * 0.03, 0.35, 0.98);
+    var b = Skills.equipBonus();
+    return Utils.clamp(0.5 + Skills.data.attack.level * 0.02 + b.acc - (targetDef || 0) * 0.03, 0.35, 0.98);
   }
 
   function playerAttack(enemy) {
     if (!enemy || !enemy.active) return;
-    var eq = Game.equipped || {};
+    var eq = Skills.equipBonus();
     var maxHit = playerMaxHit();
     var dmg = 0, type = 'miss';
     if (eq.instakill) {
@@ -61,8 +61,9 @@ var Combat = (function () {
       Game.log.push('dodgeAvoided');
       return;
     }
-    // Defence lowers the enemy's chance to land a blow
-    var hitChance = Utils.clamp(0.6 - Skills.data.defence.level * 0.015, 0.15, 0.85);
+    // Defence (skill + armour bonus) lowers the enemy's chance to land a blow
+    var def = Skills.data.defence.level + Skills.equipBonus().def;
+    var hitChance = Utils.clamp(0.6 - def * 0.015, 0.15, 0.85);
     var dmg = 0, type = 'miss';
     if (Utils.rand() < hitChance) { dmg = Utils.randInt(1, enemy.maxHit); type = 'hit'; }
     var p = player.position;
@@ -76,7 +77,7 @@ var Combat = (function () {
   // ---- PvP ----
   function playerAttackPlayer(target) {
     if (!target || !target.active) return;
-    var eq = Game.equipped || {};
+    var eq = Skills.equipBonus();
     var maxHit = playerMaxHit();
     var dmg = 0;
     if (eq.instakill) dmg = 99;

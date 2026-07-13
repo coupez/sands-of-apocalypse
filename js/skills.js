@@ -19,23 +19,53 @@ var Skills = (function () {
     blog:  { id: 'blog',  name: 'Blightwood Log', icon: '🎍' },
     ore:   { id: 'ore',   name: 'Uranium Ore',    icon: '☢️' },
     pore:  { id: 'pore',  name: 'Plutonium Ore',  icon: '🟣' },
-    fish:  { id: 'fish',  name: 'Mutated Fish',   icon: '🐟' },
-    bfish: { id: 'bfish', name: 'Three-Eyed Fish', icon: '🐡' }
+    shrimp:  { id: 'shrimp',  name: 'Irradiated Shrimp', icon: '🦐' },
+    lobster: { id: 'lobster', name: 'Mutant Lobster',    icon: '🦞' },
+    whale:   { id: 'whale',   name: 'Toxic Whale',       icon: '🐋' },
+    cfish:   { id: 'cfish',   name: 'Cooked Fish',       icon: '🍤' },
+    bar:     { id: 'bar',     name: 'Scrap Metal Bar',   icon: '🔩' }
   };
 
-  // Equippable weapons. Fanny Pack is the ultimate weapon: it instakills.
-  var WEAPONS = {
-    fists: { id: 'fists', name: 'Bare Fists',         icon: '👊', maxHit: 0,   acc: 0.00 },
-    sword: { id: 'sword', name: 'Scrap Sword',        icon: '🗡️', maxHit: 4,   acc: 0.10 },
-    gun:   { id: 'gun',   name: 'Rusty Pistol',       icon: '🔫', maxHit: 8,   acc: 0.20 },
-    fanny: { id: 'fanny', name: 'Fanny Pack of Doom', icon: '🎒', maxHit: 999, acc: 1.00, instakill: true }
+  // Edible items: id -> HP healed when eaten (cooked food heals more).
+  var FOOD = { shrimp: 2, lobster: 5, whale: 12, cfish: 8 };
+  function isFood(id) { return Object.prototype.hasOwnProperty.call(FOOD, id); }
+
+  // Equipment slots the player has: head, body, legs, and a weapon in each hand.
+  var EQUIP_SLOTS = ['head', 'body', 'legs', 'lhand', 'rhand'];
+
+  // Equippable gear. Each piece has a slot and a set of stat bonuses:
+  //   maxHit (extra damage), acc (accuracy), def (damage mitigation),
+  //   str (added strength), hp (added max HP). The Fanny Pack instakills.
+  var GEAR = {
+    // right-hand weapons
+    sword:   { id: 'sword',   name: 'Scrap Sword',        icon: '🗡️', slot: 'rhand', bonus: { maxHit: 4,   acc: 0.10 } },
+    gun:     { id: 'gun',     name: 'Rusty Pistol',       icon: '🔫', slot: 'rhand', bonus: { maxHit: 8,   acc: 0.20 } },
+    fanny:   { id: 'fanny',   name: 'Fanny Pack of Doom', icon: '🎒', slot: 'rhand', bonus: { maxHit: 999, acc: 1.00 }, instakill: true },
+    // left-hand off-hand
+    shield:  { id: 'shield',  name: 'Riot Shield',        icon: '🛡️', slot: 'lhand', bonus: { def: 6, hp: 5 } },
+    machete: { id: 'machete', name: 'Rusty Machete',      icon: '🔪', slot: 'lhand', bonus: { maxHit: 3, str: 2 } },
+    // head
+    gasmask: { id: 'gasmask', name: 'Gas Mask',           icon: '🪖', slot: 'head', bonus: { def: 3, hp: 4 } },
+    hazhood: { id: 'hazhood', name: 'Hazmat Hood',        icon: '🧢', slot: 'head', bonus: { def: 2, str: 2 } },
+    // body
+    hazvest: { id: 'hazvest', name: 'Hazmat Vest',        icon: '🦺', slot: 'body', bonus: { def: 6, hp: 8 } },
+    plate:   { id: 'plate',   name: 'Scrap Plate',        icon: '🧥', slot: 'body', bonus: { def: 9, hp: 10 } },
+    // legs
+    greaves: { id: 'greaves', name: 'Scrap Greaves',      icon: '👖', slot: 'legs', bonus: { def: 4, hp: 5 } }
   };
+
+  function isGear(id) { return !!GEAR[id]; }
 
   function init() {
     for (var k in data) { data[k].xp = 0; data[k].level = 1; }
+    // fixed-size inventory: 28 slots, each null or an item stack (holes allowed
+    // so items can be dragged to any square).
     Game.inventory = [];
-    Game.equipped = WEAPONS.fists;
-    if (window.UI) { UI.updateSkills(); UI.updateInventory(); UI.updateWeapon(); }
+    for (var s = 0; s < Game.invMax; s++) Game.inventory[s] = null;
+    // equipment slots, all empty to start
+    Game.equipment = { head: null, body: null, legs: null, lhand: null, rhand: null };
+    applyEquipmentToStats();
+    if (window.UI) { UI.updateSkills(); UI.updateInventory(); UI.updateEquipment(); }
   }
 
   function addXp(skill, amount) {
@@ -52,16 +82,54 @@ var Skills = (function () {
     if (window.UI) UI.updateSkills();
   }
 
+  // Items don't stack: every item takes its own inventory slot.
   function addItem(id) {
-    var def = ITEMS[id];
+    var def = ITEMS[id] || GEAR[id];
     if (!def) return false;
-    for (var i = 0; i < Game.inventory.length; i++) {
-      if (Game.inventory[i].id === id) { Game.inventory[i].count++; if (window.UI) UI.updateInventory(i); SFX.pickup(); return true; }
+    var inv = Game.inventory;
+    for (var j = 0; j < Game.invMax; j++) {
+      if (!inv[j]) { inv[j] = { id: id, name: def.name, icon: def.icon, count: 1 }; if (window.UI) UI.updateInventory(j); SFX.pickup(); return true; }
     }
-    if (Game.inventory.length >= Game.invMax) return false;
-    Game.inventory.push({ id: id, name: def.name, icon: def.icon, count: 1 });
-    if (window.UI) UI.updateInventory(Game.inventory.length - 1);
-    SFX.pickup();
+    return false; // inventory full
+  }
+
+  // ---- item helpers (used by crafting stations) ----
+  function hasItem(id) {
+    for (var i = 0; i < Game.inventory.length; i++) if (Game.inventory[i] && Game.inventory[i].id === id) return true;
+    return false;
+  }
+  // remove one item of `id` (non-stacking, so clears one slot); returns true if removed
+  function removeItem(id) {
+    for (var i = 0; i < Game.inventory.length; i++) {
+      if (Game.inventory[i] && Game.inventory[i].id === id) {
+        Game.inventory[i] = null;
+        if (window.UI) UI.updateInventory();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Eat a food item in slot `index`, healing the player.
+  function eat(index) {
+    var it = Game.inventory[index];
+    if (!it || !isFood(it.id)) return false;
+    var heal = FOOD[it.id];
+    Game.inventory[index] = null;
+    if (window.Player && Player.heal) Player.heal(heal);
+    if (window.SFX && SFX.pickup) SFX.pickup();
+    if (window.UI) { UI.updateInventory(); UI.showActionText('You eat the ' + it.name + '. (+' + heal + ' HP)'); }
+    Game.log.push('eat:' + it.id);
+    return true;
+  }
+
+  // Drop an item out of slot `index`.
+  function dropItem(index) {
+    var it = Game.inventory[index];
+    if (!it) return false;
+    Game.inventory[index] = null;
+    if (window.UI) { UI.updateInventory(); UI.showActionText('You drop the ' + it.name + '.'); }
+    Game.log.push('drop:' + it.id);
     return true;
   }
 
@@ -101,28 +169,77 @@ var Skills = (function () {
     if (!pool || !pool.active) return;
     if (data.fishing.level < (pool.reqLevel || 1)) return;
     if (Utils.rand() > successChance(data.fishing.level, pool.reqLevel || 1)) return;
-    if (addItem(pool.itemId || 'fish')) {
+    var catchId = pool.itemId || 'shrimp';
+    if (addItem(catchId)) {
       addXp('fishing', pool.xp || 30);
       Game.log.push('fish');
-      if (window.UI) UI.showActionText('You catch a ' + (ITEMS[pool.itemId || 'fish'].name) + '.');
-      // pools don't deplete; they teem with mutated life
+      if (window.UI) UI.showActionText('You catch ' + (ITEMS[catchId] ? 'a ' + ITEMS[catchId].name : 'something') + '.');
+      // fishing spots don't deplete; they teem with mutated life
     } else if (window.UI) UI.showActionText('Your inventory is full!');
   }
 
-  // ---- weapons ----
-  function equip(id) {
-    var w = WEAPONS[id];
-    if (!w) return;
-    Game.equipped = w;
-    if (window.UI) { UI.updateWeapon(); UI.showActionText('Equipped: ' + w.name); }
-    Game.log.push('equip:' + id);
+  // ---- equipment ----
+  // Sum of every equipped piece's bonuses. Combat reads this live.
+  function equipBonus() {
+    var b = { maxHit: 0, acc: 0, def: 0, str: 0, hp: 0, instakill: false };
+    for (var i = 0; i < EQUIP_SLOTS.length; i++) {
+      var g = GEAR[Game.equipment[EQUIP_SLOTS[i]]];
+      if (!g) continue;
+      if (g.bonus) {
+        b.maxHit += g.bonus.maxHit || 0;
+        b.acc    += g.bonus.acc    || 0;
+        b.def    += g.bonus.def    || 0;
+        b.str    += g.bonus.str    || 0;
+        b.hp     += g.bonus.hp     || 0;
+      }
+      if (g.instakill) b.instakill = true;
+    }
+    return b;
+  }
+  // Push HP bonus into the player's max HP (other bonuses are read live in combat).
+  function applyEquipmentToStats() {
+    if (window.Player && Player.applyBonuses) Player.applyBonuses(equipBonus());
+    if (window.UI) UI.updateVitals();
+  }
+
+  // Equip the gear in inventory slot `index` into its matching equipment slot,
+  // sending whatever was already equipped back to the inventory.
+  function equipFromInventory(index) {
+    var item = Game.inventory[index];
+    if (!item) return false;
+    var g = GEAR[item.id];
+    if (!g) { if (window.UI) UI.showActionText("You can't equip that."); return false; }
+    var prev = Game.equipment[g.slot];
+    // remove one of the clicked item from its stack
+    item.count--;
+    if (item.count <= 0) Game.inventory[index] = null;
+    Game.equipment[g.slot] = g.id;
+    if (prev) addItem(prev);              // return the old piece to the bag
+    applyEquipmentToStats();
+    if (window.UI) { UI.updateEquipment(); UI.updateInventory(); UI.showActionText('Equipped: ' + g.name); }
+    Game.log.push('equip:' + g.id);
+    return true;
+  }
+
+  // Take a piece off and drop it back into the inventory.
+  function unequip(slot) {
+    var id = Game.equipment[slot];
+    if (!id) return false;
+    Game.equipment[slot] = null;
+    if (!addItem(id)) { Game.equipment[slot] = id; if (window.UI) UI.showActionText('Inventory full!'); return false; }
+    applyEquipmentToStats();
+    if (window.UI) { UI.updateEquipment(); UI.updateInventory(); UI.showActionText('Unequipped: ' + GEAR[id].name); }
+    Game.log.push('unequip:' + id);
+    return true;
   }
 
   return {
     init: init, addXp: addXp, addItem: addItem,
     doWoodcut: doWoodcut, doMine: doMine, doFish: doFish,
-    equip: equip,
+    equipFromInventory: equipFromInventory, unequip: unequip,
+    eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
+    equipBonus: equipBonus, isGear: isGear, isFood: isFood,
     get data() { return data; },
-    ITEMS: ITEMS, WEAPONS: WEAPONS, SKILL_ORDER: SKILL_ORDER
+    ITEMS: ITEMS, GEAR: GEAR, EQUIP_SLOTS: EQUIP_SLOTS, SKILL_ORDER: SKILL_ORDER
   };
 })();

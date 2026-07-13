@@ -138,8 +138,14 @@ html, body {
   justify-content: space-between;
 }
 
-/* Vitals / HP globe */
-#vitals { position: absolute; top: 16px; left: 16px; }
+/* Vitals / HP globe (top-right, enlarged) */
+#vitals {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  transform: scale(1.5);
+  transform-origin: top right;
+}
 .globe {
   position: relative;
   width: 78px;
@@ -181,35 +187,18 @@ html, body {
 .globe.low .globe-fill { animation: hurt 0.6s ease-in-out infinite; }
 @keyframes hurt { 0%,100%{filter:brightness(1);} 50%{filter:brightness(1.6);} }
 
-/* Equipped weapon slot under the HP globe */
-#weapon-slot {
-  margin-top: 10px;
-  width: 78px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  padding: 6px 4px;
-}
-#weapon-icon { font-size: 22px; line-height: 1; }
-#weapon-name {
-  margin-top: 3px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  color: var(--toxic);
-  text-align: center;
-  text-shadow: 0 0 5px var(--toxic-glow);
-}
-
-/* Skills panel */
-#skills-panel {
+/* Right-side toggleable tab panels + button bar */
+#side-panels {
   position: absolute;
-  top: 16px;
   right: 16px;
+  bottom: 96px;            /* sit just above the (scaled) tab-bar */
   width: 208px;
+  transform: scale(1.5);
+  transform-origin: bottom right;
+}
+.side-panel {
+  display: none;
+  width: 100%;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 8px;
@@ -217,6 +206,39 @@ html, body {
   backdrop-filter: blur(2px);
   box-shadow: 0 4px 20px rgba(0,0,0,0.6);
 }
+.side-panel.open { display: block; animation: panel-in 0.14s ease; }
+@keyframes panel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+#tab-bar {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  gap: 6px;
+  transform: scale(1.5);
+  transform-origin: bottom right;
+}
+.tab-btn {
+  width: 46px;
+  height: 46px;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: #fff;
+  backdrop-filter: blur(2px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+  transition: transform 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+}
+.tab-btn:hover { transform: translateY(-2px); border-color: var(--toxic); }
+.tab-btn.active {
+  border-color: var(--toxic);
+  box-shadow: 0 0 12px var(--toxic-glow), inset 0 0 10px rgba(120,200,70,0.25);
+}
+
+/* Skills panel */
 .skill-row {
   display: grid;
   grid-template-columns: 20px 1fr auto;
@@ -247,19 +269,66 @@ html, body {
 }
 
 /* Inventory */
-#inventory-panel {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  width: 208px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  backdrop-filter: blur(2px);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
-}
 #inv-count { color: var(--ink); font-weight: 400; letter-spacing: 0; }
+
+/* Equipment loadout: head / body / legs stacked, both hands on the bottom row */
+#equipment-grid {
+  display: grid;
+  grid-template-columns: 54px 54px;
+  grid-auto-rows: 54px;
+  gap: 8px 12px;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.equip-slot {
+  width: 54px;
+  height: 54px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(120,200,70,0.2);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  cursor: pointer;
+}
+/* head, body and legs sit centered across both columns */
+.equip-slot.slot-head,
+.equip-slot.slot-body,
+.equip-slot.slot-legs { grid-column: 1 / span 2; justify-self: center; }
+.equip-slot.slot-lhand { grid-column: 1; }
+.equip-slot.slot-rhand { grid-column: 2; }
+.equip-slot.empty { cursor: default; border-style: dashed; }
+.equip-slot.filled { background: rgba(40,60,20,0.5); border-color: rgba(120,200,70,0.5); }
+.equip-slot.filled:hover { border-color: var(--toxic); box-shadow: 0 0 8px var(--toxic-glow); }
+
+/* Inventory drag-and-drop feedback */
+.inv-slot.filled { cursor: grab; }
+.inv-slot.dragging { opacity: 0.4; }
+.inv-slot.drag-over { border-color: var(--toxic); box-shadow: inset 0 0 8px var(--toxic-glow); }
+
+/* Right-click item action menu */
+#context-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 150px;
+  background: rgba(10, 16, 8, 0.96);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.7);
+  backdrop-filter: blur(3px);
+  font-size: 13px;
+  user-select: none;
+}
+.ctx-item {
+  padding: 7px 10px;
+  border-radius: 4px;
+  color: #dfeccb;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ctx-item:hover { background: rgba(120,200,70,0.22); color: #fff; }
 #inventory-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

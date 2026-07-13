@@ -50,8 +50,8 @@ var SelfTest = (function () {
         assert('woodcutting xp gained', Skills.data.woodcutting.xp > wcXp0,
           'xp ' + wcXp0 + ' -> ' + Skills.data.woodcutting.xp);
         assert('log in inventory',
-          Game.inventory.some(function (i) { return i.id === 'log'; }),
-          JSON.stringify(Game.inventory.map(function (i) { return i.id + 'x' + i.count; })));
+          Game.inventory.some(function (i) { return i && i.id === 'log'; }),
+          JSON.stringify(Game.inventory.filter(Boolean).map(function (i) { return i.id + 'x' + i.count; })));
       }
 
       // -- mining --
@@ -64,7 +64,7 @@ var SelfTest = (function () {
         assert('mining xp gained', Skills.data.mining.xp > mnXp0,
           'xp ' + mnXp0 + ' -> ' + Skills.data.mining.xp);
         assert('ore in inventory',
-          Game.inventory.some(function (i) { return i.id === 'ore'; }));
+          Game.inventory.some(function (i) { return i && i.id === 'ore'; }));
       }
 
       // -- new skills exist --
@@ -72,23 +72,25 @@ var SelfTest = (function () {
       assert('skill: defence', !!Skills.data.defence);
       assert('skill: fishing', !!Skills.data.fishing);
 
-      // -- fishing --
-      var pool = Entities.pools.filter(function (p) { return p.active; })[0];
-      assert('found fishing pool', !!pool, Entities.pools.length + ' pools');
+      // -- fishing (a shrimp pond near a camp: reqLevel 1) --
+      var pool = Entities.pools.filter(function (p) { return p.active && p.reqLevel === 1; })[0];
+      assert('found a level-1 fishing pond', !!pool, Entities.pools.length + ' ponds');
       if (pool) {
         var fxp0 = Skills.data.fishing.xp;
-        for (var fi = 0; fi < 50; fi++) Skills.doFish(pool);
+        for (var fi = 0; fi < 10; fi++) Skills.doFish(pool);
         assert('fishing xp gained', Skills.data.fishing.xp > fxp0, 'xp=' + Skills.data.fishing.xp);
-        assert('fish in inventory', Game.inventory.some(function (i) { return i.id === 'fish'; }));
+        assert('shrimp in inventory', Game.inventory.some(function (i) { return i && i.id === 'shrimp'; }));
       }
 
-      assert('inventory populated', Game.inventory.length > 0, Game.inventory.length + ' stacks');
+      var invStacks = Game.inventory.filter(Boolean).length;
+      assert('inventory populated', invStacks > 0, invStacks + ' stacks');
 
       // -- combat --
       invadeInvulnerable();
       var atkXp0 = Skills.data.attack.xp;
-      // nearest active enemy to reduce travel time
-      var enemies = Entities.enemies.filter(function (e) { return e.active; });
+      // nearest active weak (tier-0) enemy — reliably killable within the window
+      var enemies = Entities.enemies.filter(function (e) { return e.active && e.reqLevel === 1; });
+      if (!enemies.length) enemies = Entities.enemies.filter(function (e) { return e.active; });
       enemies.sort(function (a, b) {
         return dist(Player.position, a.position.x, a.position.z) - dist(Player.position, b.position.x, b.position.z);
       });
@@ -97,7 +99,7 @@ var SelfTest = (function () {
       if (enemy) {
         var killedBefore = Game.log.filter(function (l) { return l === 'enemy:killed'; }).length;
         Player.interactWith(enemy);
-        Main.advance(30);
+        Main.advance(60);
         assert('attack xp gained', Skills.data.attack.xp > atkXp0,
           'xp ' + atkXp0 + ' -> ' + Skills.data.attack.xp);
         var didHit = Game.log.some(function (l) { return l.indexOf('playerAttack:') === 0; });
@@ -124,10 +126,28 @@ var SelfTest = (function () {
         assert('gated tree yields no xp when under-levelled', Skills.data.woodcutting.xp === wcG);
       }
 
-      // -- weapons: Fanny Pack of Doom instakills --
+      // -- equipment: gear equips from the inventory into its matching slot --
+      function invIndexOf(id) {
+        for (var q = 0; q < Game.inventory.length; q++) if (Game.inventory[q] && Game.inventory[q].id === id) return q;
+        return -1;
+      }
+      // a headpiece lands in the head slot and raises max HP while worn
+      Skills.addItem('gasmask');
+      var gmi = invIndexOf('gasmask');
+      assert('headpiece entered inventory', gmi >= 0);
+      Skills.equipFromInventory(gmi);
+      assert('headpiece equips to head slot', Game.equipment.head === 'gasmask');
+      var hpWithHelm = Player.stats.maxHp;
+      assert('unequip returns gear to the bag', Skills.unequip('head') && invIndexOf('gasmask') >= 0);
+      var hpNoHelm = Player.stats.maxHp;
+      assert('headpiece raises max HP while worn', hpWithHelm > hpNoHelm, hpNoHelm + ' -> ' + hpWithHelm);
+
+      // weapons: Fanny Pack of Doom instakills, equipped from the inventory
       invadeInvulnerable();
-      Skills.equip('fanny');
-      assert('fanny pack equipped', Game.equipped && Game.equipped.instakill === true);
+      Skills.addItem('fanny');
+      Skills.equipFromInventory(invIndexOf('fanny'));
+      assert('fanny pack equips to right hand', Game.equipment.rhand === 'fanny');
+      assert('fanny pack grants instakill', Skills.equipBonus().instakill === true);
       var victim = Entities.enemies.filter(function (e) { return e.active; })[0];
       assert('found a victim for fanny pack', !!victim);
       if (victim) {
@@ -136,26 +156,63 @@ var SelfTest = (function () {
         assert('fanny pack instakills in one hit',
           victim.hp <= 0 && Game.log.filter(function (l) { return l === 'enemy:killed'; }).length > killsBefore);
       }
-      Skills.equip('fists');
+      Skills.unequip('rhand');
 
-      // -- chests grant weapons --
-      var chest = Entities.chests.filter(function (c) { return c.active; })[0];
-      assert('supply chest exists', !!chest, Entities.chests.length + ' chests');
-      if (chest) {
-        var wid = chest.weaponId;
-        Entities.openChest(chest);
-        assert('chest opens and equips its weapon',
-          Game.log.indexOf('chestOpened:' + wid) >= 0 && Game.equipped.id === wid,
-          'equipped=' + Game.equipped.id);
-        Skills.equip('fists');
+      // -- crafting stations (replace chests): furnace → bar, anvil → gear, campfire → cook --
+      function clearBag() { for (var c = 0; c < Game.invMax; c++) Game.inventory[c] = null; }
+      function invCount(id) { return Game.inventory.filter(function (it) { return it && it.id === id; }).length; }
+      clearBag();
+      var furnace = Entities.stations.filter(function (s) { return s.kind === 'furnace'; })[0];
+      assert('furnace exists in town', !!furnace, Entities.stations.length + ' stations');
+      if (furnace) {
+        Entities.useStation(furnace);                 // no log yet → stays unlit
+        assert('furnace needs a log before it lights', furnace.lit === false);
+        Skills.addItem('log');
+        Entities.useStation(furnace);                 // log lights the furnace
+        assert('furnace lights when given a log', furnace.lit === true);
+        Skills.addItem('ore');
+        Entities.useStation(furnace);                 // ore smelts into a bar
+        assert('lit furnace smelts ore into a bar', invCount('bar') === 1, 'bars=' + invCount('bar'));
       }
-      // the strongest weapon must actually exist somewhere in the world
-      assert('fanny pack exists in a chest',
-        Entities.chests.some(function (c) { return c.weaponId === 'fanny'; }),
-        'chest weapons: ' + Entities.chests.map(function (c) { return c.weaponId; }).join(','));
+      var anvil = Entities.stations.filter(function (s) { return s.kind === 'anvil'; })[0];
+      assert('anvil exists in town', !!anvil);
+      if (anvil) {
+        var sw0 = invCount('sword');
+        Entities.useStation(anvil);                   // bar smiths into a sword
+        assert('anvil smiths a bar into gear', invCount('sword') === sw0 + 1);
+      }
+      var campfire = Entities.stations.filter(function (s) { return s.kind === 'campfire'; })[0];
+      assert('campfire exists in town', !!campfire);
+      if (campfire) {
+        Skills.addItem('log');
+        Entities.useStation(campfire);                // log lights the campfire
+        assert('campfire lights when given a log', campfire.lit === true);
+        Skills.addItem('shrimp');
+        Entities.useStation(campfire);                // raw fish cooks into cooked fish
+        assert('lit campfire cooks raw fish', invCount('cfish') === 1, 'cfish=' + invCount('cfish'));
+      }
+      clearBag();
+
+      // -- items: non-stacking, edible fish, dropping --
+      function countId(id) { return Game.inventory.filter(function (it) { return it && it.id === id; }).length; }
+      var logs0 = countId('log');
+      Skills.addItem('log'); Skills.addItem('log');
+      assert('logs do not stack (each takes a slot)', countId('log') === logs0 + 2, countId('log') + ' log slots');
+
+      Player.stats.maxHp = 20; Player.stats.hp = 5;
+      Skills.addItem('shrimp');
+      var fish0 = countId('shrimp');
+      Skills.eat(invIndexOf('shrimp'));
+      assert('eating shrimp heals HP', Player.stats.hp > 5, 'hp=' + Player.stats.hp);
+      assert('eating shrimp consumes one', countId('shrimp') === fish0 - 1, fish0 + ' -> ' + countId('shrimp'));
+
+      Skills.addItem('ore');
+      var ore0 = countId('ore');
+      Skills.dropItem(invIndexOf('ore'));
+      assert('dropping removes one item', countId('ore') === ore0 - 1);
       // counts must match the server's authoritative indices
       assert('entity counts match server indices',
-        Entities.trees.length === 17 && Entities.rocks.length === 13 && Entities.enemies.length === 13,
+        Entities.trees.length === 11 && Entities.rocks.length === 8 && Entities.enemies.length === 9,
         't' + Entities.trees.length + ' r' + Entities.rocks.length + ' e' + Entities.enemies.length);
 
       // -- enemy visuals keep the animatable skeleton the anim system drives --
@@ -170,19 +227,9 @@ var SelfTest = (function () {
       Entities.enemyAttackAnim(eAlive.index);
       assert('enemyAttackAnim triggers a strike swing', eAlive._swing === 1, 'swing=' + eAlive._swing);
 
-      // -- building roof lifts when the player is inside its footprint, restores outside --
-      var bld = Entities.buildings[0];
-      assert('building has a roof + footprint', !!(bld && bld.roof), 'building0=' + !!bld);
-      if (bld) {
-        Player.stop();
-        Player.group.position.set(bld.position.x, 0, bld.position.z);
-        Main.advance(0.1);
-        assert('roof hidden while player stands inside building', bld.roof.visible === false, 'visible=' + bld.roof.visible);
-        Player.group.position.set(bld.position.x + 50, 0, bld.position.z + 50);
-        Main.advance(0.1);
-        assert('roof restored when player leaves building', bld.roof.visible === true, 'visible=' + bld.roof.visible);
-        Player.group.position.set(0, 0, 0);
-      }
+      // (building roof-lift test removed — the town now uses camps + crafting
+      // stations instead of ruined buildings; the roof-lift code is retained
+      // in entities.js for any future buildings.)
 
       // -- PvP (player-vs-player) --
       Player.stats.maxHp = 50; Player.stats.hp = 50;

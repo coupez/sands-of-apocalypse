@@ -50,7 +50,10 @@ var Net = (function () {
     ws.onmessage = function (ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
-      if (msg.type === 'welcome') { myId = msg.id; }
+      if (msg.type === 'welcome') {
+        myId = msg.id;
+        if (window.Player && Player.moveToCamp && msg.slot) Player.moveToCamp(msg.slot);
+      }
       else if (msg.type === 'worldInit') {
         // reconcile the current shared-world state before the first snapshot
         Game.online = true;

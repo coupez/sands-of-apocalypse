@@ -17,7 +17,15 @@ var Player = (function () {
   var WINDUP_END = 0.48;        // reach the raised/wound-up pose by here
   var IMPACT = 0.72;            // the strike connects here — effect fires now
 
+  var BASE_MAXHP = 20;
   var stats = { hp: 20, maxHp: 20, attackTick: 0 };
+
+  // recompute max HP from base + equipment bonus; keep current HP in range
+  function applyBonuses(b) {
+    b = b || {};
+    stats.maxHp = BASE_MAXHP + (b.hp || 0);
+    if (stats.hp > stats.maxHp) stats.hp = stats.maxHp;
+  }
 
   // death sequence
   var death = { active: false, phase: null, t: 0, baseY: 0, onDone: null };
@@ -162,6 +170,17 @@ var Player = (function () {
   }
 
   // ---- update ----
+  // Spawn/teleport the player to their camp (slot 1 = north, 2 = south).
+  function moveToCamp(slot) {
+    if (!group) return;
+    var C = (window.World && World.CAMPS) ? World.CAMPS : { north: { x: 0, z: 0 }, south: { x: 0, z: 0 } };
+    var c = (slot === 2) ? C.south : C.north;
+    group.position.set(c.x, terrainY(c.x, c.z), c.z);
+    group.rotation.y = Math.atan2(0 - c.x, 0 - c.z); // face the center of the map
+    moveTarget = null; interaction = null; state = 'idle'; actionKind = null;
+    CameraRig.setTarget(group.position);
+  }
+
   function update(dt, t) {
     if (!group) return;
 
@@ -200,6 +219,9 @@ var Player = (function () {
           faceTowards(ent.position.x, ent.position.z, dt);
           if (ent.type === 'chest') {
             Entities.openChest(ent);
+            interaction = null; state = 'idle'; actionKind = null;
+          } else if (ent.type === 'station') {
+            Entities.useStation(ent);
             interaction = null; state = 'idle'; actionKind = null;
           } else {
             state = 'acting';
@@ -327,6 +349,12 @@ var Player = (function () {
     if (stats.hp <= 0) startDeath();
   }
 
+  function heal(n) {
+    if (state === 'dead' || death.active || n <= 0) return;
+    stats.hp = Utils.clamp(stats.hp + n, 0, stats.maxHp);
+    if (window.UI) UI.updateVitals();
+  }
+
   function startDeath(onDone) {
     if (death.active) return;
     state = 'dead';
@@ -423,7 +451,8 @@ var Player = (function () {
   var api = {
     build: build, update: update,
     walkTo: walkTo, interactWith: interactWith, stop: stop,
-    takeDamage: takeDamage, startDeath: startDeath, reset: reset,
+    takeDamage: takeDamage, heal: heal, startDeath: startDeath, reset: reset,
+    applyBonuses: applyBonuses, moveToCamp: moveToCamp,
     dodge: dodge_, isInvulnerable: isInvulnerable,
     get state() { return state; },
     get position() { return group ? group.position : new THREE.Vector3(); },

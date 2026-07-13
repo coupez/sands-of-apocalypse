@@ -63,7 +63,9 @@ const ETIERS = [
   { hp: 22, def: 4, maxHit: 6,  aggro: 9.5, speed: 3.8, atk: 1.6, range: 2.4 },
   { hp: 45, def: 8, maxHit: 10, aggro: 11,  speed: 4.1, atk: 1.8, range: 3.0 },
 ];
-const ENEMY_PLAN = [[6, 0], [4, 1], [3, 2]]; // [count, tier] — 13 total, matches client
+// Enemies deactivated for now (matches the client's ENEMIES_ENABLED flag).
+// Restore to [[4, 0], [3, 1], [2, 2]] (9 total) to bring them back.
+const ENEMY_PLAN = [];
 const BANDS = [[12, 30], [28, 44], [42, 56]];
 const enemies = [];
 (function genEnemies() {
@@ -79,10 +81,10 @@ const enemies = [];
   }
 })();
 
-// resource depletion state: trees 17 (12 t0 + 5 t1), rocks 13 (9 t0 + 4 t1)
+// resource depletion state: trees 11 (8 t0 + 3 t1), rocks 8 (6 t0 + 2 t1)
 const RES = {
-  tree: Array.from({ length: 17 }, () => ({ active: true, amount: 8, respawnT: 0 })),
-  rock: Array.from({ length: 13 }, () => ({ active: true, amount: 7, respawnT: 0 })),
+  tree: Array.from({ length: 11 }, () => ({ active: true, amount: 8, respawnT: 0 })),
+  rock: Array.from({ length: 8 }, () => ({ active: true, amount: 7, respawnT: 0 })),
 };
 
 function nearestPlayer(x, z) {
@@ -218,9 +220,12 @@ const server = Bun.serve({
   websocket: {
     open(ws) {
       const id = ws.data.id;
-      players.set(id, { id, name: "Wanderer", color: "#8dff3a", x: 0, z: 0, ry: 0, state: "idle", hp: 20, ready: false });
+      // camp slot: 1 = north (player 1), 2 = south (player 2); extras default to 1
+      const used = new Set([...players.values()].map((p) => p.slot).filter(Boolean));
+      const slot = !used.has(1) ? 1 : (!used.has(2) ? 2 : 1);
+      players.set(id, { id, name: "Wanderer", color: "#8dff3a", x: 0, z: 0, ry: 0, state: "idle", hp: 20, ready: false, slot });
       ws.subscribe("game");
-      ws.send(JSON.stringify({ type: "welcome", id }));
+      ws.send(JSON.stringify({ type: "welcome", id, slot }));
       // reconcile current world state so a late joiner doesn't see dead mutants
       // as alive or depleted resources as full
       ws.send(JSON.stringify({
