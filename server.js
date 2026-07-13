@@ -308,6 +308,14 @@ const server = Bun.serve({
         mode = msg.mode;
         server.publish("game", JSON.stringify({ type: "mode", mode, coop }));
         if (mode === "versus") doRestart();
+      } else if (msg.type === "sigil" && mode === "coop" && typeof msg.which === "string") {
+        // record a lit sigil (idempotent), recompute ritual readiness, broadcast
+        const valid = ["forge", "hunt", "plenty", "deep", "devotion"];
+        if (valid.indexOf(msg.which) >= 0 && !coop.sigils[msg.which]) {
+          coop.sigils[msg.which] = true;
+          coop.ritualReady = valid.filter((k) => coop.sigils[k]).length >= 3;
+          server.publish("game", JSON.stringify({ type: "sigil", which: msg.which, lit: true, ritualReady: coop.ritualReady }));
+        }
       } else if (msg.type === "win") {
         // first player to place the Heart wins — relay to everyone + start the
         // 10s countdown, then restart the whole game for a fresh round

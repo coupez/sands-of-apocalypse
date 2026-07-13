@@ -209,6 +209,7 @@ var Main = (function () {
     Player.update(dt, t);
     Entities.update(dt, t);
     World.update(dt, t);
+    if (window.Coop && Coop.update) Coop.update(dt);
     UI.updateLabels(Entities.enemies);
     UI.updateCampLabels(Entities.camps);
     if (Net.enabled) Net.update(dt);

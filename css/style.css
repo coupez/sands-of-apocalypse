@@ -776,3 +776,42 @@ html, body {
 .mc-ic { font-size: 54px; line-height: 1; }
 .mc-name { font-size: 24px; font-weight: 800; letter-spacing: 3px; color: #ffe9b8; }
 .mc-desc { font-size: 13.5px; line-height: 1.5; color: #d8c9a4; }
+
+/* ---------- Co-op HUD (top-left): the five sigils + ritual progress ---------- */
+#coop-hud {
+  position: absolute;
+  top: 16px; left: 16px;
+  width: 232px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+  backdrop-filter: blur(2px);
+  z-index: 11;
+}
+.ch-head {
+  font-size: 12px; letter-spacing: 2px; font-weight: 800;
+  color: var(--toxic); text-shadow: 0 0 6px var(--toxic-glow);
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 6px; margin-bottom: 6px;
+  display: flex; justify-content: space-between;
+}
+.ch-count { color: #fff; }
+.ch-row {
+  display: grid; grid-template-columns: 22px 1fr auto;
+  align-items: center; gap: 6px;
+  padding: 4px 2px; font-size: 12px; opacity: 0.55;
+}
+.ch-row.lit { opacity: 1; }
+.ch-ic { font-size: 15px; text-align: center; filter: grayscale(0.7); }
+.ch-row.lit .ch-ic { filter: none; text-shadow: 0 0 8px var(--toxic-glow); }
+.ch-nm { font-weight: 700; color: var(--ink); }
+.ch-st { font-size: 10.5px; color: #b8a97e; text-align: right; }
+.ch-row.lit .ch-st { color: #8dff9a; font-weight: 700; letter-spacing: 1px; }
+.ch-ready {
+  margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--panel-border);
+  font-size: 11.5px; font-weight: 700; text-align: center; color: #ffe08a;
+  text-shadow: 0 0 8px var(--toxic-glow);
+  animation: pulseGlow 1.8s ease-in-out infinite;
+}

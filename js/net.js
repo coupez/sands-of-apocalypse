@@ -83,6 +83,7 @@ var Net = (function () {
       }
       else if (msg.type === 'restart') { if (window.Entities) Entities.newRound(); }
       else if (msg.type === 'mode') { if (window.Mode) Mode.setMode(msg.mode, msg.coop); }
+      else if (msg.type === 'sigil') { if (window.Coop) Coop.onSigil(msg.which, msg.lit, msg.ritualReady); }
       else if (msg.type === 'chooseMode') { if ((!msg.host || msg.host === myId) && window.Mode) Mode.showChooser(); }
       else if (msg.type === 'level') {
         // a level-up announcement from any player; our own is already shown locally
@@ -216,6 +217,10 @@ var Net = (function () {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'chooseMode', mode: mode }));
   }
+  function sendSigil(which) {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'sigil', which: which }));
+  }
 
   function sync(list) {
     var seen = {};
@@ -339,7 +344,7 @@ var Net = (function () {
   return {
     init: init, update: update, sendAttack: sendAttack,
     sendAttackEnemy: sendAttackEnemy, sendGather: sendGather, sendWin: sendWin, sendLevel: sendLevel,
-    sendChooseMode: sendChooseMode,
+    sendChooseMode: sendChooseMode, sendSigil: sendSigil,
     get enabled() { return enabled; },
     get myName() { return myName; },
     get remoteMeshes() { return remoteMeshes; }

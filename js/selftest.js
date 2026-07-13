@@ -501,6 +501,31 @@ var SelfTest = (function () {
       Mode.setMode('coop');
       assert('Mode.setMode(coop) applies', Game.mode === 'coop');
 
+      // -- co-op: Ritual of Five Sigils (Mode.setMode(coop) activated Coop) --
+      assert('Coop module present & active', !!window.Coop && Coop.active === true);
+      Coop.onSigil('forge', true, false);
+      assert('an inbound sigil lights (forge)', Coop.state.sigils.forge === true && Coop.litCount() >= 1);
+      Coop.applyState({ sigils: { forge: true, plenty: true }, ritualReady: false });
+      assert('applyState reconciles lit sigils (late join)', Coop.state.sigils.plenty === true && Coop.litCount() === 2);
+      // objective detection: clearing both bandit camps lights Hunt AND raids the camp
+      var raidBefore = Entities.bandits.length;
+      Entities.banditCamps.forEach(function (c) { c.cleared = true; });
+      Coop.update(0.1);
+      assert('clearing both camps lights the Hunt sigil', Coop.state.sigils.hunt === true);
+      assert('lighting a sigil raids the camp', Entities.bandits.length > raidBefore, 'bandits ' + raidBefore + '->' + Entities.bandits.length);
+      // Devotion: maxing Prayer lights it
+      Skills.data.prayer.xp = 0; Skills.addXp('prayer', 9999999);
+      Coop.update(0.1);
+      assert('maxing Prayer lights the Devotion sigil', Coop.state.sigils.devotion === true);
+      assert('three sigils ready the ritual', Coop.litCount() >= 3 && Coop.state.ritualReady === true, 'lit=' + Coop.litCount());
+      // online: completing a sigil relays to the server rather than applying locally
+      Game.online = true;
+      var sentSigil = null, realSendSigil = Net.sendSigil;
+      Net.sendSigil = function (w) { sentSigil = w; };
+      Coop.completeSigil('deep');
+      assert('online sigil completion relays to the server', sentSigil === 'deep' && !Coop.state.sigils.deep);
+      Net.sendSigil = realSendSigil; Game.online = false;
+
     } catch (err) {
       assert('NO EXCEPTIONS', false, (err && err.stack) ? err.stack : String(err));
     }

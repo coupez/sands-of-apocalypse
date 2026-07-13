@@ -700,6 +700,22 @@ var Entities = (function () {
     return camp;
   }
 
+  // Co-op: a bandit raid marches on the shared camp (reuses the bandit AI).
+  // `count` raiders of tier `tierIdx`, spawned around the north camp, aggressive.
+  function spawnRaid(count, tierIdx) {
+    var C = World.CAMPS.north;
+    tierIdx = Math.max(0, Math.min(tierIdx || 0, ENEMY_TIERS.length - 1));
+    for (var i = 0; i < count; i++) {
+      var a = Utils.randRange(0, Math.PI * 2), r = Utils.randRange(16, 26);
+      var b = makeEnemy(C.x + Math.cos(a) * r, C.z + Math.sin(a) * r, tierIdx);
+      b.name = 'Raider'; b.reqLevel = 1; b.noRespawn = true; b.local = true; b.isRaid = true;
+      b.home.set(C.x, 0, C.z); b.leashRange = 70; b.wanderRadius = 16; b.aggroRange = 48;
+      b.hp = b.maxHp = (b.maxHp || 12) + 4;
+      bandits.push(b);
+    }
+    Game.log.push('coop:raid:' + count);
+  }
+
   function makeDrop(x, z, itemId, name, bone) {
     var g = new THREE.Group();
     var gem;
@@ -1678,7 +1694,7 @@ var Entities = (function () {
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     sendCaravan: sendCaravan, merchantBusy: merchantBusy,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
-    pickupDrop: pickupDrop,
+    pickupDrop: pickupDrop, spawnRaid: spawnRaid,
     get bandits() { return bandits; }, get banditCamps() { return banditCamps; },
     get drops() { return drops; }, get rats() { return rats; },
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
