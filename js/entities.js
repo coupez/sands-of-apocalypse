@@ -69,6 +69,9 @@ var Entities = (function () {
     group.traverse(function (o) { if (o.isMesh) { o.userData.occGroup = group; Game.occluders.push(o); } });
   }
   function untag(ref) { interactMeshes = interactMeshes.filter(function (m) { return m.userData.ref !== ref; }); }
+  // register/unregister an externally-owned mesh (e.g. Coop's demon weak points)
+  function tagExternal(mesh, ref) { mesh.userData.ref = ref; if (interactMeshes.indexOf(mesh) < 0) interactMeshes.push(mesh); }
+  function untagExternal(ref) { interactMeshes = interactMeshes.filter(function (m) { return m.userData.ref !== ref; }); }
 
   // ---------- hover outline: one reusable back-side silhouette of the hovered object ----------
   var _highlight = null, _highlightSrc = null;
@@ -640,6 +643,13 @@ var Entities = (function () {
     Game.log.push('win:' + (byMe ? 'me' : 'remote'));
   }
   function useObelisk() {
+    // Co-op: the Obelisk is the ritual site — begin the summon when 3 sigils are lit
+    if (window.Coop && Coop.active) {
+      if (Coop.bossActive && Coop.bossActive()) { if (window.UI) UI.showActionText('Mahrûk rages — strike its heart and hands!'); return; }
+      if (Coop.state && Coop.state.ritualReady) { Coop.startRitual(); return; }
+      if (window.UI) UI.showActionText('The Obelisk is dormant — light three sigils to begin the ritual.');
+      return;
+    }
     if (obelisk && obelisk.done) { if (window.UI) UI.showActionText('The Obelisk blazes — the game is won.'); return; }
     if (!Skills.hasItem('orb')) { if (window.UI) UI.showActionText('The Obelisk socket awaits the Heart of the Obelisk.'); return; }
     Skills.removeItem('orb');
@@ -1694,7 +1704,7 @@ var Entities = (function () {
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     sendCaravan: sendCaravan, merchantBusy: merchantBusy,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
-    pickupDrop: pickupDrop, spawnRaid: spawnRaid,
+    pickupDrop: pickupDrop, spawnRaid: spawnRaid, tagExternal: tagExternal, untagExternal: untagExternal,
     get bandits() { return bandits; }, get banditCamps() { return banditCamps; },
     get drops() { return drops; }, get rats() { return rats; },
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,

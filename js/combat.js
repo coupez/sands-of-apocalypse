@@ -88,6 +88,22 @@ var Combat = (function () {
     if (dmg > 0) player.takeDamage(dmg);
   }
 
+  // ---- boss weak points (Mahrûk): heart = bow only, hand = melee only ----
+  function attackBoss(ent) {
+    if (!ent || !ent.active) return;
+    if (window.Player && Player.canAttack && !Player.canAttack()) return;
+    var ranged = isRangedAttack();
+    if (ent.part === 'heart' && !ranged) { if (window.UI) UI.showActionText("Too high to reach — loose an arrow at the heart!"); return; }
+    if (ent.part === 'hand' && ranged) { if (window.UI) UI.showActionText('Get in close with a blade to strike the hand!'); return; }
+    var mx = playerMaxHit();
+    var dmg = Utils.randInt(Math.max(1, Math.floor(mx * 0.5)), mx);
+    awardHitXp(dmg);
+    if (window.Coop && Coop.hitBoss) Coop.hitBoss(ent, dmg);
+    var v = ent.position;
+    _v.set(v.x, v.y + 1.6, v.z);
+    Game.log.push('bossAttack:' + ent.part + ':' + dmg);
+  }
+
   // ---- PvP ----
   function playerAttackPlayer(target) {
     if (!target || !target.active) return;
@@ -119,7 +135,7 @@ var Combat = (function () {
   }
 
   return {
-    playerAttack: playerAttack, enemyAttack: enemyAttack,
+    playerAttack: playerAttack, enemyAttack: enemyAttack, attackBoss: attackBoss,
     playerAttackPlayer: playerAttackPlayer, receivePvpDamage: receivePvpDamage,
     playerMaxHit: playerMaxHit
   };

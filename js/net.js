@@ -69,6 +69,7 @@ var Net = (function () {
       else if (msg.type === 'snapshot') {
         sync(msg.players);
         if (msg.enemies) Entities.applyServerEnemies(msg.enemies);
+        if (msg.boss && window.Coop && Coop.onBossHp) Coop.onBossHp(msg.boss.hp);
       }
       else if (msg.type === 'leave') { removeOther(msg.id); }
       else if (msg.type === 'hit') { onHit(msg); }
@@ -84,6 +85,10 @@ var Net = (function () {
       else if (msg.type === 'restart') { if (window.Entities) Entities.newRound(); }
       else if (msg.type === 'mode') { if (window.Mode) Mode.setMode(msg.mode, msg.coop); }
       else if (msg.type === 'sigil') { if (window.Coop) Coop.onSigil(msg.which, msg.lit, msg.ritualReady); }
+      else if (msg.type === 'bossState') { if (window.Coop) Coop.onBossState(msg); }
+      else if (msg.type === 'bossSlam') { if (window.Coop) Coop.onBossSlam(msg); }
+      else if (msg.type === 'bossHit') { if (window.Coop) Coop.onBossHit(msg.part, msg.dmg, msg.hp); }
+      else if (msg.type === 'bossDead') { if (window.Coop) Coop.onBossDead(); }
       else if (msg.type === 'chooseMode') { if ((!msg.host || msg.host === myId) && window.Mode) Mode.showChooser(); }
       else if (msg.type === 'level') {
         // a level-up announcement from any player; our own is already shown locally
@@ -221,6 +226,14 @@ var Net = (function () {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'sigil', which: which }));
   }
+  function sendRitualStart() {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'ritualStart' }));
+  }
+  function sendBossHit(part, style, dmg) {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'bossHit', part: part, style: style, dmg: dmg | 0 }));
+  }
 
   function sync(list) {
     var seen = {};
@@ -345,6 +358,7 @@ var Net = (function () {
     init: init, update: update, sendAttack: sendAttack,
     sendAttackEnemy: sendAttackEnemy, sendGather: sendGather, sendWin: sendWin, sendLevel: sendLevel,
     sendChooseMode: sendChooseMode, sendSigil: sendSigil,
+    sendRitualStart: sendRitualStart, sendBossHit: sendBossHit,
     get enabled() { return enabled; },
     get myName() { return myName; },
     get remoteMeshes() { return remoteMeshes; }

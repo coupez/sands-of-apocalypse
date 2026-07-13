@@ -526,6 +526,26 @@ var SelfTest = (function () {
       assert('online sigil completion relays to the server', sentSigil === 'deep' && !Coop.state.sigils.deep);
       Net.sendSigil = realSendSigil; Game.online = false;
 
+      // -- co-op finale: summon Mahrûk, fight the slam windows, defeat it --
+      assert('the ritual is ready to summon', Coop.state.ritualReady === true);
+      Skills.data.strength.xp = 0; Skills.addXp('strength', 9999999);   // hit hard so the fight is quick
+      if (Game.equipment.rhand) Skills.unequip('rhand');                // hands need a blade (no bow)
+      Player.stop();
+      Entities.useObelisk();   // co-op + ready → begins the summon (offline sim)
+      assert('summoning begins the boss fight', Coop.bossActive() === true && Coop.boss.hp === Coop.boss.maxHp);
+      invadeInvulnerable();
+      Main.advance(8.8);       // idle(7) → windup(1.1) → vulnerable
+      assert('the boss opens a vulnerable slam window',
+        !!Coop.boss && Coop.boss.stage === 'vuln' && !!Coop.boss.handEnt && Coop.boss.handEnt.active === true,
+        'stage=' + (Coop.boss && Coop.boss.stage));
+      for (var bx = 0; bx < 500 && Coop.bossActive(); bx++) {
+        invadeInvulnerable();
+        if (Coop.boss && Coop.boss.handEnt && Coop.boss.handEnt.active) Combat.attackBoss(Coop.boss.handEnt);
+        Main.advance(0.2);
+      }
+      assert('striking the hands during slams defeats Mahrûk',
+        Coop.bossActive() === false && Game.log.indexOf('coop:bossDead') >= 0);
+
     } catch (err) {
       assert('NO EXCEPTIONS', false, (err && err.stack) ? err.stack : String(err));
     }

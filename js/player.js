@@ -318,6 +318,7 @@ var Player = (function () {
     else if (actionKind === 'attack') {
       if (!canAttack()) { if (window.UI) UI.showActionText('You are too full to attack.'); return; }
       if (ent.type === 'player') Combat.playerAttackPlayer(ent);
+      else if (ent.type === 'boss') Combat.attackBoss(ent);
       else Combat.playerAttack(ent);
       SFX.hit();
     }

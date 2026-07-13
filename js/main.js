@@ -26,7 +26,7 @@ var Main = (function () {
       CURSORS.drop = emojiCursor('🫳', 4, 4);
       CURSORS.use = emojiCursor('👆', 4, 4);
     }
-    if (type === 'player') return CURSORS.enemy;
+    if (type === 'player' || type === 'boss') return CURSORS.enemy;
     if (type === 'station' || type === 'obelisk' || type === 'chest') return CURSORS.use;
     return CURSORS[type] || 'pointer';
   }
@@ -42,6 +42,7 @@ var Main = (function () {
       case 'drop': return 'Pick up ' + ref.name;
       case 'enemy': return 'Attack ' + ref.name + ' (Lv ' + ref.reqLevel + ')';
       case 'player': return 'Attack ' + ref.name;
+      case 'boss': return ref.part === 'heart' ? 'Loose an arrow at the Heart' : 'Strike the Hand';
     }
     return ref.name || '';
   }

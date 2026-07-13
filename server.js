@@ -48,7 +48,7 @@ let roundOver = false;      // a player has won; a restart is scheduled
 let restartTimer = null;    // pending win-countdown timeout
 let hostId = null;          // first player to join — chooses the game mode
 let mode = "pending";       // 'pending' | 'versus' | 'coop' (write-once per session)
-let coop = { sigils: {}, ritualReady: false };   // shared co-op state
+let coop = { sigils: {}, ritualReady: false, boss: null };   // shared co-op state
 
 // ============================================================
 // Authoritative shared world: enemies + resource depletion.
@@ -108,6 +108,50 @@ function doRestart() {
   roundOver = false;
   resetServerWorld();
   server.publish("game", JSON.stringify({ type: "restart" }));
+}
+
+// ---- co-op boss (Mahrûk) — server-authoritative HP + slam windows ----
+const BOSS = { maxHp: 600, slamInterval: 7.0, windup: 1.1, vuln: 3.0, reach: 9, slamRadius: 6, slamDmg: 11 };
+function bossFull() {
+  const b = coop.boss;
+  return { type: "bossState", active: b.active, phase: b.phase, hp: b.hp, maxHp: b.maxHp, stage: b.stage, hand: b.hand, hx: b.hx, hz: b.hz };
+}
+function startBoss() {
+  coop.boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, phase: 1, stage: "idle", hand: "L", hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval };
+  server.publish("game", JSON.stringify(bossFull()));
+}
+function simBoss(dt) {
+  const b = coop.boss;
+  if (!b || !b.active) return;
+  if (b.stage === "idle") {
+    b.timer -= dt;
+    if (b.timer <= 0) {
+      const np = [...players.values()].find((p) => p.ready && (p.hp == null || p.hp > 0) && p.state !== "dead");
+      const px = np ? np.x : 0, pz = np ? np.z : 0, d = Math.hypot(px, pz) || 1;
+      b.hx = +(px / d * BOSS.reach).toFixed(2); b.hz = +(pz / d * BOSS.reach).toFixed(2);
+      b.hand = Math.random() < 0.5 ? "L" : "R";
+      b.stage = "windup"; b.timer = BOSS.windup;
+      server.publish("game", JSON.stringify(bossFull()));
+    }
+  } else if (b.stage === "windup") {
+    b.timer -= dt;
+    if (b.timer <= 0) {
+      b.stage = "vuln"; b.vulnT = BOSS.vuln;
+      server.publish("game", JSON.stringify(bossFull()));
+      server.publish("game", JSON.stringify({ type: "bossSlam", stage: "impact", x: b.hx, z: b.hz, radius: BOSS.slamRadius, dmg: BOSS.slamDmg }));
+    }
+  } else if (b.stage === "vuln") {
+    b.vulnT -= dt;
+    if (b.vulnT <= 0) { b.stage = "idle"; b.hand = null; b.timer = BOSS.slamInterval; server.publish("game", JSON.stringify(bossFull())); }
+  }
+}
+function bossHit(part, dmg) {
+  const b = coop.boss;
+  if (!b || !b.active || b.stage !== "vuln") return;   // window closed
+  if (part !== "hand" && part !== "heart") return;
+  b.hp = Math.max(0, b.hp - Math.max(0, Math.min(80, Math.floor(dmg))));
+  server.publish("game", JSON.stringify({ type: "bossHit", part, dmg: Math.floor(dmg), hp: b.hp }));
+  if (b.hp <= 0) { b.active = false; server.publish("game", JSON.stringify({ type: "bossDead" })); coop.boss = null; }
 }
 
 function nearestPlayer(x, z) {
@@ -191,7 +235,8 @@ function snapshot() {
     if (e.state === "dead") continue; // dead ones handled by enemyDead/Respawn events
     es.push({ i: e.i, x: +e.x.toFixed(2), z: +e.z.toFixed(2), ry: +e.ry.toFixed(2), state: e.state, hp: e.hp });
   }
-  return JSON.stringify({ type: "snapshot", players: arr, enemies: es, serverTime: Date.now() });
+  const boss = (coop.boss && coop.boss.active) ? { hp: coop.boss.hp } : null;
+  return JSON.stringify({ type: "snapshot", players: arr, enemies: es, boss, serverTime: Date.now() });
 }
 
 let uid = 0;
@@ -316,6 +361,10 @@ const server = Bun.serve({
           coop.ritualReady = valid.filter((k) => coop.sigils[k]).length >= 3;
           server.publish("game", JSON.stringify({ type: "sigil", which: msg.which, lit: true, ritualReady: coop.ritualReady }));
         }
+      } else if (msg.type === "ritualStart" && mode === "coop" && coop.ritualReady && (!coop.boss || !coop.boss.active)) {
+        startBoss();
+      } else if (msg.type === "bossHit" && mode === "coop") {
+        bossHit(msg.part, msg.dmg);
       } else if (msg.type === "win") {
         // first player to place the Heart wins — relay to everyone + start the
         // 10s countdown, then restart the whole game for a fresh round
@@ -343,7 +392,7 @@ const server = Bun.serve({
       }
       // empty session → back to a clean pending state for the next lobby
       if (players.size === 0) {
-        mode = "pending"; hostId = null; coop = { sigils: {}, ritualReady: false };
+        mode = "pending"; hostId = null; coop = { sigils: {}, ritualReady: false, boss: null };
         roundOver = false;
         if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
       }
@@ -356,6 +405,7 @@ const server = Bun.serve({
 setInterval(() => {
   if (players.size === 0) return;
   simWorld(0.066);
+  if (coop.boss && coop.boss.active) simBoss(0.066);
   server.publish("game", snapshot());
 }, 66);
 

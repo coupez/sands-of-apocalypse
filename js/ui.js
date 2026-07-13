@@ -664,17 +664,37 @@ var UI = (function () {
   function showDeathScreen() { if (el.death) el.death.classList.add('show'); }
   function hideDeathScreen() { if (el.death) el.death.classList.remove('show'); }
 
-  function showVictory(name, byMe) {
+  function showVictory(name, byMe, subtitle) {
     if (Game.headless || document.getElementById('victory')) return;
     var esc = String(name).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
+    var sub = subtitle || (byMe
+      ? 'You placed the Heart of the Obelisk and claimed the desert!'
+      : esc + ' placed the Heart of the Obelisk and won the game.');
     var d = document.createElement('div');
     d.id = 'victory';
     d.innerHTML = '<div class="vic-inner"><div class="vic-title">' + (byMe ? '★ VICTORY ★' : 'GAME OVER') + '</div>' +
-      '<div class="vic-sub">' + (byMe
-        ? 'You placed the Heart of the Obelisk and claimed the desert!'
-        : esc + ' placed the Heart of the Obelisk and won the game.') + '</div></div>';
+      '<div class="vic-sub">' + sub + '</div></div>';
     document.body.appendChild(d);
   }
+
+  // ---- boss health bar (top-center, big) ----
+  var _bossBar = null;
+  function showBossBar(name, hp, max) {
+    if (Game.headless) return;
+    hideBossBar();
+    _bossBar = document.createElement('div');
+    _bossBar.id = 'boss-bar';
+    _bossBar.innerHTML = '<div class="bb-name">' + String(name).replace(/</g, '&lt;') + '</div>' +
+      '<div class="bb-track"><div class="bb-fill"></div></div>';
+    document.body.appendChild(_bossBar);
+    updateBossBar(hp, max);
+  }
+  function updateBossBar(hp, max) {
+    if (!_bossBar) return;
+    var f = _bossBar.querySelector('.bb-fill');
+    if (f) f.style.width = Utils.clamp(hp / (max || 1), 0, 1) * 100 + '%';
+  }
+  function hideBossBar() { if (_bossBar && _bossBar.parentNode) _bossBar.parentNode.removeChild(_bossBar); _bossBar = null; }
 
   return {
     init: init,
@@ -688,6 +708,7 @@ var UI = (function () {
     updateCampLabels: updateCampLabels,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,
     showDeathScreen: showDeathScreen, hideDeathScreen: hideDeathScreen,
-    showVictory: showVictory
+    showVictory: showVictory,
+    showBossBar: showBossBar, updateBossBar: updateBossBar, hideBossBar: hideBossBar
   };
 })();

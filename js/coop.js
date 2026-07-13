@@ -22,6 +22,12 @@ var Coop = (function () {
   var raidCount = 0;
   var scene = null;
 
+  // ---- Buried Demon boss (Mahrûk) ----
+  // Shared tuning; the server owns the authoritative sim online, the client sims
+  // it offline (single-player co-op sandbox / self-test). Keep the two in step.
+  var BOSS = { maxHp: 600, slamInterval: 7.0, windup: 1.1, vuln: 3.0, reach: 9, slamRadius: 6, slamDmg: 11 };
+  var boss = null;      // { active, hp, maxHp, phase, stage, hand, hx, hz, vulnT, timer, mesh, parts, heartEnt, handEnt, rise }
+
   function sigilDef(k) { for (var i = 0; i < SIGILS.length; i++) if (SIGILS[i].key === k) return SIGILS[i]; return null; }
   function nameOf(k) { var d = sigilDef(k); return d ? d.name : k; }
   function litCount() { var n = 0; for (var i = 0; i < SIGILS.length; i++) if (state.sigils[SIGILS[i].key]) n++; return n; }
@@ -86,6 +92,7 @@ var Coop = (function () {
       if (pr && pr.level >= (pr.max || 12)) completeSigil('devotion');
     }
     animateBraziers(dt);
+    if (boss && boss.active) { if (!Game.online) simBoss(dt); animateDemon(dt); }
   }
 
   function spawnRaid() {
@@ -159,10 +166,203 @@ var Coop = (function () {
     hudEl.innerHTML = html;
   }
 
+  // ---- summoning the ritual (from the Obelisk when ready) ----
+  function startRitual() {
+    if (!active || !state.ritualReady || (boss && boss.active)) return;
+    if (window.UI && UI.announce) UI.announce('The ritual completes… the earth splits open!', true);
+    if (Game.online && window.Net && Net.sendRitualStart) Net.sendRitualStart();
+    else startBossLocal();
+    Game.log.push('coop:ritualStart');
+  }
+  function startBossLocal() {
+    boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, phase: 1,
+      stage: 'idle', hand: 'L', hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval, rise: 0 };
+    buildDemon();
+    if (window.UI && UI.showBossBar) UI.showBossBar('Mahrûk, the Buried Demon', boss.hp, boss.maxHp);
+    Game.log.push('coop:bossStart');
+  }
+
+  // ---- the demon mesh ----
+  function buildDemon() {
+    if (!scene) scene = Game.scene;
+    if (!scene || (boss && boss.mesh)) return;
+    var g = new THREE.Group();
+    var flesh = new THREE.MeshStandardMaterial({ color: 0x2a1420, roughness: 1, flatShading: true });
+    var dark = new THREE.MeshStandardMaterial({ color: 0x160a12, roughness: 1, flatShading: true });
+    var horn = new THREE.MeshStandardMaterial({ color: 0x3a2a2a, roughness: 0.8, flatShading: true });
+    var torso = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.6, 8, 8), flesh); torso.position.y = 6; g.add(torso);
+    var chest = new THREE.Mesh(new THREE.DodecahedronGeometry(3.0, 0), flesh); chest.position.set(0, 8.5, 0.6); chest.scale.set(1.3, 1.0, 0.9); g.add(chest);
+    var head = new THREE.Mesh(new THREE.DodecahedronGeometry(1.7, 0), flesh); head.position.set(0, 12.2, 0.4); g.add(head);
+    for (var h = 0; h < 2; h++) {
+      var hn = new THREE.Mesh(new THREE.ConeGeometry(0.5, 2.4, 5), horn);
+      hn.position.set(h ? 1.0 : -1.0, 13.4, 0.2); hn.rotation.z = h ? -0.5 : 0.5; hn.rotation.x = -0.3; g.add(hn);
+    }
+    // glowing eyes
+    var eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a0000, emissive: 0xff5a10, emissiveIntensity: 2 });
+    for (var e = 0; e < 2; e++) { var ey = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), eyeMat); ey.position.set(e ? 0.6 : -0.6, 12.4, 1.5); g.add(ey); }
+    // the HEART weak point — a glowing orb on the chest (bow-only)
+    var heartMat = new THREE.MeshStandardMaterial({ color: 0x3a0000, emissive: 0xff2a2a, emissiveIntensity: 1.4, roughness: 0.3 });
+    var heart = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15, 0), heartMat); heart.position.set(0, 8.6, 2.6); g.add(heart);
+    var heartLight = new THREE.PointLight(0xff3a2a, 1.5, 20, 2); heartLight.position.set(0, 8.6, 3); g.add(heartLight);
+    // arms (shoulder-pivoted), each with a clawed hand
+    function arm(side) {
+      var pivot = new THREE.Group(); pivot.position.set(side * 3.2, 9.5, 0);
+      var upper = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.9, 5.5, 6), flesh); upper.position.y = -2.75; pivot.add(upper);
+      var hand = new THREE.Mesh(new THREE.DodecahedronGeometry(1.5, 0), dark); hand.position.y = -6; pivot.add(hand);
+      for (var c = 0; c < 4; c++) { var cl = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.3, 4), horn); cl.position.set((c - 1.5) * 0.5, -7, 0.4); cl.rotation.x = 2.4; pivot.add(cl); }
+      g.add(pivot); return { pivot: pivot, hand: hand };
+    }
+    var armL = arm(-1), armR = arm(1);
+    g.position.set(0, -14, 0);   // starts buried; rises during the summon
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+    boss.mesh = g; boss.heart = heart; boss.heartMat = heartMat; boss.heartLight = heartLight;
+    boss.armL = armL; boss.armR = armR;
+
+    // HEART interactable (bow-only, always present; only damages during a window)
+    boss.heartEnt = { type: 'boss', part: 'heart', name: "Mahrûk's Heart", ranged: true,
+      mesh: heart, position: new THREE.Vector3(0, 8.6, 2.6), active: true, interactRange: 16 };
+    if (window.Entities && Entities.tagExternal) Entities.tagExternal(heart, boss.heartEnt);
+  }
+
+  // per-frame demon animation (rise + slam poses + heart pulse)
+  function animateDemon(dt) {
+    var b = boss; if (!b || !b.mesh) return;
+    b.rise = Math.min(1, (b.rise || 0) + dt * 0.5);
+    b.mesh.position.y = -14 + b.rise * 14;   // rise out of the earth
+    var t = Game.time;
+    if (b.heartMat) b.heartMat.emissiveIntensity = (b.stage === 'vuln') ? (2.4 + Math.abs(Math.sin(t * 8))) : 1.0;
+    // idle sway
+    b.mesh.rotation.y = Math.sin(t * 0.4) * 0.08;
+    // arm slam pose: the active hand swings down during windup→vuln, retracts after
+    var reachAng = { L: b.armL, R: b.armR };
+    for (var s in reachAng) {
+      var a = reachAng[s]; if (!a) continue;
+      var target = 0;
+      if (b.hand === s && (b.stage === 'windup')) target = -0.8;      // raised
+      else if (b.hand === s && b.stage === 'vuln') target = 1.5;       // slammed down
+      a.pivot.rotation.x = Utils.damp(a.pivot.rotation.x, target, 10, dt);
+    }
+    // keep the heart entity's world position current (it barely moves, but sway shifts it)
+    if (b.heartEnt) b.heart.getWorldPosition(b.heartEnt.position);
+  }
+
+  // ---- offline sim (mirrors the server; online is server-authoritative) ----
+  function simBoss(dt) {
+    var b = boss; if (!b || !b.active) return;
+    if (b.stage === 'idle' || b.stage === 'recover') {
+      b.timer -= dt;
+      if (b.timer <= 0) {
+        var p = Game.player && Game.player.position ? Game.player.position : { x: 0, z: 0 };
+        var d = Math.hypot(p.x, p.z) || 1;
+        b.hx = p.x / d * BOSS.reach; b.hz = p.z / d * BOSS.reach;
+        b.hand = (Utils.rand() < 0.5) ? 'L' : 'R';
+        b.stage = 'windup'; b.timer = BOSS.windup;
+        onBossSlam({ stage: 'windup', hand: b.hand, x: b.hx, z: b.hz, windup: BOSS.windup });
+      }
+    } else if (b.stage === 'windup') {
+      b.timer -= dt;
+      if (b.timer <= 0) { b.stage = 'vuln'; b.vulnT = BOSS.vuln; openWindow(); onBossSlam({ stage: 'impact', hand: b.hand, x: b.hx, z: b.hz, radius: BOSS.slamRadius, dmg: BOSS.slamDmg }); }
+    } else if (b.stage === 'vuln') {
+      b.vulnT -= dt;
+      if (b.vulnT <= 0) { b.stage = 'idle'; closeWindow(); b.timer = BOSS.slamInterval; }
+    }
+  }
+
+  // ---- weak-point windows: tag/untag the slammed hand target ----
+  function openWindow() {
+    var b = boss; if (!b) return;
+    // a ground hand target at (hx,hz) — melee only
+    if (!b.handEnt) {
+      var hm = new THREE.Mesh(new THREE.OctahedronGeometry(1.4, 0),
+        new THREE.MeshStandardMaterial({ color: 0x2a0000, emissive: 0xff3a1a, emissiveIntensity: 1.6, roughness: 0.4 }));
+      b.handMesh = hm; scene.add(hm);
+      b.handEnt = { type: 'boss', part: 'hand', name: "Mahrûk's Hand", mesh: hm, position: new THREE.Vector3(), active: true, interactRange: 3.2 };
+    }
+    b.handMesh.visible = true;
+    b.handMesh.position.set(b.hx, 0.8, b.hz);
+    b.handEnt.position.set(b.hx, 0.8, b.hz);
+    b.handEnt.active = true;
+    if (window.Entities && Entities.tagExternal) Entities.tagExternal(b.handMesh, b.handEnt);
+  }
+  function closeWindow() {
+    var b = boss; if (!b || !b.handEnt) return;
+    b.handEnt.active = false;
+    if (b.handMesh) b.handMesh.visible = false;
+    if (window.Entities && Entities.untagExternal) Entities.untagExternal(b.handEnt);
+  }
+
+  // ---- inbound (server-driven, online) ----
+  function onBossState(s) {
+    if (!s) return;
+    if (s.active && (!boss || !boss.active)) startBossFromServer(s);
+    if (!boss) return;
+    boss.hp = s.hp; boss.maxHp = s.maxHp; boss.phase = s.phase;
+    var was = boss.stage; boss.stage = s.stage; boss.hand = s.hand || boss.hand;
+    if (typeof s.hx === 'number') { boss.hx = s.hx; boss.hz = s.hz; }
+    if (boss.stage === 'vuln' && was !== 'vuln') openWindow();
+    if (boss.stage !== 'vuln' && was === 'vuln') closeWindow();
+    if (window.UI && UI.updateBossBar) UI.updateBossBar(boss.hp, boss.maxHp);
+    if (!s.active) onBossDead();
+  }
+  function startBossFromServer(s) {
+    boss = { active: true, hp: s.hp, maxHp: s.maxHp, phase: s.phase, stage: s.stage, hand: s.hand || 'L', hx: s.hx || 0, hz: s.hz || 0, rise: 0 };
+    buildDemon();
+    if (window.UI && UI.showBossBar) UI.showBossBar('Mahrûk, the Buried Demon', boss.hp, boss.maxHp);
+  }
+  function onBossSlam(msg) {
+    var b = boss; if (!b) return;
+    if (msg.stage === 'impact') {
+      // damage the local player if caught in the slam and not dodging
+      var p = Game.player;
+      if (p && p.position && !p.isDead) {
+        var d = Math.hypot(p.position.x - msg.x, p.position.z - msg.z);
+        if (d <= (msg.radius || BOSS.slamRadius) && !(p.isInvulnerable && p.isInvulnerable())) p.takeDamage(msg.dmg || BOSS.slamDmg);
+      }
+      if (window.UI && UI.spawnHitsplat) { /* dust puff via hitsplat omitted */ }
+    }
+  }
+  function onBossHit(part, dmg, hp) {
+    var b = boss; if (!b) return;
+    if (typeof hp === 'number') b.hp = hp;
+    var pos = (part === 'heart') ? b.heartEnt && b.heartEnt.position : b.handEnt && b.handEnt.position;
+    if (pos && window.UI && UI.spawnHitsplat) UI.spawnHitsplat(new THREE.Vector3(pos.x, pos.y + 1.5, pos.z), dmg, 'hit');
+    if (window.UI && UI.updateBossBar) UI.updateBossBar(b.hp, b.maxHp);
+  }
+  function onBossDead() {
+    var b = boss; if (!b) return;
+    b.active = false;
+    closeWindow();
+    if (b.mesh && scene) scene.remove(b.mesh);
+    if (b.heartEnt && window.Entities && Entities.untagExternal) Entities.untagExternal(b.heartEnt);
+    if (window.UI) { if (UI.hideBossBar) UI.hideBossBar(); if (UI.showVictory) UI.showVictory('The party', true, 'You banished Mahrûk and saved the sands!'); }
+    Game.log.push('coop:bossDead');
+    boss = null;
+  }
+
+  // ---- player struck a weak point (called from combat) ----
+  function hitBoss(ent, dmg) {
+    var b = boss; if (!b || !b.active) return;
+    var part = ent.part;
+    if (Game.online && window.Net && Net.sendBossHit) Net.sendBossHit(part, part === 'heart' ? 'ranged' : 'melee', dmg);
+    else applyBossHitLocal(part, dmg);
+  }
+  function applyBossHitLocal(part, dmg) {
+    var b = boss; if (!b || !b.active || b.stage !== 'vuln') return;   // window closed
+    b.hp = Math.max(0, b.hp - Math.max(0, Math.min(80, Math.floor(dmg))));
+    onBossHit(part, Math.floor(dmg), b.hp);
+    if (b.hp <= 0) onBossDead();
+  }
+
+  function bossActive() { return !!(boss && boss.active); }
+  function onBossHp(hp) { if (boss && typeof hp === 'number') { boss.hp = hp; if (window.UI && UI.updateBossBar) UI.updateBossBar(hp, boss.maxHp); } }
+
   return {
     onMode: onMode, applyState: applyState, onSigil: onSigil, completeSigil: completeSigil,
-    update: update, teardown: teardown,
-    get state() { return state; }, get active() { return active; },
+    update: update, teardown: teardown, startRitual: startRitual,
+    onBossState: onBossState, onBossSlam: onBossSlam, onBossHit: onBossHit, onBossDead: onBossDead,
+    onBossHp: onBossHp, hitBoss: hitBoss, bossActive: bossActive,
+    get state() { return state; }, get active() { return active; }, get boss() { return boss; },
     litCount: litCount, THRESHOLD: THRESHOLD, SIGILS: SIGILS
   };
 })();
