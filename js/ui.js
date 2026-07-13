@@ -419,37 +419,41 @@ var UI = (function () {
     m.style.display = 'block';
   }
 
-  // ---------- merchant sell menu ----------
+  // ---------- merchant sell menu (an inventory-grid you sell from) ----------
   function openSellMenu(merchantEnt) {
     if (Game.headless) return;
     _sellSession = { ent: merchantEnt, sold: false };
-    var m = ensureSmithMenu();   // reuse the same modal styling
+    var name = (merchantEnt.camel && merchantEnt.camel.name) || 'the merchant';
+    var m = ensureSmithMenu();
     function render() {
       m.innerHTML = '';
+      var pending = (merchantEnt.camel && merchantEnt.camel.pending) || 0;
       var head = document.createElement('div');
       head.className = 'smith-title';
-      head.innerHTML = 'Sell to the merchant <span class="smith-lvl">🪙 ' + (Game.gold || 0) + ' gold</span>';
+      head.innerHTML = 'Sell to ' + name.replace(/</g, '&lt;') +
+        ' <span class="smith-lvl">🪙 ' + (Game.gold || 0) + (pending ? '  (+' + pending + ' pending)' : '') + '</span>';
       m.appendChild(head);
-      var list = document.createElement('div'); list.className = 'smith-list'; m.appendChild(list);
-      var any = false;
-      for (var i = 0; i < Game.inventory.length; i++) {
-        var it = Game.inventory[i];
-        if (!it) continue;
-        var v = Skills.sellValue(it.id);
-        if (v <= 0) continue;
-        any = true;
-        (function (item, index) {
-          var row = document.createElement('div');
-          row.className = 'smith-item';
-          row.innerHTML = '<span class="si-icon">' + iconHtml(item) + '</span>' +
-            '<span class="si-name">' + item.name + '</span>' +
-            '<span class="si-cost">🪙 ' + Skills.sellValue(item.id) + '</span>' +
-            '<span class="si-note">Sell</span>';
-          row.addEventListener('click', function () { if (Skills.sellItem(index)) { if (_sellSession) _sellSession.sold = true; } render(); });
-          list.appendChild(row);
-        })(it, i);
+      var hint = document.createElement('div');
+      hint.className = 'sell-hint';
+      hint.textContent = 'Click an item to load it onto the caravan — you are paid when it returns.';
+      m.appendChild(hint);
+      var grid = document.createElement('div'); grid.id = 'sell-grid'; m.appendChild(grid);
+      for (var i = 0; i < Game.invMax; i++) {
+        (function (index) {
+          var it = Game.inventory[index];
+          var v = it ? Skills.sellValue(it.id) : 0;
+          var slot = document.createElement('div');
+          slot.className = 'inv-slot' + (it ? ' filled' : '') + (v > 0 ? ' sellable' : '');
+          if (it) {
+            slot.innerHTML = iconHtml(it) + (v > 0 ? '<span class="sell-val">' + v + '</span>' : '');
+            slot.title = it.name + (v > 0 ? ' — sell for ' + v + ' gold' : ' — the merchant won\'t buy that');
+          }
+          if (it && v > 0) slot.addEventListener('click', function () {
+            if (Entities.sellToMerchant(merchantEnt, index)) { _sellSession.sold = true; render(); }
+          });
+          grid.appendChild(slot);
+        })(i);
       }
-      if (!any) { var e = document.createElement('div'); e.className = 'smith-item disabled'; e.innerHTML = '<span class="si-name">Nothing to sell.</span>'; list.appendChild(e); }
       m.style.display = 'block';
     }
     render();
@@ -656,6 +660,28 @@ var UI = (function () {
     }
   }
 
+  // ---------- floating merchant nameplates (above the camel/rider) ----------
+  function updateMerchantLabels(stations) {
+    if (Game.headless || !labelLayer || !stations) return;
+    for (var i = 0; i < stations.length; i++) {
+      var s = stations[i];
+      if (s.kind !== 'merchant' || !s.camel) continue;
+      if (!s._labelEl) {
+        var d = document.createElement('div');
+        d.className = 'entity-label merchant';
+        d.innerHTML = '<div class="nm">🐫 ' + String(s.camel.name || 'Merchant').replace(/</g, '&lt;') + '</div>';
+        labelLayer.appendChild(d);
+        s._labelEl = d;
+      }
+      var g = s.camel.group;
+      var pt = toScreen(new THREE.Vector3(g.position.x, g.position.y + 3.9, g.position.z));
+      if (!pt) { s._labelEl.style.display = 'none'; continue; }
+      s._labelEl.style.display = 'block';
+      s._labelEl.style.left = pt.x + 'px';
+      s._labelEl.style.top = pt.y + 'px';
+    }
+  }
+
   // ---------- floating enemy labels / hp bars ----------
   function updateLabels(enemies) {
     if (Game.headless || !labelLayer) return;
@@ -732,7 +758,7 @@ var UI = (function () {
     showActionText: showActionText, setTarget: setTarget, announce: announce,
     showTip: showTip, hideTip: hideTip, showCountdown: showCountdown, clearOverlays: clearOverlays,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
-    updateCampLabels: updateCampLabels,
+    updateCampLabels: updateCampLabels, updateMerchantLabels: updateMerchantLabels,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,
     showDeathScreen: showDeathScreen, hideDeathScreen: hideDeathScreen,
     showVictory: showVictory,

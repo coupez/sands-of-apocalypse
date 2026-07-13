@@ -215,6 +215,7 @@ var Main = (function () {
     if (window.Coop && Coop.update) Coop.update(dt);
     UI.updateLabels(Entities.enemies);
     UI.updateCampLabels(Entities.camps);
+    UI.updateMerchantLabels(Entities.stations);
     if (Net.enabled) Net.update(dt);
   }
 

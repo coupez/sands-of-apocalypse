@@ -207,24 +207,33 @@ var SelfTest = (function () {
       assert('smithing without enough bars is blocked', Skills.smith('bronze_platebody', 1) === false);
       assert('boots go in the new feet slot', (function () { clearBag(); Skills.addItem('bronzebar'); Skills.smith('bronze_boots', 1); Skills.equipFromInventory(invIndexOf('bronze_boots')); return Game.equipment.feet === 'bronze_boots'; })());
 
-      // -- gold, the merchant, and station upgrades --
+      // -- the named merchant, deferred payment, and the Merchant skill --
       clearBag();
       Game.gold = 0;
-      Skills.addItem('elderwood');
-      var g0 = Game.gold;
-      Skills.sellItem(invIndexOf('elderwood'));
-      assert('selling an item grants gold', Game.gold > g0, 'gold=' + Game.gold);
-      assert('sold item leaves the bag', invIndexOf('elderwood') < 0);
-      // merchant caravan: departs when sent, blocks selling, then returns
+      assert('name generator makes "Name of Place" Egyptian names', Utils.egyptianName().indexOf(' of ') > 0);
+      assert('Merchant skill exists (cap 12)', !!Skills.data.merchant && Skills.data.merchant.max === 12);
       var merchant = Entities.stations.filter(function (s) { return s.kind === 'merchant'; })[0];
-      assert('merchant stand has a camel', !!(merchant && merchant.camel));
+      assert('the merchant has a name above the camel', !!(merchant && merchant.camel && merchant.camel.name && merchant.camel.name.indexOf(' of ') > 0));
       if (merchant) {
-        assert('merchant available before the caravan leaves', Entities.merchantBusy(merchant) === false);
+        Skills.addItem('elderwood');
+        var mxp0 = Skills.data.merchant.xp;
+        Entities.sellToMerchant(merchant, invIndexOf('elderwood'));
+        assert('selling loads the caravan — payment is pending, not immediate',
+          invIndexOf('elderwood') < 0 && (Game.gold || 0) === 0 && merchant.camel.pending > 0);
+        assert('selling trains the Merchant skill', Skills.data.merchant.xp > mxp0);
         Entities.sendCaravan(merchant);
         assert('caravan departs → merchant is busy', Entities.merchantBusy(merchant) === true);
-        invadeInvulnerable();   // survive while enemies roam during the long wait
+        invadeInvulnerable();
         Main.advance(32);       // leave (~8s) + deliver (~8s) + return (~8s)
-        assert('caravan returns → merchant available again', Entities.merchantBusy(merchant) === false);
+        assert('caravan returns and pays out the pending gold',
+          Entities.merchantBusy(merchant) === false && Game.gold > 0 && merchant.camel.pending === 0);
+        // maxing Merchant gifts the Essence of the Merchant
+        Skills.data.merchant.xp = 0; Skills.addXp('merchant', 9999999);
+        assert('Merchant caps at level 12', Skills.data.merchant.level === 12);
+        Game.merchantEssence = false;
+        Skills.addItem('log');
+        Entities.sellToMerchant(merchant, invIndexOf('log'));
+        assert('maxing Merchant gifts the Essence of the Merchant', Skills.hasItem('messence'));
       }
       if (anvil) {
         var lvl0 = anvil.level;

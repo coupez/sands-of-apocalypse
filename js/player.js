@@ -59,9 +59,6 @@ var Player = (function () {
     head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
     head.position.y = 2.35;
     group.add(head);
-    var hood = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.6, 5), dark);
-    hood.position.y = 2.75;
-    group.add(hood);
 
     // arms (pivot at shoulder so swings look right)
     rightArm = new THREE.Group();

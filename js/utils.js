@@ -61,10 +61,21 @@ var Utils = (function () {
     return 1;
   }
 
+  // A name in the style "Amira of Luxor" — a popular Egyptian given name (male or
+  // female) + an Egyptian place. Uses Math.random (identity, not the world seed).
+  var EGY_NAMES = ['Ahmed', 'Mohamed', 'Mahmoud', 'Youssef', 'Omar', 'Khaled', 'Amir', 'Karim', 'Hassan', 'Tarek', 'Mostafa', 'Ali', 'Ibrahim', 'Sayed',
+    'Fatma', 'Aisha', 'Mariam', 'Nour', 'Salma', 'Yasmin', 'Layla', 'Hana', 'Amira', 'Dalia', 'Rania', 'Zeinab', 'Farida', 'Habiba'];
+  var EGY_PLACES = ['Luxor', 'Aswan', 'Giza', 'Cairo', 'Alexandria', 'Saqqara', 'Karnak', 'Memphis', 'Thebes', 'Dahshur', 'Faiyum', 'Siwa', 'Rosetta', 'Edfu', 'Abydos', 'Dendera', 'Minya', 'Sohag'];
+  function egyptianName() {
+    var f = EGY_NAMES[Math.floor(Math.random() * EGY_NAMES.length)];
+    var p = EGY_PLACES[Math.floor(Math.random() * EGY_PLACES.length)];
+    return f + ' of ' + p;
+  }
+
   return {
     seed: seed, rand: rand, randRange: randRange, randInt: randInt, pick: pick,
     clamp: clamp, lerp: lerp, damp: damp,
-    xpForLevel: xpForLevel, levelForXp: levelForXp
+    xpForLevel: xpForLevel, levelForXp: levelForXp, egyptianName: egyptianName
   };
 })();
 

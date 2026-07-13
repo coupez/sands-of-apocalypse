@@ -421,7 +421,8 @@ var Entities = (function () {
       var nd = Math.hypot(cx, cz) || 1;
       ent.camel = { group: camelG, home: { x: cx, z: cz },
         exit: { x: cx + cx / nd * 48, z: cz + cz / nd * 48 },   // radially off the map
-        faceHome: camelG.rotation.y, state: 'present', t: 0 };
+        faceHome: camelG.rotation.y, state: 'present', t: 0,
+        name: Utils.egyptianName(), pending: 0 };
     }
     tag(g, ent);
     return ent;
@@ -534,6 +535,32 @@ var Entities = (function () {
     return true;
   }
 
+  // Sell an item TO the merchant: it's loaded onto the caravan (payment comes
+  // when the caravan returns), and it trains the Merchant skill.
+  function sellToMerchant(ent, index) {
+    var it = Game.inventory[index];
+    if (!it) return false;
+    var v = Skills.sellValue(it.id);
+    if (v <= 0) { if (window.UI) UI.showActionText("The merchant won't buy that."); return false; }
+    Game.inventory[index] = null;
+    if (window.UI) UI.updateInventory();
+    if (ent.camel) ent.camel.pending = (ent.camel.pending || 0) + v;
+    Skills.addXp('merchant', Math.max(2, Math.round(v * 0.6)));
+    grantMerchantEssence();
+    if (window.UI) UI.showActionText('The merchant loads your ' + it.name + ' onto the caravan.');
+    Game.log.push('sell:' + it.id);
+    return true;
+  }
+  // At max Merchant level, the merchant gifts the Essence of the Merchant (once).
+  function grantMerchantEssence() {
+    var m = Skills.data.merchant;
+    if (m && m.level >= (m.max || 12) && !Game.merchantEssence) {
+      Game.merchantEssence = true;
+      Skills.addItem('messence');
+      if (window.UI && UI.announce) UI.announce('A master trader! The merchant gifts you the Essence of the Merchant.', true);
+    }
+  }
+
   // merchant caravan: sending it off (after a sale) blocks selling until it returns
   function merchantBusy(ent) { return !!(ent && ent.camel && ent.camel.state !== 'present'); }
   function sendCaravan(ent) { if (ent && ent.camel && ent.camel.state === 'present') { ent.camel.state = 'leaving'; Game.log.push('caravan:leave'); } }
@@ -545,7 +572,14 @@ var Entities = (function () {
     var g = c.group, dx = target.x - g.position.x, dz = target.z - g.position.z, dd = Math.hypot(dx, dz);
     if (dd < 0.5) {
       if (c.state === 'leaving') { c.state = 'gone'; c.t = 8; }   // ~8s off delivering
-      else { c.state = 'present'; g.rotation.y = c.faceHome; if (window.UI) UI.showActionText('The merchant caravan has returned.'); }
+      else {
+        c.state = 'present'; g.rotation.y = c.faceHome;
+        if (c.pending > 0) {   // pay out the proceeds of the last run
+          Skills.addGold(c.pending);
+          if (window.UI) UI.showActionText('The caravan returns — ' + (c.name || 'the merchant') + ' pays you ' + c.pending + ' gold!');
+          c.pending = 0;
+        } else if (window.UI) UI.showActionText('The merchant caravan has returned.');
+      }
       return;
     }
     var step = Math.min(6 * dt, dd);
@@ -1732,7 +1766,7 @@ var Entities = (function () {
     init: init, update: update, reset: reset, newRound: newRound, setHighlight: setHighlight,
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
-    sendCaravan: sendCaravan, merchantBusy: merchantBusy,
+    sendCaravan: sendCaravan, merchantBusy: merchantBusy, sellToMerchant: sellToMerchant,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
     pickupDrop: pickupDrop, spawnRaid: spawnRaid, tagExternal: tagExternal, untagExternal: untagExternal,
     spawnBuild: spawnBuild,

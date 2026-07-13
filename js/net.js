@@ -26,7 +26,7 @@ var Net = (function () {
     // client is unique even though the world layout is identical.
     myColor = COLORS[Math.floor(Math.random() * COLORS.length)];
     myColorHex = '#' + ('000000' + myColor.toString(16)).slice(-6);
-    myName = 'Wanderer-' + (100 + Math.floor(Math.random() * 900));
+    myName = Utils.egyptianName();
     enabled = true;
 
     statusEl = document.createElement('div');
@@ -124,7 +124,6 @@ var Net = (function () {
     var dark = new THREE.MeshStandardMaterial({ color: 0x20261a, roughness: 1, flatShading: true });
     var torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.5), matBody); torso.position.y = 1.5; g.add(torso);
     var head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead); head.position.y = 2.35; g.add(head);
-    var hood = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.6, 5), dark); hood.position.y = 2.75; g.add(hood);
     var legL = new THREE.Group(); legL.position.set(-0.24, 0.95, 0);
     var lm = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.95, 0.3), matLegs); lm.position.y = -0.47; legL.add(lm); g.add(legL);
     var legR = new THREE.Group(); legR.position.set(0.24, 0.95, 0);

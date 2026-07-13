@@ -4,7 +4,7 @@
 // ============================================================
 
 var Skills = (function () {
-  var SKILL_ORDER = ['attack', 'strength', 'ranged', 'prayer', 'woodcutting', 'mining', 'fishing', 'cooking', 'smithing'];
+  var SKILL_ORDER = ['attack', 'strength', 'ranged', 'prayer', 'woodcutting', 'mining', 'fishing', 'cooking', 'smithing', 'merchant'];
   // combat skills cap at 20; gathering/production/prayer skills cap at 12
   var data = {
     attack:      { name: 'Attack',      icon: '⚔️', xp: 0, level: 1, max: 20 },
@@ -15,7 +15,8 @@ var Skills = (function () {
     mining:      { name: 'Mining',      icon: '⛏️', xp: 0, level: 1, max: 12 },
     fishing:     { name: 'Fishing',     icon: '🎣', xp: 0, level: 1, max: 12 },
     cooking:     { name: 'Cooking',     icon: '🍳', xp: 0, level: 1, max: 12 },
-    smithing:    { name: 'Smithing',    icon: '🔨', xp: 0, level: 1, max: 12 }
+    smithing:    { name: 'Smithing',    icon: '🔨', xp: 0, level: 1, max: 12 },
+    merchant:    { name: 'Merchant',    icon: '🪙', xp: 0, level: 1, max: 12 }
   };
 
   var ITEMS = {
@@ -39,6 +40,7 @@ var Skills = (function () {
     goldbar:   { id: 'goldbar',   name: 'Gold Bar',   icon: '▬', tint: 0xffd24a },
     essence:   { id: 'essence',   name: 'Bandit Essence',   icon: '🩸' },
     bones:     { id: 'bones',     name: 'Pile of Bones',    icon: '🦴' },
+    messence:  { id: 'messence',  name: 'Essence of the Merchant', icon: '💰' },
     orb:       { id: 'orb',       name: 'Heart of the Obelisk', icon: '❤️' }
   };
 
