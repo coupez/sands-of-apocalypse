@@ -155,6 +155,8 @@ var Main = (function () {
   function handleClick() {
     var ref = pickInteractable(ndc);
     if (ref) {
+      // no friendly fire in co-op — your fellow wanderers are allies
+      if (ref.type === 'player' && Game.mode !== 'versus') { UI.showActionText('You stand with your ally.'); return; }
       var gate = gateMessage(ref);
       if (gate) { UI.showActionText(gate); return; }
       Player.interactWith(ref);

@@ -745,3 +745,34 @@ html, body {
   animation: announce-in 0.3s ease, ominous-pulse 1.6s ease-in-out infinite;
 }
 @keyframes ominous-pulse { 0%,100% { box-shadow: 0 0 26px rgba(200,40,20,0.5), inset 0 0 16px rgba(120,10,10,0.6); } 50% { box-shadow: 0 0 40px rgba(255,60,30,0.8), inset 0 0 20px rgba(150,20,10,0.7); } }
+
+/* ---------- Mode chooser (host) + waiting overlay ---------- */
+#mode-chooser, #mode-wait {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(20,13,6,0.82), rgba(0,0,0,0.94) 85%);
+  backdrop-filter: blur(3px);
+  animation: fadeIn 0.4s ease;
+}
+.mc-inner { text-align: center; max-width: 900px; padding: 0 20px; }
+.mc-title {
+  font-size: 40px; font-weight: 900; letter-spacing: 6px;
+  color: var(--toxic); text-shadow: 0 0 26px var(--toxic-glow), 0 3px 8px #000;
+  margin-bottom: 6px;
+}
+.mc-sub { color: var(--ink); letter-spacing: 2px; font-size: 14px; margin-bottom: 26px; opacity: 0.85; }
+.mc-wait { color: var(--ink); letter-spacing: 2px; font-size: 16px; margin-top: 18px; animation: pulseGlow 2s ease-in-out infinite; }
+.mc-cards { display: flex; gap: 22px; justify-content: center; flex-wrap: wrap; }
+.mc-card {
+  width: 320px; max-width: 82vw; min-height: 230px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 26px 22px; cursor: pointer;
+  background: var(--panel-bg); border: 2px solid var(--panel-border);
+  border-radius: 14px; color: var(--ink);
+  box-shadow: 0 6px 26px rgba(0,0,0,0.6);
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.mc-card:hover { transform: translateY(-4px); border-color: var(--toxic); box-shadow: 0 0 26px var(--toxic-glow); }
+.mc-ic { font-size: 54px; line-height: 1; }
+.mc-name { font-size: 24px; font-weight: 800; letter-spacing: 3px; color: #ffe9b8; }
+.mc-desc { font-size: 13.5px; line-height: 1.5; color: #d8c9a4; }

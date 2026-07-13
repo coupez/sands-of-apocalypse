@@ -8,6 +8,9 @@ var Game = {
   headless: false,      // true in ?selftest mode (skips heavy rendering assumptions)
   selftest: false,
   online: false,        // true once the server is driving the shared world
+  mode: 'coop',         // 'pending' | 'versus' | 'coop' — offline defaults to a coop sandbox
+  coop: null,           // shared co-op state (sigils, ritual, boss) when in co-op
+  _isHost: false,       // this client is the session host (chooses the mode)
   time: 0,              // seconds since start
   paused: false,
   scene: null,

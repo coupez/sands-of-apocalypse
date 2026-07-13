@@ -53,10 +53,12 @@ var Net = (function () {
       if (msg.type === 'welcome') {
         myId = msg.id;
         if (window.Player && Player.moveToCamp && msg.slot) Player.moveToCamp(msg.slot);
+        if (window.Mode) Mode.onWelcome(msg.mode, msg.isHost);
       }
       else if (msg.type === 'worldInit') {
         // reconcile the current shared-world state before the first snapshot
         Game.online = true;
+        if (msg.coop) { Game.coop = msg.coop; if (window.Coop && Coop.applyState) Coop.applyState(msg.coop); }
         var d;
         if (msg.deadEnemies) for (d = 0; d < msg.deadEnemies.length; d++) Entities.initDeadEnemy(msg.deadEnemies[d]);
         if (msg.resources) {
@@ -80,6 +82,8 @@ var Net = (function () {
         if (window.UI && UI.showCountdown && msg.restartIn) UI.showCountdown(msg.restartIn);
       }
       else if (msg.type === 'restart') { if (window.Entities) Entities.newRound(); }
+      else if (msg.type === 'mode') { if (window.Mode) Mode.setMode(msg.mode, msg.coop); }
+      else if (msg.type === 'chooseMode') { if ((!msg.host || msg.host === myId) && window.Mode) Mode.showChooser(); }
       else if (msg.type === 'level') {
         // a level-up announcement from any player; our own is already shown locally
         if (msg.id !== myId && window.UI && UI.announce) {
@@ -208,6 +212,10 @@ var Net = (function () {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'level', name: myName, skill: skill, level: level | 0, max: !!max }));
   }
+  function sendChooseMode(mode) {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'chooseMode', mode: mode }));
+  }
 
   function sync(list) {
     var seen = {};
@@ -331,6 +339,7 @@ var Net = (function () {
   return {
     init: init, update: update, sendAttack: sendAttack,
     sendAttackEnemy: sendAttackEnemy, sendGather: sendGather, sendWin: sendWin, sendLevel: sendLevel,
+    sendChooseMode: sendChooseMode,
     get enabled() { return enabled; },
     get myName() { return myName; },
     get remoteMeshes() { return remoteMeshes; }

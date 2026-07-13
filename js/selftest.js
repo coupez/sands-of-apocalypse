@@ -493,6 +493,14 @@ var SelfTest = (function () {
       assert('newRound wipes inventory + gold', Game.inventory.filter(Boolean).length === 0 && (Game.gold || 0) === 0);
       assert('newRound resets skills to level 1', Skills.data.mining.level === 1 && Skills.data.attack.level === 1);
 
+      // -- game modes: host chooser applies a chosen mode on the client --
+      assert('offline defaults to a coop sandbox', Game.mode === 'coop');
+      assert('Mode module present', !!window.Mode && typeof Mode.setMode === 'function');
+      Mode.setMode('versus');
+      assert('Mode.setMode(versus) applies', Game.mode === 'versus' && Game.log.indexOf('mode:versus') >= 0);
+      Mode.setMode('coop');
+      assert('Mode.setMode(coop) applies', Game.mode === 'coop');
+
     } catch (err) {
       assert('NO EXCEPTIONS', false, (err && err.stack) ? err.stack : String(err));
     }

@@ -46,6 +46,9 @@ function newestMtime(dir) {
 const players = new Map();
 let roundOver = false;      // a player has won; a restart is scheduled
 let restartTimer = null;    // pending win-countdown timeout
+let hostId = null;          // first player to join — chooses the game mode
+let mode = "pending";       // 'pending' | 'versus' | 'coop' (write-once per session)
+let coop = { sigils: {}, ritualReady: false };   // shared co-op state
 
 // ============================================================
 // Authoritative shared world: enemies + resource depletion.
@@ -245,18 +248,19 @@ const server = Bun.serve({
       const slot = !used.has(1) ? 1 : (!used.has(2) ? 2 : 1);
       players.set(id, { id, name: "Wanderer", color: "#8dff3a", x: 0, z: 0, ry: 0, state: "idle", hp: 20, ready: false, slot });
       ws.subscribe("game");
-      ws.send(JSON.stringify({ type: "welcome", id, slot }));
+      if (!hostId) hostId = id;   // first player is the host and picks the mode
+      ws.send(JSON.stringify({ type: "welcome", id, slot, mode, isHost: id === hostId }));
       // reconcile current world state so a late joiner doesn't see dead mutants
       // as alive or depleted resources as full
       ws.send(JSON.stringify({
-        type: "worldInit",
+        type: "worldInit", mode, coop,
         deadEnemies: enemies.filter((e) => e.state === "dead").map((e) => e.i),
         resources: { tree: RES.tree.map((r) => r.active), rock: RES.rock.map((r) => r.active) },
       }));
-      console.log(`[ws] join ${id}  (online: ${players.size})`);
-      // a new player joining restarts the whole game for everyone (fresh race).
-      // Skip the very first lone connect — only an ADDITIONAL player restarts.
-      if (players.size > 1) doRestart();
+      console.log(`[ws] join ${id}  (online: ${players.size}, mode: ${mode})`);
+      // Versus: a new rival restarts the race. Co-op: drop-in help, no restart.
+      // While pending (host hasn't chosen): never restart.
+      if (mode === "versus" && players.size > 1) doRestart();
     },
     message(ws, raw) {
       let msg;
@@ -299,6 +303,11 @@ const server = Bun.serve({
       } else if (msg.type === "chat" && typeof msg.text === "string") {
         const p = players.get(ws.data.id);
         server.publish("game", JSON.stringify({ type: "chat", id: ws.data.id, name: p ? p.name : "?", text: msg.text.slice(0, 120) }));
+      } else if (msg.type === "chooseMode" && ws.data.id === hostId && mode === "pending" && (msg.mode === "versus" || msg.mode === "coop")) {
+        // host locks in the game mode (write-once); versus does one clean restart
+        mode = msg.mode;
+        server.publish("game", JSON.stringify({ type: "mode", mode, coop }));
+        if (mode === "versus") doRestart();
       } else if (msg.type === "win") {
         // first player to place the Heart wins — relay to everyone + start the
         // 10s countdown, then restart the whole game for a fresh round
@@ -318,6 +327,18 @@ const server = Bun.serve({
       const id = ws.data.id;
       players.delete(id);
       server.publish("game", JSON.stringify({ type: "leave", id }));
+      // if the host left, promote the oldest remaining player (and prompt if still pending)
+      if (id === hostId) {
+        const next = players.keys().next();
+        hostId = next.done ? null : next.value;
+        if (hostId && mode === "pending") server.publish("game", JSON.stringify({ type: "chooseMode", host: hostId }));
+      }
+      // empty session → back to a clean pending state for the next lobby
+      if (players.size === 0) {
+        mode = "pending"; hostId = null; coop = { sigils: {}, ritualReady: false };
+        roundOver = false;
+        if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+      }
       console.log(`[ws] leave ${id}  (online: ${players.size})`);
     },
   },
