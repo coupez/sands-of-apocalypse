@@ -34,7 +34,8 @@ var Skills = (function () {
     bronzebar: { id: 'bronzebar', name: 'Bronze Bar', icon: '▬', tint: 0xc87838 },
     ironbar:   { id: 'ironbar',   name: 'Iron Bar',   icon: '▬', tint: 0x8a8f96 },
     silverbar: { id: 'silverbar', name: 'Silver Bar', icon: '▬', tint: 0xd8dce2 },
-    goldbar:   { id: 'goldbar',   name: 'Gold Bar',   icon: '▬', tint: 0xffd24a }
+    goldbar:   { id: 'goldbar',   name: 'Gold Bar',   icon: '▬', tint: 0xffd24a },
+    orb:       { id: 'orb',       name: 'Orb of the Sands', icon: '🔮' }
   };
 
   // Only COOKED seafood is edible; eat raw and you gain nothing. Cook it at a

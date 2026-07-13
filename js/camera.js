@@ -35,6 +35,21 @@ var CameraRig = (function () {
     window.addEventListener('wheel', function (e) {
       dist = Utils.clamp(dist + (e.deltaY > 0 ? 1.6 : -1.6), minDist, maxDist);
     }, { passive: true });
+
+    // hold the middle mouse button and drag to orbit around the character
+    var dragging = false, lastX = 0, lastY = 0;
+    window.addEventListener('mousedown', function (e) { if (e.button === 1) e.preventDefault(); }); // no autoscroll
+    window.addEventListener('pointerdown', function (e) {
+      if (e.button === 1) { dragging = true; lastX = e.clientX; lastY = e.clientY; }
+    });
+    window.addEventListener('pointerup', function (e) { if (e.button === 1) dragging = false; });
+    window.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      yaw += dx * 0.008;
+      pitch = Utils.clamp(pitch - dy * 0.006, minPitch, maxPitch);
+    });
   }
 
   function setTarget(v) { target.copy(v); }

@@ -11,6 +11,7 @@ var Entities = (function () {
   var scene;
   var trees = [], rocks = [], barrels = [], enemies = [], pools = [], chests = [], buildings = [], stations = [], camps = [];
   var interactMeshes = [];
+  var obelisk = null;   // the central endgame monument
 
   // Enemies are deactivated in the live game for now, but still spawned so the
   // self-test's combat coverage and multiplayer index alignment stay intact.
@@ -264,8 +265,20 @@ var Entities = (function () {
     var g = new THREE.Group();
     var ent = { type: 'station', kind: kind, mesh: g, position: g.position,
       active: true, interactRange: 2.6, lit: false, level: 1,
-      maxLevel: (kind === 'campfire') ? 3 : (kind === 'merchant' ? 1 : 4) };
-    if (kind === 'merchant') {
+      maxLevel: (kind === 'campfire') ? 3 : (kind === 'merchant' || kind === 'altar') ? 1 : 4 };
+    if (kind === 'altar') {
+      ent.name = 'Ancient Altar';
+      var sand = new THREE.MeshStandardMaterial({ color: 0xc2a06a, roughness: 1, flatShading: true });
+      var b1 = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.4, 2.0), sand); b1.position.y = 0.2; g.add(b1);
+      var b2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.4, 1.5), sand); b2.position.y = 0.6; g.add(b2);
+      var pil = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 0.9, 8), sand); pil.position.y = 1.25; g.add(pil);
+      var bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.34, 0.35, 10),
+        new THREE.MeshStandardMaterial({ color: 0x8a6a3a, roughness: 0.7, metalness: 0.3, flatShading: true }));
+      bowl.position.y = 1.75; g.add(bowl);
+      var runes = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.08, 10),
+        new THREE.MeshStandardMaterial({ color: 0x2a2036, emissive: 0x7a4ad0, emissiveIntensity: 0.7, roughness: 0.4 }));
+      runes.position.y = 1.92; g.add(runes);
+    } else if (kind === 'merchant') {
       ent.name = 'Merchant Stand';
       var frame = new THREE.MeshStandardMaterial({ color: 0x6a4a24, roughness: 1, flatShading: true });
       var cloth = new THREE.MeshStandardMaterial({ color: 0xb03b3b, roughness: 1, flatShading: true });
@@ -391,6 +404,11 @@ var Entities = (function () {
       if (merchantBusy(ent)) msg = 'The caravan is off delivering — come back when it returns.';
       else if (window.UI && UI.openSellMenu) UI.openSellMenu(ent);
       else msg = 'The merchant eyes your goods.';
+    } else if (ent.kind === 'altar') {
+      var mats = ['elderwood', 'whale', 'pore'];   // the top-tier log / fish / ore
+      if (Skills.hasItem('orb')) { msg = 'You already carry an Orb of the Sands.'; }
+      else if (mats.some(function (id) { return !Skills.hasItem(id); })) { msg = 'The altar needs one Elderwood, one Raw Perch and one Gold Ore.'; }
+      else { mats.forEach(function (id) { Skills.removeItem(id); }); Skills.addItem('orb'); msg = 'The relics fuse into an Orb of the Sands!'; }
     }
     if (window.UI && msg) UI.showActionText(msg);
     Game.log.push('station:' + ent.kind + (ent.lit ? ':lit' : ''));
@@ -438,6 +456,50 @@ var Entities = (function () {
     g.position.y = terrainY(g.position.x, g.position.z);
     g.rotation.y = Math.atan2(dx, dz);
   }
+
+  // ---------- the Obelisk (endgame) ----------
+  function makeObelisk(x, z) {
+    var g = new THREE.Group();
+    var stone = new THREE.MeshStandardMaterial({ color: 0xcaa96a, roughness: 1, flatShading: true });
+    var dark = new THREE.MeshStandardMaterial({ color: 0x9a7a44, roughness: 1, flatShading: true });
+    var base = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.7, 2.8), dark); base.position.y = 0.35; g.add(base);
+    var base2 = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.5, 2.1), stone); base2.position.y = 0.95; g.add(base2);
+    var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.75, 9, 4), stone); shaft.rotation.y = Math.PI / 4; shaft.position.y = 5.8; g.add(shaft);
+    var cap = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.2, 4),
+      new THREE.MeshStandardMaterial({ color: 0xffd24a, emissive: 0xffb020, emissiveIntensity: 0.4, roughness: 0.4, metalness: 0.7 }));
+    cap.rotation.y = Math.PI / 4; cap.position.y = 10.9; g.add(cap);
+    var socket = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8),
+      new THREE.MeshStandardMaterial({ color: 0x1a1030, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.4 }));
+    socket.position.set(0, 1.7, 1.1); g.add(socket);
+    var light = new THREE.PointLight(0x8a5ad0, 0, 26, 2); light.position.set(0, 8, 0); g.add(light);
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+    markOccluder(g);
+    obelisk = { type: 'obelisk', name: 'The Obelisk', mesh: g, position: g.position,
+      active: true, interactRange: 3.4, socket: socket, cap: cap, light: light, done: false, t: 0 };
+    tag(g, obelisk);
+    return obelisk;
+  }
+
+  function triggerWin(byMe, winnerName) {
+    if (!obelisk || obelisk.done) return;
+    obelisk.done = true; obelisk.t = 0;
+    obelisk.socket.material.emissive.setHex(0x9a6aff);
+    obelisk.socket.material.emissiveIntensity = 2.5;
+    obelisk.light.intensity = 4;
+    if (window.UI && UI.showVictory) UI.showVictory(winnerName || 'A rival', !!byMe);
+    Game.log.push('win:' + (byMe ? 'me' : 'remote'));
+  }
+  function useObelisk() {
+    if (obelisk && obelisk.done) { if (window.UI) UI.showActionText('The Obelisk blazes — the game is won.'); return; }
+    if (!Skills.hasItem('orb')) { if (window.UI) UI.showActionText('The Obelisk socket awaits an Orb of the Sands.'); return; }
+    Skills.removeItem('orb');
+    var myName = (window.Net && Net.myName) ? Net.myName : 'You';
+    triggerWin(true, myName);
+    if (window.Net && Net.sendWin) Net.sendWin();
+  }
+  function remoteWin(name) { triggerWin(false, name); }
 
   // Scatter n points near (cx,cz) within `spread`, honouring min separation.
   function clusterAround(cx, cz, n, spread, avoidList, minSep) {
@@ -539,11 +601,13 @@ var Entities = (function () {
       var lx = (i % 2 ? 1 : -1) * 0.34, lz = (i < 2 ? 1 : -1) * 0.78;
       var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 1.5, 5), dark); leg.position.set(lx, 0.75, lz); g.add(leg);
     }
-    // robed rider on the hump
-    var robe = new THREE.MeshStandardMaterial({ color: 0xe0d0a0, roughness: 1, flatShading: true });
-    var rbody = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.5), robe); rbody.position.set(0, 2.55, -0.15); g.add(rbody);
-    var rhead = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 1, flatShading: true })); rhead.position.set(0, 3.05, -0.15); g.add(rhead);
-    var turban = new THREE.Mesh(new THREE.SphereGeometry(0.23, 8, 6), new THREE.MeshStandardMaterial({ color: 0xc23b3b, roughness: 1, flatShading: true })); turban.position.set(0, 3.28, -0.15); turban.scale.set(1, 0.6, 1); g.add(turban);
+    // female rider on the hump: flowing abaya + draped hijab
+    var robeMat = new THREE.MeshStandardMaterial({ color: 0x4f7a86, roughness: 1, flatShading: true });   // teal abaya
+    var scarfMat = new THREE.MeshStandardMaterial({ color: 0x9a4a6a, roughness: 1, flatShading: true });  // magenta hijab
+    var rbody = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.44, 0.95, 8), robeMat); rbody.position.set(0, 2.5, -0.15); g.add(rbody);
+    var rhead = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.32, 0.3), new THREE.MeshStandardMaterial({ color: 0xc9a17a, roughness: 1, flatShading: true })); rhead.position.set(0, 3.06, -0.08); g.add(rhead);
+    var hijab = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.72, 8), scarfMat); hijab.position.set(0, 3.16, -0.15); g.add(hijab);
+    var veil = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.55, 0.12), scarfMat); veil.position.set(0, 3.0, -0.42); g.add(veil);
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
@@ -813,6 +877,10 @@ var Entities = (function () {
     });
     stations.forEach(function (s) { placed.push({ x: s.position.x, z: s.position.z }); });
     pools.forEach(function (p) { placed.push({ x: p.position.x, z: p.position.z }); });
+
+    // --- ENDGAME: the Obelisk at dead centre + the altar that forges the Orb ---
+    makeObelisk(0, 0); placed.push({ x: 0, z: 0 });
+    stations.push(makeStation(7, 5, 'altar')); placed.push({ x: 7, z: 5 });
 
     // Resources scattered between the camps, tiered by distance from the centre:
     // easy tiers near the poles, rarer/higher tiers toward the middle.
@@ -1090,6 +1158,12 @@ var Entities = (function () {
       if (stn.flame) stn.flame.scale.y = 0.85 + 0.2 * Math.abs(Math.sin(t * 10 + i));
     }
     for (i = 0; i < stations.length; i++) if (stations[i].camel) updateCamel(stations[i], dt);
+    if (obelisk && obelisk.done) {   // victory glow: pulsing light, spinning cap
+      obelisk.t += dt;
+      obelisk.light.intensity = 3.5 + Math.sin(obelisk.t * 4) * 1.5;
+      obelisk.cap.rotation.y += dt * 1.5;
+      obelisk.socket.material.emissiveIntensity = 2 + Math.abs(Math.sin(obelisk.t * 6));
+    }
     // lift the roof off whichever building the local player is standing inside
     // (kept from the parallel branch; no-op while the town uses camps, not buildings)
     var pl = Game.player;
@@ -1186,6 +1260,7 @@ var Entities = (function () {
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     sendCaravan: sendCaravan, merchantBusy: merchantBusy,
+    useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
     serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,
     enemyAttackAnim: enemyAttackAnim,

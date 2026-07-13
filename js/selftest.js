@@ -235,6 +235,26 @@ var SelfTest = (function () {
         assert('fishing spot upgrades with gold', Entities.upgradeStation(camppond) === true && camppond.level === pl0 + 1);
         assert('upgraded pond offers a higher catch', camppond.reqLevel > 1);
       }
+
+      // -- endgame: forge the Orb at the altar, place it in the Obelisk to win --
+      clearBag();
+      var altar = Entities.stations.filter(function (s) { return s.kind === 'altar'; })[0];
+      assert('ancient altar exists', !!altar);
+      if (altar) {
+        Entities.useStation(altar);   // no materials yet
+        assert('altar needs the top-tier mats', invCount('orb') === 0);
+        Skills.addItem('elderwood'); Skills.addItem('whale'); Skills.addItem('pore');
+        Entities.useStation(altar);
+        assert('altar forges the Orb from elderwood + perch + gold ore', invCount('orb') === 1);
+        assert('altar consumed the materials', !Skills.hasItem('elderwood') && !Skills.hasItem('whale') && !Skills.hasItem('pore'));
+      }
+      var obel = Entities.obelisk;
+      assert('obelisk stands at the centre', !!obel);
+      if (obel) {
+        assert('obelisk not yet won', obel.done === false);
+        Entities.useObelisk();
+        assert('placing the Orb wins the game', obel.done === true && invCount('orb') === 0);
+      }
       clearBag();
       var campfire = Entities.stations.filter(function (s) { return s.kind === 'campfire'; })[0];
       assert('campfire exists in town', !!campfire);

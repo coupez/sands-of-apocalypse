@@ -75,6 +75,7 @@ var Net = (function () {
       else if (msg.type === 'enemyDead') { Entities.serverEnemyDead(msg.i, msg.x, msg.z, msg.by === myId); }
       else if (msg.type === 'enemyRespawn') { Entities.serverEnemyRespawn(msg.i, msg.x, msg.z); }
       else if (msg.type === 'resource') { Entities.setResourceState(msg.kind, msg.i, msg.active); }
+      else if (msg.type === 'win') { if (window.Entities) Entities.remoteWin(msg.name || 'A rival'); }
       else if (msg.type === 'chat') { /* reserved */ }
     };
     ws.onclose = function () { connected = false; if (window.Entities) Entities.goOffline(); setStatus(); scheduleReconnect(); };
@@ -115,7 +116,7 @@ var Net = (function () {
     var weapon = new THREE.Group();
     var wh = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.5, 0.09), new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 1, flatShading: true })); wh.position.y = -0.25;
     var wb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.3, 0.05), matWeapon); wb.position.y = -1.2; wb.rotation.z = 0.25;
-    weapon.add(wh); weapon.add(wb); weapon.position.set(0, -0.9, 0); weapon.rotation.x = -Math.PI / 2; weapon.visible = false; armR.add(weapon);
+    weapon.add(wh); weapon.add(wb); weapon.position.set(0.05, -0.4, 0.12); weapon.rotation.z = 0.18; weapon.visible = false; armR.add(weapon);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     return { group: g, legL: legL, legR: legR, armL: armL, armR: armR,
       matBody: matBody, matHead: matHead, matLegs: matLegs, matWeapon: matWeapon, weapon: weapon, baseColor: color };
@@ -180,6 +181,10 @@ var Net = (function () {
   function sendGather(kind, i) {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'gather', kind: kind, i: i | 0 }));
+  }
+  function sendWin() {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'win', name: myName }));
   }
 
   function sync(list) {
@@ -303,7 +308,7 @@ var Net = (function () {
 
   return {
     init: init, update: update, sendAttack: sendAttack,
-    sendAttackEnemy: sendAttackEnemy, sendGather: sendGather,
+    sendAttackEnemy: sendAttackEnemy, sendGather: sendGather, sendWin: sendWin,
     get enabled() { return enabled; },
     get myName() { return myName; },
     get remoteMeshes() { return remoteMeshes; }

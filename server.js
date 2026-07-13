@@ -276,6 +276,10 @@ const server = Bun.serve({
       } else if (msg.type === "chat" && typeof msg.text === "string") {
         const p = players.get(ws.data.id);
         server.publish("game", JSON.stringify({ type: "chat", id: ws.data.id, name: p ? p.name : "?", text: msg.text.slice(0, 120) }));
+      } else if (msg.type === "win") {
+        // first player to place the Orb wins — relay to everyone
+        const p = players.get(ws.data.id);
+        server.publish("game", JSON.stringify({ type: "win", name: (p && p.name) ? p.name : (typeof msg.name === "string" ? msg.name.slice(0, 24) : "A rival") }));
       }
     },
     close(ws) {

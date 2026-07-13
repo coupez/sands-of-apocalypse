@@ -543,6 +543,18 @@ var UI = (function () {
   function showDeathScreen() { if (el.death) el.death.classList.add('show'); }
   function hideDeathScreen() { if (el.death) el.death.classList.remove('show'); }
 
+  function showVictory(name, byMe) {
+    if (Game.headless || document.getElementById('victory')) return;
+    var esc = String(name).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; });
+    var d = document.createElement('div');
+    d.id = 'victory';
+    d.innerHTML = '<div class="vic-inner"><div class="vic-title">' + (byMe ? '★ VICTORY ★' : 'GAME OVER') + '</div>' +
+      '<div class="vic-sub">' + (byMe
+        ? 'You placed the Orb of the Sands and claimed the desert!'
+        : esc + ' placed the Orb of the Sands and won the game.') + '</div></div>';
+    document.body.appendChild(d);
+  }
+
   return {
     init: init,
     updateVitals: updateVitals, updateSkills: updateSkills,
@@ -553,6 +565,7 @@ var UI = (function () {
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
     updateCampLabels: updateCampLabels,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,
-    showDeathScreen: showDeathScreen, hideDeathScreen: hideDeathScreen
+    showDeathScreen: showDeathScreen, hideDeathScreen: hideDeathScreen,
+    showVictory: showVictory
   };
 })();

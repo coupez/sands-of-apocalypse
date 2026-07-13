@@ -125,6 +125,7 @@ var Main = (function () {
       else if (ref.type === 'fishpool') UI.showActionText('You wade to the ' + ref.name + '…');
       else if (ref.type === 'chest') UI.showActionText('You head for the chest…');
       else if (ref.type === 'station') UI.showActionText('You head to the ' + ref.name + '…');
+      else if (ref.type === 'obelisk') UI.showActionText('You approach the Obelisk…');
       else if (ref.type === 'enemy') UI.showActionText('You move to attack the ' + ref.name + '!');
       else if (ref.type === 'player') UI.showActionText('You challenge ' + ref.name + '!');
       return;
@@ -146,6 +147,7 @@ var Main = (function () {
       else if (ref.type === 'tree' || ref.type === 'rock' || ref.type === 'fishpool') UI.setTarget(ref.name + (ref.reqLevel > 1 ? ' (Lv ' + ref.reqLevel + ')' : ''));
       else if (ref.type === 'chest') UI.setTarget('🎁 Supply Chest');
       else if (ref.type === 'station') UI.setTarget(ref.name + (ref.lit === false && (ref.kind === 'furnace' || ref.kind === 'campfire') ? ' (unlit)' : '') + ' — click to use');
+      else if (ref.type === 'obelisk') UI.setTarget('🔺 The Obelisk — place the Orb to win');
       else if (ref.type === 'player') UI.setTarget('⚔ ' + ref.name + '  (' + Math.ceil(ref.hp) + ' hp)');
     } else {
       document.body.style.cursor = 'crosshair';

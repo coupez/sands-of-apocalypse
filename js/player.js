@@ -78,8 +78,8 @@ var Player = (function () {
     var blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.3, 0.05), matWeapon);
     blade.position.y = -1.2; blade.rotation.z = 0.25;   // slight curve
     weapon.add(handle); weapon.add(guard); weapon.add(blade);
-    weapon.position.set(0, -0.9, 0);
-    weapon.rotation.x = -Math.PI / 2;   // held pointing forward, not hanging down
+    weapon.position.set(0.05, -0.4, 0.12);
+    weapon.rotation.z = 0.18;   // held at the side, blade pointing down
     weapon.visible = false;
     rightArm.add(weapon);
     group.add(rightArm);
@@ -239,6 +239,9 @@ var Player = (function () {
             interaction = null; state = 'idle'; actionKind = null;
           } else if (ent.type === 'station') {
             Entities.useStation(ent);
+            interaction = null; state = 'idle'; actionKind = null;
+          } else if (ent.type === 'obelisk') {
+            Entities.useObelisk();
             interaction = null; state = 'idle'; actionKind = null;
           } else {
             state = 'acting';
