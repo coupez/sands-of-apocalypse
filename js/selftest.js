@@ -525,9 +525,9 @@ var SelfTest = (function () {
       assert('smithing a greatsword lights the Forge sigil', Coop.state.sigils.forge === true);
       Game.cooked = 3; Coop.update(0.1);
       assert('cooking three fish lights the Plenty sigil', Coop.state.sigils.plenty === true);
-      // inbound sigil + late-join reconciliation
-      Coop.onSigil('deep', true, false);
-      assert('an inbound sigil lights (deep)', Coop.state.sigils.deep === true);
+      // Deep: mining the deep gold lights it
+      Game.minedGold = true; Coop.update(0.1);
+      assert('mining the deep gold lights the Deep sigil', Coop.state.sigils.deep === true);
       // Hunt: clearing both bandit camps lights it AND raids the camp
       var raidBefore = Entities.bandits.length;
       Entities.banditCamps.forEach(function (c) { c.cleared = true; });
@@ -556,24 +556,44 @@ var SelfTest = (function () {
       assert('building a ballista consumes materials', Coop.build('ballista') === true && Entities.builds.length === buildsBefore + 1);
       assert('the ballista is a usable structure', Entities.builds[Entities.builds.length - 1].type === 'ballista');
 
-      // -- co-op finale: summon Mahrûk, fight the slam windows, defeat it --
+      // -- co-op finale: summon Mahrûk; asymmetric weak points + stagger --
       assert('the ritual is ready to summon', Coop.state.ritualReady === true);
-      Skills.data.strength.xp = 0; Skills.addXp('strength', 9999999);   // hit hard so the fight is quick
-      if (Game.equipment.rhand) Skills.unequip('rhand');                // hands need a blade (no bow)
+      Skills.data.strength.xp = 0; Skills.addXp('strength', 9999999);
+      Skills.data.ranged.xp = 0; Skills.addXp('ranged', 9999999);
       Player.stop();
-      Entities.useObelisk();   // co-op + ready → begins the summon (offline sim)
+      Entities.useObelisk();
       assert('summoning begins the boss fight', Coop.bossActive() === true && Coop.boss.hp === Coop.boss.maxHp);
       invadeInvulnerable();
       Main.advance(8.8);       // idle(7) → windup(1.1) → vulnerable
-      assert('the boss opens a vulnerable slam window',
+      assert('the boss opens a slam window',
         !!Coop.boss && Coop.boss.stage === 'vuln' && !!Coop.boss.handEnt && Coop.boss.handEnt.active === true,
         'stage=' + (Coop.boss && Coop.boss.stage));
-      for (var bx = 0; bx < 500 && Coop.bossActive(); bx++) {
+      // meleeing the hand builds the stagger meter (small HP chip only)
+      if (Game.equipment.rhand) Skills.unequip('rhand');
+      var stag0 = Coop.boss.stagger || 0, hpPreHand = Coop.boss.hp;
+      Combat.attackBoss(Coop.boss.handEnt);
+      assert('meleeing the hand builds stagger', (Coop.boss.stagger || 0) > stag0);
+      var handDmg = hpPreHand - Coop.boss.hp;
+      // bowing the heart deals real HP damage — far more than the hand's chip
+      clearBag(); Skills.addItem('bow'); Skills.equipFromInventory(invIndexOf('bow'));
+      var hpPreHeart = Coop.boss.hp;
+      Combat.attackBoss(Coop.boss.heartEnt);
+      var heartDmg = hpPreHeart - Coop.boss.hp;
+      assert('the heart takes real HP damage, far above the hand chip', heartDmg > handDmg, 'hand=' + handDmg + ' heart=' + heartDmg);
+      // filling the stagger meter staggers Mahrûk (a big heart-open window)
+      if (Coop.boss && Coop.boss.stage === 'vuln' && Coop.boss.handEnt && Coop.boss.handEnt.active) {
+        Coop.boss.stagger = 95; Skills.unequip('rhand');
+        Combat.attackBoss(Coop.boss.handEnt);
+        assert('a full stagger meter staggers Mahrûk', Coop.boss.stage === 'stagger');
+        Skills.addItem('bow'); Skills.equipFromInventory(invIndexOf('bow'));
+      }
+      // finish it: bow the heart during windows until Mahrûk is banished
+      for (var bx = 0; bx < 600 && Coop.bossActive(); bx++) {
         invadeInvulnerable();
-        if (Coop.boss && Coop.boss.handEnt && Coop.boss.handEnt.active) Combat.attackBoss(Coop.boss.handEnt);
+        if (Coop.boss && Coop.boss.heartEnt && (Coop.boss.stage === 'vuln' || Coop.boss.stage === 'stagger')) Combat.attackBoss(Coop.boss.heartEnt);
         Main.advance(0.2);
       }
-      assert('striking the hands during slams defeats Mahrûk',
+      assert('bowing the heart during windows defeats Mahrûk',
         Coop.bossActive() === false && Game.log.indexOf('coop:bossDead') >= 0);
       assert('Mahrûk enrages at low health and spawns imps',
         Game.log.some(function (l) { return typeof l === 'string' && l.indexOf('coop:imps') === 0; }));

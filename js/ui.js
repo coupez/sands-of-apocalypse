@@ -737,14 +737,17 @@ var UI = (function () {
     _bossBar = document.createElement('div');
     _bossBar.id = 'boss-bar';
     _bossBar.innerHTML = '<div class="bb-name">' + String(name).replace(/</g, '&lt;') + '</div>' +
-      '<div class="bb-track"><div class="bb-fill"></div></div>';
+      '<div class="bb-track"><div class="bb-fill"></div></div>' +
+      '<div class="bb-stagger"><div class="bb-stagger-fill"></div></div>';
     document.body.appendChild(_bossBar);
-    updateBossBar(hp, max);
+    updateBossBar(hp, max, 0, 100);
   }
-  function updateBossBar(hp, max) {
+  function updateBossBar(hp, max, stagger, maxStagger) {
     if (!_bossBar) return;
     var f = _bossBar.querySelector('.bb-fill');
     if (f) f.style.width = Utils.clamp(hp / (max || 1), 0, 1) * 100 + '%';
+    var s = _bossBar.querySelector('.bb-stagger-fill');
+    if (s && typeof stagger === 'number') s.style.width = Utils.clamp(stagger / (maxStagger || 100), 0, 1) * 100 + '%';
   }
   function hideBossBar() { if (_bossBar && _bossBar.parentNode) _bossBar.parentNode.removeChild(_bossBar); _bossBar = null; }
 

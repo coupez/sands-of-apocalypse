@@ -12,7 +12,7 @@ var Coop = (function () {
     { key: 'forge',    name: 'Forge',    icon: '⚒️', color: 0xff7a2a, desc: 'Smith a greatsword' },
     { key: 'hunt',     name: 'Hunt',     icon: '⚔️', color: 0xd23a3a, desc: 'Clear both bandit camps' },
     { key: 'plenty',   name: 'Plenty',   icon: '🍲', color: 0x6ac06a, desc: 'Cook three fish' },
-    { key: 'deep',     name: 'Deep',     icon: '🌊', color: 0x3aa6ff, desc: 'Bridge to the sunken shrine' },
+    { key: 'deep',     name: 'Deep',     icon: '💎', color: 0x3aa6ff, desc: 'Mine the deep gold' },
     { key: 'devotion', name: 'Devotion', icon: '🙏', color: 0xb98aff, desc: 'Reach the height of Prayer' }
   ];
   var THRESHOLD = 3;
@@ -25,7 +25,7 @@ var Coop = (function () {
   // ---- Buried Demon boss (Mahrûk) ----
   // Shared tuning; the server owns the authoritative sim online, the client sims
   // it offline (single-player co-op sandbox / self-test). Keep the two in step.
-  var BOSS = { maxHp: 600, slamInterval: 7.0, windup: 1.1, vuln: 3.0, reach: 9, slamRadius: 6, slamDmg: 11 };
+  var BOSS = { maxHp: 600, slamInterval: 7.0, windup: 1.1, vuln: 3.0, reach: 9, slamRadius: 6, slamDmg: 11, maxStagger: 100, staggerDur: 5.0 };
   var boss = null;      // { active, hp, maxHp, phase, stage, hand, hx, hz, vulnT, timer, mesh, parts, heartEnt, handEnt, rise }
 
   function sigilDef(k) { for (var i = 0; i < SIGILS.length; i++) if (SIGILS[i].key === k) return SIGILS[i]; return null; }
@@ -38,6 +38,7 @@ var Coop = (function () {
     if (active) { if (coop) applyState(coop); return; }
     active = true;
     scene = Game.scene;
+    Game.cooked = 0;   // Plenty counts only fish cooked during this co-op run
     buildBraziers();
     if (coop) applyState(coop);
     buildHud();
@@ -103,8 +104,9 @@ var Coop = (function () {
       var pr = Skills.data.prayer;
       if (pr && pr.level >= (pr.max || 12)) completeSigil('devotion');
     }
-    if (!state.sigils.forge && Game.forgedRitual) completeSigil('forge');       // smithed a greatsword
-    if (!state.sigils.plenty && (Game.cooked || 0) >= 3) completeSigil('plenty'); // cooked a feast
+    if (!state.sigils.forge && Game.forgedRitual) completeSigil('forge');         // smithed an iron+ greatsword
+    if (!state.sigils.plenty && (Game.cooked || 0) >= 3) completeSigil('plenty'); // cooked a feast this run
+    if (!state.sigils.deep && Game.minedGold) completeSigil('deep');              // mined the deep gold
     animateBraziers(dt);
     // Only ever locally-sim a boss WE started (offline sandbox). A server-born
     // boss (simLocal false) is never taken over by local sim, even if the socket
@@ -215,7 +217,7 @@ var Coop = (function () {
     Game.log.push('coop:ritualStart');
   }
   function startBossLocal() {
-    boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, phase: 1, simLocal: true,
+    boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, stagger: 0, maxStagger: BOSS.maxStagger, phase: 1, simLocal: true,
       stage: 'idle', hand: 'L', hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval, rise: 0 };
     buildDemon();
     updateAtmosphere();
@@ -286,10 +288,13 @@ var Coop = (function () {
     for (var s in reachAng) {
       var a = reachAng[s]; if (!a) continue;
       var target = 0;
-      if (b.hand === s && (b.stage === 'windup')) target = -0.8;      // raised
-      else if (b.hand === s && b.stage === 'vuln') target = 1.5;       // slammed down
+      if (b.stage === 'stagger') target = 1.5;                        // both hands down, reeling
+      else if (b.hand === s && b.stage === 'windup') target = -0.8;   // raised
+      else if (b.hand === s && b.stage === 'vuln') target = 1.5;      // slammed down
       a.pivot.rotation.x = Utils.damp(a.pivot.rotation.x, target, 10, dt);
     }
+    // reel the whole body while staggered
+    b.mesh.rotation.z = Utils.damp(b.mesh.rotation.z, b.stage === 'stagger' ? 0.18 * Math.sin(t * 6) : 0, 8, dt);
     // keep the heart entity's world position current (it barely moves, but sway shifts it)
     if (b.heartEnt) b.heart.getWorldPosition(b.heartEnt.position);
     // slam telegraph decal
@@ -343,10 +348,21 @@ var Coop = (function () {
     } else if (b.stage === 'windup') {
       b.timer -= dt;
       if (b.timer <= 0) { b.stage = 'vuln'; b.vulnT = BOSS.vuln; openWindow(); onBossSlam({ stage: 'impact', hand: b.hand, x: b.hx, z: b.hz, radius: BOSS.slamRadius, dmg: BOSS.slamDmg }); }
-    } else if (b.stage === 'vuln') {
+    } else if (b.stage === 'vuln' || b.stage === 'stagger') {
       b.vulnT -= dt;
-      if (b.vulnT <= 0) { b.stage = 'idle'; closeWindow(); b.timer = slamIntervalFor(b); }
+      if (b.vulnT <= 0) {
+        if (b.stage === 'stagger') b.stagger = 0;
+        b.stage = 'idle'; closeWindow(); b.timer = slamIntervalFor(b);
+      }
     }
+  }
+  // Mahrûk reels when the stagger meter fills: a long window, both hands + heart open
+  function enterStagger() {
+    var b = boss; if (!b) return;
+    b.stage = 'stagger'; b.vulnT = BOSS.staggerDur;
+    if (typeof b.hx !== 'number' || (b.hx === 0 && b.hz === 0)) { b.hx = 0; b.hz = BOSS.reach; }
+    openWindow();
+    if (window.UI && UI.announce) UI.announce('Mahrûk is STAGGERED — unload on the heart!', false);
   }
 
   // ---- weak-point windows: tag/untag the slammed hand target ----
@@ -378,15 +394,21 @@ var Coop = (function () {
     if (s.active && (!boss || !boss.active)) startBossFromServer(s);
     if (!boss) return;
     boss.hp = s.hp; boss.maxHp = s.maxHp; boss.phase = s.phase;
+    if (typeof s.stagger === 'number') boss.stagger = s.stagger;
+    if (typeof s.maxStagger === 'number') boss.maxStagger = s.maxStagger;
     var was = boss.stage; boss.stage = s.stage; boss.hand = s.hand || boss.hand;
     if (typeof s.hx === 'number') { boss.hx = s.hx; boss.hz = s.hz; }
-    if (boss.stage === 'vuln' && was !== 'vuln') openWindow();
-    if (boss.stage !== 'vuln' && was === 'vuln') closeWindow();
-    if (window.UI && UI.updateBossBar) UI.updateBossBar(boss.hp, boss.maxHp);
+    var openNow = (boss.stage === 'vuln' || boss.stage === 'stagger');
+    var wasOpen = (was === 'vuln' || was === 'stagger');
+    if (openNow && !wasOpen) openWindow();
+    if (!openNow && wasOpen) closeWindow();
+    updateBossPhase();
+    if (window.UI && UI.updateBossBar) UI.updateBossBar(boss.hp, boss.maxHp, boss.stagger, boss.maxStagger);
     if (!s.active) onBossDead();
   }
   function startBossFromServer(s) {
-    boss = { active: true, hp: s.hp, maxHp: s.maxHp, phase: s.phase, simLocal: false, timer: 0, vulnT: 0,
+    boss = { active: true, hp: s.hp, maxHp: s.maxHp, stagger: s.stagger || 0, maxStagger: s.maxStagger || BOSS.maxStagger,
+      phase: s.phase, simLocal: false, timer: 0, vulnT: 0,
       stage: s.stage, hand: s.hand || 'L', hx: s.hx || 0, hz: s.hz || 0, rise: 0 };
     buildDemon();
     updateAtmosphere();
@@ -404,13 +426,14 @@ var Coop = (function () {
       if (window.UI && UI.spawnHitsplat) { /* dust puff via hitsplat omitted */ }
     }
   }
-  function onBossHit(part, dmg, hp) {
+  function onBossHit(part, dmg, hp, stagger) {
     var b = boss; if (!b) return;
     if (typeof hp === 'number') b.hp = hp;
+    if (typeof stagger === 'number') b.stagger = stagger;
     updateBossPhase();
     var pos = (part === 'heart') ? b.heartEnt && b.heartEnt.position : b.handEnt && b.handEnt.position;
-    if (pos && window.UI && UI.spawnHitsplat) UI.spawnHitsplat(new THREE.Vector3(pos.x, pos.y + 1.5, pos.z), dmg, 'hit');
-    if (window.UI && UI.updateBossBar) UI.updateBossBar(b.hp, b.maxHp);
+    if (pos && window.UI && UI.spawnHitsplat) UI.spawnHitsplat(new THREE.Vector3(pos.x, pos.y + 1.5, pos.z), dmg, part === 'heart' ? 'crit' : 'hit');
+    if (window.UI && UI.updateBossBar) UI.updateBossBar(b.hp, b.maxHp, b.stagger, b.maxStagger);
   }
   function onBossDead() {
     var b = boss; if (!b) return;
@@ -418,7 +441,9 @@ var Coop = (function () {
     closeWindow();
     if (b.mesh && scene) scene.remove(b.mesh);
     if (b.decal && scene) scene.remove(b.decal);
+    if (b.handMesh && scene) scene.remove(b.handMesh);   // don't leak the hand target
     if (b.heartEnt && window.Entities && Entities.untagExternal) Entities.untagExternal(b.heartEnt);
+    if (window.Entities && Entities.clearRaiders) Entities.clearRaiders();   // clear leftover raiders/imps
     // victory is final — the ritual can't be re-run (no re-summon loop)
     state.ritualReady = false; state.won = true;
     updateAtmosphere();   // dawn returns
@@ -426,25 +451,37 @@ var Coop = (function () {
     Game.log.push('coop:bossDead');
     boss = null;
   }
-  function bossVulnerable() { return !!(boss && boss.active && boss.stage === 'vuln'); }
+  function bossVulnerable() { return !!(boss && boss.active && (boss.stage === 'vuln' || boss.stage === 'stagger')); }
 
   // ---- player struck a weak point (called from combat) ----
-  function hitBoss(ent, dmg) {
+  // heart = real HP damage (bow/ballista); hand = a chip + `stagAmt` on the stagger meter (melee)
+  function hitBoss(ent, dmg, stagAmt) {
     var b = boss; if (!b || !b.active) return;
     var part = ent.part;
-    if (Game.online && window.Net && Net.sendBossHit) Net.sendBossHit(part, part === 'heart' ? 'ranged' : 'melee', dmg);
-    else applyBossHitLocal(part, dmg);
+    if (Game.online && window.Net && Net.sendBossHit) Net.sendBossHit(part, part === 'heart' ? 'ranged' : 'melee', dmg, stagAmt || 0);
+    else applyBossHitLocal(part, dmg, stagAmt || 0);
   }
-  function applyBossHitLocal(part, dmg) {
-    var b = boss; if (!b || !b.active || b.stage !== 'vuln') return;   // window closed
-    b.hp = Math.max(0, b.hp - Math.max(0, Math.min(80, Math.floor(dmg))));
-    onBossHit(part, Math.floor(dmg), b.hp);
+  function applyBossHitLocal(part, dmg, stagAmt) {
+    var b = boss; if (!b || !b.active) return;
+    if (b.stage !== 'vuln' && b.stage !== 'stagger') return;   // window closed
+    var d = Math.max(0, Math.min(80, Math.floor(dmg)));
+    if (part === 'heart') b.hp = Math.max(0, b.hp - d);
+    else b.hp = Math.max(0, b.hp - Math.floor(d * 0.25));
+    if (stagAmt > 0 && b.stage !== 'stagger') b.stagger = Math.min(b.maxStagger, (b.stagger || 0) + Math.min(50, Math.floor(stagAmt)));
+    onBossHit(part, d, b.hp, b.stagger);
     updateBossPhase();
+    if (b.stagger >= b.maxStagger && b.stage !== 'stagger') enterStagger();
     if (b.hp <= 0) onBossDead();
   }
 
   function bossActive() { return !!(boss && boss.active); }
-  function onBossHp(hp) { if (boss && typeof hp === 'number') { boss.hp = hp; updateBossPhase(); if (window.UI && UI.updateBossBar) UI.updateBossBar(hp, boss.maxHp); } }
+  function onBossHp(hp, stagger) {
+    if (!boss) return;
+    if (typeof hp === 'number') boss.hp = hp;
+    if (typeof stagger === 'number') boss.stagger = stagger;
+    updateBossPhase();
+    if (window.UI && UI.updateBossBar) UI.updateBossBar(boss.hp, boss.maxHp, boss.stagger, boss.maxStagger);
+  }
 
   return {
     onMode: onMode, applyState: applyState, onSigil: onSigil, completeSigil: completeSigil,

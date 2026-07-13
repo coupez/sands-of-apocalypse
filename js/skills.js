@@ -138,7 +138,7 @@ var Skills = (function () {
     if (why) { if (window.UI) UI.showActionText(why); return false; }
     for (var b = 0; b < r.bars; b++) removeItem(r.bar);   // frees slots, so the result always fits
     addItem(r.id);
-    if (r.id.indexOf('_greatsword') >= 0) Game.forgedRitual = true;   // the co-op "ritual weapon" (Forge sigil)
+    if (r.id.indexOf('_greatsword') >= 0 && r.id.indexOf('bronze_') !== 0) Game.forgedRitual = true;   // ritual weapon: iron+ greatsword (Forge sigil)
     addXp('smithing', 8 + r.level * 4);
     if (window.UI) UI.showActionText('You smith a ' + r.name + '.');
     Game.log.push('smith:' + r.id);
@@ -319,6 +319,7 @@ var Skills = (function () {
     if (Utils.rand() > successChance(data.mining.level, rock.reqLevel || 1)) return;
     if (addItem(rock.itemId || 'ore')) {
       addXp('mining', rock.xp || 35);
+      if ((rock.itemId || 'ore') === 'pore') Game.minedGold = true;   // co-op Deep sigil
       Game.log.push('mine');
       if (window.UI) UI.showActionText('You mine some ' + (ITEMS[rock.itemId || 'ore'].name) + '.');
       if (Game.online) { if (window.Net && Net.sendGather) Net.sendGather('rock', rock.index); }

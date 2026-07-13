@@ -799,6 +799,16 @@ var Entities = (function () {
     }
     Game.log.push('coop:imps:' + count);
   }
+  // remove leftover raiders/imps (e.g. after the boss is banished)
+  function clearRaiders() {
+    var keep = [];
+    for (var i = 0; i < bandits.length; i++) {
+      var b = bandits[i];
+      if (b.isRaid) { untag(b); removePortal(b); scene.remove(b.mesh); }
+      else keep.push(b);
+    }
+    bandits = keep;
+  }
 
   function makeDrop(x, z, itemId, name, bone) {
     var g = new THREE.Group();
@@ -1779,7 +1789,7 @@ var Entities = (function () {
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     sendCaravan: sendCaravan, merchantBusy: merchantBusy, sellToMerchant: sellToMerchant,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
-    pickupDrop: pickupDrop, spawnRaid: spawnRaid, spawnImps: spawnImps, tagExternal: tagExternal, untagExternal: untagExternal,
+    pickupDrop: pickupDrop, spawnRaid: spawnRaid, spawnImps: spawnImps, clearRaiders: clearRaiders, tagExternal: tagExternal, untagExternal: untagExternal,
     spawnBuild: spawnBuild,
     get bandits() { return bandits; }, get banditCamps() { return banditCamps; }, get builds() { return builds; },
     get drops() { return drops; }, get rats() { return rats; },

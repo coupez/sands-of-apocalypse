@@ -111,15 +111,16 @@ function doRestart() {
 }
 
 // ---- co-op boss (Mahrûk) — server-authoritative HP + slam windows ----
-const BOSS = { maxHp: 600, slamInterval: 7.0, windup: 1.1, vuln: 3.0, reach: 9, slamRadius: 6, slamDmg: 11 };
+const BOSS = { maxHp: 600, slamInterval: 7.0, windup: 1.1, vuln: 3.0, reach: 9, slamRadius: 6, slamDmg: 11, maxStagger: 100, staggerDur: 5.0 };
 function bossPhase(b) { return b.hp > b.maxHp * 0.66 ? 1 : b.hp > b.maxHp * 0.33 ? 2 : 3; }
 function bossSlamInterval(b) { const f = b.hp / b.maxHp; return f > 0.66 ? BOSS.slamInterval : f > 0.33 ? 5.3 : 4.0; }
 function bossFull() {
   const b = coop.boss;
-  return { type: "bossState", active: b.active, phase: bossPhase(b), hp: b.hp, maxHp: b.maxHp, stage: b.stage, hand: b.hand, hx: b.hx, hz: b.hz };
+  return { type: "bossState", active: b.active, phase: bossPhase(b), hp: b.hp, maxHp: b.maxHp,
+    stagger: b.stagger, maxStagger: BOSS.maxStagger, stage: b.stage, hand: b.hand, hx: b.hx, hz: b.hz };
 }
 function startBoss() {
-  coop.boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, phase: 1, stage: "idle", hand: "L", hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval };
+  coop.boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, stagger: 0, phase: 1, stage: "idle", hand: "L", hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval };
   server.publish("game", JSON.stringify(bossFull()));
 }
 function simBoss(dt) {
@@ -143,17 +144,28 @@ function simBoss(dt) {
       server.publish("game", JSON.stringify(bossFull()));
       server.publish("game", JSON.stringify({ type: "bossSlam", stage: "impact", x: b.hx, z: b.hz, radius: BOSS.slamRadius, dmg: BOSS.slamDmg }));
     }
-  } else if (b.stage === "vuln") {
+  } else if (b.stage === "vuln" || b.stage === "stagger") {
     b.vulnT -= dt;
-    if (b.vulnT <= 0) { b.stage = "idle"; b.hand = null; b.timer = bossSlamInterval(b); server.publish("game", JSON.stringify(bossFull())); }
+    if (b.vulnT <= 0) {
+      if (b.stage === "stagger") b.stagger = 0;
+      b.stage = "idle"; b.hand = null; b.timer = bossSlamInterval(b);
+      server.publish("game", JSON.stringify(bossFull()));
+    }
   }
 }
-function bossHit(part, dmg) {
+function bossHit(part, dmg, stagAmt) {
   const b = coop.boss;
-  if (!b || !b.active || b.stage !== "vuln") return;   // window closed
+  if (!b || !b.active) return;
+  if (b.stage !== "vuln" && b.stage !== "stagger") return;   // window closed
   if (part !== "hand" && part !== "heart") return;
-  b.hp = Math.max(0, b.hp - Math.max(0, Math.min(80, Math.floor(dmg))));
-  server.publish("game", JSON.stringify({ type: "bossHit", part, dmg: Math.floor(dmg), hp: b.hp }));
+  const d = Math.max(0, Math.min(80, Math.floor(dmg)));
+  // heart = real HP damage (bow/ballista); hand = a chip + builds the stagger meter (melee)
+  if (part === "heart") b.hp = Math.max(0, b.hp - d);
+  else b.hp = Math.max(0, b.hp - Math.floor(d * 0.25));
+  if (stagAmt > 0 && b.stage !== "stagger") b.stagger = Math.min(BOSS.maxStagger, b.stagger + Math.max(0, Math.min(50, Math.floor(stagAmt))));
+  // full stagger → Mahrûk reels: a long window where the heart is wide open
+  if (b.stagger >= BOSS.maxStagger && b.stage !== "stagger") { b.stage = "stagger"; b.vulnT = BOSS.staggerDur; server.publish("game", JSON.stringify(bossFull())); }
+  server.publish("game", JSON.stringify({ type: "bossHit", part, dmg: Math.floor(d), hp: b.hp, stagger: b.stagger }));
   if (b.hp <= 0) {
     b.active = false;
     coop.boss = null;
@@ -244,7 +256,7 @@ function snapshot() {
     if (e.state === "dead") continue; // dead ones handled by enemyDead/Respawn events
     es.push({ i: e.i, x: +e.x.toFixed(2), z: +e.z.toFixed(2), ry: +e.ry.toFixed(2), state: e.state, hp: e.hp });
   }
-  const boss = (coop.boss && coop.boss.active) ? { hp: coop.boss.hp } : null;
+  const boss = (coop.boss && coop.boss.active) ? { hp: coop.boss.hp, stagger: coop.boss.stagger } : null;
   return JSON.stringify({ type: "snapshot", players: arr, enemies: es, boss, serverTime: Date.now() });
 }
 
@@ -379,7 +391,7 @@ const server = Bun.serve({
       } else if (msg.type === "ritualStart" && mode === "coop" && coop.ritualReady && (!coop.boss || !coop.boss.active)) {
         startBoss();
       } else if (msg.type === "bossHit" && mode === "coop") {
-        bossHit(msg.part, msg.dmg);
+        bossHit(msg.part, msg.dmg, msg.stagger);
       } else if (msg.type === "win") {
         // first player to place the Heart wins — relay to everyone + start the
         // 10s countdown, then restart the whole game for a fresh round

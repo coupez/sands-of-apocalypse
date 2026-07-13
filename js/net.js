@@ -69,7 +69,7 @@ var Net = (function () {
       else if (msg.type === 'snapshot') {
         sync(msg.players);
         if (msg.enemies) Entities.applyServerEnemies(msg.enemies);
-        if (msg.boss && window.Coop && Coop.onBossHp) Coop.onBossHp(msg.boss.hp);
+        if (msg.boss && window.Coop && Coop.onBossHp) Coop.onBossHp(msg.boss.hp, msg.boss.stagger);
       }
       else if (msg.type === 'leave') { removeOther(msg.id); }
       else if (msg.type === 'hit') { onHit(msg); }
@@ -88,7 +88,7 @@ var Net = (function () {
       else if (msg.type === 'build') { if (window.Coop) Coop.onBuild(msg.id, msg.x, msg.z); }
       else if (msg.type === 'bossState') { if (window.Coop) Coop.onBossState(msg); }
       else if (msg.type === 'bossSlam') { if (window.Coop) Coop.onBossSlam(msg); }
-      else if (msg.type === 'bossHit') { if (window.Coop) Coop.onBossHit(msg.part, msg.dmg, msg.hp); }
+      else if (msg.type === 'bossHit') { if (window.Coop) Coop.onBossHit(msg.part, msg.dmg, msg.hp, msg.stagger); }
       else if (msg.type === 'bossDead') { if (window.Coop) Coop.onBossDead(); }
       else if (msg.type === 'chooseMode') { if ((!msg.host || msg.host === myId) && window.Mode) Mode.showChooser(); }
       else if (msg.type === 'level') {
@@ -234,9 +234,9 @@ var Net = (function () {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'build', id: id, x: x, z: z }));
   }
-  function sendBossHit(part, style, dmg) {
+  function sendBossHit(part, style, dmg, stagger) {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: 'bossHit', part: part, style: style, dmg: dmg | 0 }));
+    ws.send(JSON.stringify({ type: 'bossHit', part: part, style: style, dmg: dmg | 0, stagger: stagger | 0 }));
   }
 
   function sync(list) {

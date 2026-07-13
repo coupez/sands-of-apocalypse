@@ -860,3 +860,17 @@ html, body {
   text-shadow: 0 1px 2px #000;
 }
 .entity-label.merchant .nm { color: #ffd98a; }
+
+/* Boss stagger sub-bar (under the HP bar) */
+.bb-stagger {
+  height: 7px; margin-top: 3px; border-radius: 5px;
+  background: rgba(10,10,20,0.8);
+  border: 1px solid #5a7ab0;
+  overflow: hidden;
+}
+.bb-stagger-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, #3a6ad0, #6ab0ff);
+  box-shadow: 0 0 8px rgba(90,160,255,0.7);
+  transition: width 0.2s ease;
+}
