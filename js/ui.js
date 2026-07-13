@@ -51,6 +51,23 @@ var UI = (function () {
 
   function updateGold() { if (el.goldNum) el.goldNum.textContent = Game.gold || 0; }
 
+  // ---------- versus scoreboard: relic altars + your points ----------
+  var _vsHud = null;
+  function updateScore() {
+    if (Game.headless) return;
+    if (Game.mode !== 'versus') { if (_vsHud) _vsHud.style.display = 'none'; return; }
+    if (!_vsHud) { _vsHud = document.createElement('div'); _vsHud.id = 'versus-hud'; document.body.appendChild(_vsHud); }
+    _vsHud.style.display = 'block';
+    var altars = (window.Entities && Entities.essAltars) ? Entities.essAltars : [];
+    var html = '<div class="vh-head">RELIC ALTARS <span>' + (Game.score || 0) + ' pts</span></div>';
+    for (var i = 0; i < altars.length; i++) {
+      var a = altars[i];
+      html += '<div class="vh-row' + (a.claimedBy ? ' claimed' : '') + '"><span class="vh-nm">' + String(a.name).replace(/</g, '&lt;') + '</span>' +
+        '<span class="vh-st">' + (a.claimedBy ? ('✓ ' + String(a.claimedName || '').replace(/</g, '&lt;')) : 'open') + '</span></div>';
+    }
+    _vsHud.innerHTML = html;
+  }
+
   // ---------- right-side tab panels ----------
   var _activeTab = null;
   function wireTabs() {
@@ -756,7 +773,7 @@ var UI = (function () {
     updateVitals: updateVitals, updateSkills: updateSkills,
     updateInventory: updateInventory,
     updateEquipment: updateEquipment, setActiveTab: setActiveTab, toast: toast,
-    updateGold: updateGold, openSmithMenu: openSmithMenu, openSellMenu: openSellMenu, openStationMenu: openStationMenu,
+    updateGold: updateGold, updateScore: updateScore, openSmithMenu: openSmithMenu, openSellMenu: openSellMenu, openStationMenu: openStationMenu,
     openBuildMenu: openBuildMenu,
     showActionText: showActionText, setTarget: setTarget, announce: announce,
     showTip: showTip, hideTip: hideTip, showCountdown: showCountdown, clearOverlays: clearOverlays,

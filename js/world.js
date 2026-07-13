@@ -13,6 +13,19 @@ var World = (function () {
   var CAMPS = { north: { x: 0, z: -51 }, south: { x: 0, z: 51 } };
   var BANDIT_CAMPS = { east: { x: 51, z: 0 }, west: { x: -51, z: 0 } };
 
+  // The central altar-ruin is a raised rectangular platform with stairs on the
+  // four cardinal sides. Terrain height lifts the player onto it via the ramps.
+  var PLAZA = { half: 9, height: 1.15, stairRun: 4.5, stairHalf: 4 };
+  function plazaHeightAt(x, z) {
+    var ax = Math.abs(x), az = Math.abs(z);
+    if (ax <= PLAZA.half && az <= PLAZA.half) return PLAZA.height;   // platform top
+    if (az <= PLAZA.stairHalf && ax > PLAZA.half && ax <= PLAZA.half + PLAZA.stairRun) // E/W stairs
+      return PLAZA.height * (1 - (ax - PLAZA.half) / PLAZA.stairRun);
+    if (ax <= PLAZA.stairHalf && az > PLAZA.half && az <= PLAZA.half + PLAZA.stairRun) // N/S stairs
+      return PLAZA.height * (1 - (az - PLAZA.half) / PLAZA.stairRun);
+    return 0;
+  }
+
   // Flat desert floor (no dunes → no geometry clipping with objects).
   function buildTerrain() {
     var geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 1, 1);
@@ -25,8 +38,8 @@ var World = (function () {
     ground.name = 'ground';
     ground.userData.kind = 'ground';
     scene.add(ground);
-    // terrain is flat, so height is always 0
-    ground.userData.heightAt = function () { return 0; };
+    // flat desert, except the raised central altar platform
+    ground.userData.heightAt = plazaHeightAt;
   }
 
   // A ring of great pyramids and giant boulders out past the play area, so you
@@ -184,6 +197,6 @@ var World = (function () {
     get camera() { return camera; },
     get renderer() { return renderer; },
     get ground() { return ground; },
-    WORLD_SIZE: WORLD_SIZE, CAMPS: CAMPS, BANDIT_CAMPS: BANDIT_CAMPS
+    WORLD_SIZE: WORLD_SIZE, CAMPS: CAMPS, BANDIT_CAMPS: BANDIT_CAMPS, PLAZA: PLAZA
   };
 })();

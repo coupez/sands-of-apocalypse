@@ -874,3 +874,24 @@ html, body {
   box-shadow: 0 0 8px rgba(90,160,255,0.7);
   transition: width 0.2s ease;
 }
+
+/* ---------- Versus scoreboard (relic altars) ---------- */
+#versus-hud {
+  position: absolute; top: 16px; left: 16px;
+  width: 236px; z-index: 11;
+  background: var(--panel-bg); border: 1px solid var(--panel-border);
+  border-radius: 10px; padding: 10px 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6); backdrop-filter: blur(2px);
+}
+.vh-head {
+  font-size: 12px; letter-spacing: 2px; font-weight: 800;
+  color: var(--toxic); text-shadow: 0 0 6px var(--toxic-glow);
+  border-bottom: 1px solid var(--panel-border); padding-bottom: 6px; margin-bottom: 6px;
+  display: flex; justify-content: space-between;
+}
+.vh-head span { color: #fff; }
+.vh-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 2px; opacity: 0.65; }
+.vh-row.claimed { opacity: 1; }
+.vh-nm { font-weight: 700; color: var(--ink); }
+.vh-st { font-size: 11px; color: #b8a97e; }
+.vh-row.claimed .vh-st { color: #8dff9a; font-weight: 700; }

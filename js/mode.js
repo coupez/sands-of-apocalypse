@@ -70,6 +70,7 @@ var Mode = (function () {
         : 'Versus: race your rival to the Obelisk!');
     }
     if (window.Coop && Coop.onMode) Coop.onMode(mode, coop);
+    if (window.UI && UI.updateScore) UI.updateScore();   // show/hide the versus scoreboard
     Game.log.push('mode:' + mode);
   }
 

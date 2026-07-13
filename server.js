@@ -49,6 +49,8 @@ let restartTimer = null;    // pending win-countdown timeout
 let hostId = null;          // first player to join — chooses the game mode
 let mode = "pending";       // 'pending' | 'versus' | 'coop' (write-once per session)
 let coop = { sigils: {}, ritualReady: false, boss: null, builds: [], won: false };   // shared co-op state
+let versus = { altars: {}, scores: {} };   // versus: altar key -> ownerId; id -> points
+const ALTAR_KEYS = ["bandit", "merchant"];
 
 // ============================================================
 // Authoritative shared world: enemies + resource depletion.
@@ -106,6 +108,7 @@ function resetServerWorld() {
 function doRestart() {
   if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
   roundOver = false;
+  versus = { altars: {}, scores: {} };
   resetServerWorld();
   server.publish("game", JSON.stringify({ type: "restart" }));
 }
@@ -389,6 +392,20 @@ const server = Bun.serve({
           coop.ritualReady = valid.filter((k) => coop.sigils[k]).length >= 3;
           server.publish("game", JSON.stringify({ type: "sigil", which: msg.which, lit: true, ritualReady: coop.ritualReady }));
         }
+      } else if (msg.type === "placeEssence" && mode === "versus" && ALTAR_KEYS.indexOf(msg.key) >= 0) {
+        // first to place an essence claims that altar (locked for the rest) + scores
+        if (!versus.altars[msg.key]) {
+          const p = players.get(ws.data.id);
+          const name = (p && p.name) || "A rival";
+          versus.altars[msg.key] = ws.data.id;
+          versus.scores[ws.data.id] = (versus.scores[ws.data.id] || 0) + 1;
+          server.publish("game", JSON.stringify({ type: "altarClaimed", key: msg.key, by: ws.data.id, name }));
+          // claiming a strict majority of altars wins the round
+          if (versus.scores[ws.data.id] > ALTAR_KEYS.length / 2 && !roundOver) {
+            server.publish("game", JSON.stringify({ type: "win", name, restartIn: 10 }));
+            roundOver = true; restartTimer = setTimeout(doRestart, 10000);
+          }
+        }
       } else if (msg.type === "build" && mode === "coop" && typeof msg.id === "string" && Number.isFinite(msg.x) && Number.isFinite(msg.z)) {
         if (coop.builds.length < 40) {
           const b = { id: msg.id.slice(0, 16), x: +msg.x, z: +msg.z };
@@ -427,6 +444,7 @@ const server = Bun.serve({
       // empty session → back to a clean pending state for the next lobby
       if (players.size === 0) {
         mode = "pending"; hostId = null; coop = { sigils: {}, ritualReady: false, boss: null, builds: [], won: false };
+        versus = { altars: {}, scores: {} };
         roundOver = false;
         if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
       }

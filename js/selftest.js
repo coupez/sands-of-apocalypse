@@ -403,7 +403,7 @@ var SelfTest = (function () {
         't' + Entities.trees.length + ' r' + Entities.rocks.length + ' e' + Entities.enemies.length);
       // resources spread across the field but stay OUT of the centre ceremony plaza
       assert('centre plaza is kept clear of resources',
-        Entities.trees.concat(Entities.rocks).every(function (e) { return Math.hypot(e.position.x, e.position.z) >= 18; }),
+        Entities.trees.concat(Entities.rocks).every(function (e) { return Math.hypot(e.position.x, e.position.z) >= 14; }),
         'min r=' + Math.round(Math.min.apply(null, Entities.trees.concat(Entities.rocks).map(function (e) { return Math.hypot(e.position.x, e.position.z); }))));
       // smithed gear uses distinct per-type icons (not a single '■')
       assert('smithed gear has distinct type icons',
@@ -614,6 +614,24 @@ var SelfTest = (function () {
         boss: { active: true, hp: 300, maxHp: 600, phase: 1, stage: 'idle', hand: 'L', hx: 0, hz: 0 } });
       assert('a mid-fight late joiner reconstructs the boss',
         Coop.bossActive() === true && Coop.boss.hp === 300 && Coop.boss.simLocal === false);
+
+      // -- versus: essence altars (place → score a point + lock out the rival) --
+      Game.mode = 'versus';
+      assert('two essence altars stand on the central platform', Entities.essAltars.length === 2);
+      var bAltar = Entities.essAltars.filter(function (a) { return a.key === 'bandit'; })[0];
+      assert('the bandit altar awaits a Bandit Essence', !!bAltar && bAltar.essId === 'essence');
+      clearBag();
+      Entities.useEssenceAltar(bAltar);
+      assert('cannot claim an altar without the essence', bAltar.claimedBy === null);
+      Skills.addItem('essence'); Game.score = 0;
+      Entities.useEssenceAltar(bAltar);
+      assert('placing the essence claims the altar + scores a point',
+        bAltar.claimedBy !== null && (Game.score || 0) === 1 && !Skills.hasItem('essence'));
+      assert('a claimed altar is locked out (not interactable)', bAltar.active === false);
+      Skills.addItem('essence');
+      Entities.useEssenceAltar(bAltar);
+      assert('a claimed altar rejects further placements', Skills.hasItem('essence') === true);
+      Game.mode = 'coop';
 
     } catch (err) {
       assert('NO EXCEPTIONS', false, (err && err.stack) ? err.stack : String(err));

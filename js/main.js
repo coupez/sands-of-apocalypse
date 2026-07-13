@@ -27,7 +27,7 @@ var Main = (function () {
       CURSORS.use = emojiCursor('👆', 4, 4);
     }
     if (type === 'player' || type === 'boss') return CURSORS.enemy;
-    if (type === 'station' || type === 'obelisk' || type === 'chest') return CURSORS.use;
+    if (type === 'station' || type === 'obelisk' || type === 'chest' || type === 'essaltar') return CURSORS.use;
     return CURSORS[type] || 'pointer';
   }
   function setCursor(c) { if (c !== _lastCursor) { document.body.style.cursor = c; _lastCursor = c; } }
@@ -38,7 +38,8 @@ var Main = (function () {
       case 'fishpool': return 'Fish ' + ref.name;
       case 'chest': return 'Open ' + (ref.name || 'chest');
       case 'station': return 'Use ' + ref.name + (ref.lit === false && (ref.kind === 'furnace' || ref.kind === 'campfire') ? ' (unlit)' : '');
-      case 'obelisk': return 'Place the Heart in the Obelisk';
+      case 'obelisk': return 'The Central Altar';
+      case 'essaltar': return ref.claimedBy ? (ref.name + ' — claimed by ' + (ref.claimedName || 'a rival')) : ('Place your essence at the ' + ref.name);
       case 'drop': return 'Pick up ' + ref.name;
       case 'enemy': return 'Attack ' + ref.name + ' (Lv ' + ref.reqLevel + ')';
       case 'player': return 'Attack ' + ref.name;
@@ -214,7 +215,6 @@ var Main = (function () {
     World.update(dt, t);
     if (window.Coop && Coop.update) Coop.update(dt);
     UI.updateLabels(Entities.enemies);
-    UI.updateCampLabels(Entities.camps);
     UI.updateMerchantLabels(Entities.stations);
     if (Net.enabled) Net.update(dt);
   }

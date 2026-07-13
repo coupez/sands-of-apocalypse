@@ -15,6 +15,7 @@ var Entities = (function () {
   var bandits = [], banditCamps = [], drops = [];   // E/W bandit-camp wave system
   var rats = [], birds = [];   // ambient critters (attackable rats) + flying birds
   var builds = [];             // co-op constructables (ballista, …)
+  var essAltars = [];          // versus: essence altars on the central platform
 
   // No roaming enemies in the open field — combat lives at the E/W bandit camps
   // (and rats). Enemies still spawn hidden so the self-test + server indices align.
@@ -563,7 +564,31 @@ var Entities = (function () {
 
   // merchant caravan: sending it off (after a sale) blocks selling until it returns
   function merchantBusy(ent) { return !!(ent && ent.camel && ent.camel.state !== 'present'); }
-  function sendCaravan(ent) { if (ent && ent.camel && ent.camel.state === 'present') { ent.camel.state = 'leaving'; Game.log.push('caravan:leave'); } }
+  var MERCHANT_SAYINGS = [
+    "Ahlan wa sahlan, my friend — I'll fetch a fine price for these!",
+    "Shukran, shukran! May your days be blessed with gold.",
+    "A pleasure doing business — yalla, off to the great bazaar!",
+    "I'll get this done for you, inshallah. Have a beautiful day!",
+    "The finest goods for the finest buyer — ma'a salama!",
+    "Bismillah, the caravan rides! Your coin awaits my return.",
+    "Trust in me, habibi — the best trades in all the sands.",
+    "Tayeb, tayeb! I return before the sun kisses the dunes."
+  ];
+  function sendCaravan(ent) {
+    if (!ent || !ent.camel || ent.camel.state !== 'present') return;
+    ent.camel.state = 'leaving';
+    // the merchant bids you farewell — but only if you're standing nearby
+    var c = ent.camel, p = Game.player && Game.player.position;
+    if (p && window.UI && UI.spawnSpeech && c.group) {
+      var d = Math.hypot(p.x - c.group.position.x, p.z - c.group.position.z);
+      if (d < 24) {
+        var line = MERCHANT_SAYINGS[Math.floor(Math.random() * MERCHANT_SAYINGS.length)];
+        UI.spawnSpeech(new THREE.Vector3(c.group.position.x, c.group.position.y + 4.0, c.group.position.z), line);
+        if (window.Voice && Voice.speak) Voice.speak(line, { lang: 'ar-EG', rate: 0.98, pitch: 1.0, volume: 0.9 });
+      }
+    }
+    Game.log.push('caravan:leave');
+  }
   function updateCamel(ent, dt) {
     var c = ent.camel;
     if (!c || c.state === 'present') return;
@@ -589,83 +614,135 @@ var Entities = (function () {
   }
 
   // ---------- the Obelisk (endgame) ----------
+  // ---------- central ritual altar (rectangular, no orb) ----------
+  // Co-op uses it to summon Mahrûk. Sits atop the raised plaza platform.
   function makeObelisk(x, z) {
     var g = new THREE.Group();
     var stone = new THREE.MeshStandardMaterial({ color: 0xcaa96a, roughness: 1, flatShading: true });
     var dark = new THREE.MeshStandardMaterial({ color: 0x9a7a44, roughness: 1, flatShading: true });
-    var base = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.7, 2.8), dark); base.position.y = 0.35; g.add(base);
-    var base2 = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.5, 2.1), stone); base2.position.y = 0.95; g.add(base2);
-    var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.75, 9, 4), stone); shaft.rotation.y = Math.PI / 4; shaft.position.y = 5.8; g.add(shaft);
-    var cap = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.2, 4),
-      new THREE.MeshStandardMaterial({ color: 0xffd24a, emissive: 0xffb020, emissiveIntensity: 0.4, roughness: 0.4, metalness: 0.7 }));
-    cap.rotation.y = Math.PI / 4; cap.position.y = 10.9; g.add(cap);
-    var socket = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8),
-      new THREE.MeshStandardMaterial({ color: 0x1a1030, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.4 }));
-    socket.position.set(0, 1.7, 1.1); g.add(socket);
-    var light = new THREE.PointLight(0x8a5ad0, 0, 26, 2); light.position.set(0, 8, 0); g.add(light);
+    var base = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.5, 2.6), dark); base.position.y = 0.25; g.add(base);
+    var tier = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.4, 2.0), stone); tier.position.y = 0.65; g.add(tier);
+    var slab = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.35, 1.7), dark); slab.position.y = 1.0; g.add(slab);
+    for (var c = 0; c < 4; c++) { // corner horns
+      var horn = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.7, 4), stone);
+      horn.position.set((c % 2 ? 1 : -1) * 1.3, 1.4, (c < 2 ? 1 : -1) * 0.6); g.add(horn);
+    }
+    var socket = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.12, 1.0),
+      new THREE.MeshStandardMaterial({ color: 0x2a2036, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.4 }));
+    socket.position.y = 1.22; g.add(socket);
+    var light = new THREE.PointLight(0x8a5ad0, 0, 22, 2); light.position.set(0, 3, 0); g.add(light);
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
     markOccluder(g);
-    obelisk = { type: 'obelisk', name: 'The Obelisk', mesh: g, position: g.position,
-      active: true, interactRange: 3.4, socket: socket, cap: cap, light: light, done: false, t: 0 };
+    obelisk = { type: 'obelisk', name: 'The Central Altar', mesh: g, position: g.position,
+      active: true, interactRange: 3.0, socket: socket, cap: slab, light: light, done: false, t: 0 };
     tag(g, obelisk);
     return obelisk;
   }
 
-  // ---------- ceremony plaza: an Egyptian-ruins clearing around the Obelisk ----------
-  // A big flat sandstone floor ringed with broken columns + weathered statues, so
-  // the centre reads as an ancient ceremony ground (no resources spawn here).
+  // ---------- essence altars (versus: place an essence → score + lock) ----------
+  var ESS_COLOR = { essence: 0xff3a4a, messence: 0xffd24a };
+  function makeEssenceAltar(key, x, z, essId, name) {
+    var g = new THREE.Group();
+    var stone = new THREE.MeshStandardMaterial({ color: 0xbfa06a, roughness: 1, flatShading: true });
+    var dark = new THREE.MeshStandardMaterial({ color: 0x8a6a3a, roughness: 1, flatShading: true });
+    var base = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.4, 1.9), dark); base.position.y = 0.2; g.add(base);
+    var pillar = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.1, 1.15), stone); pillar.position.y = 0.95; g.add(pillar);
+    var basin = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.42, 0.32, 8), dark); basin.position.y = 1.6; g.add(basin);
+    var token = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 0),
+      new THREE.MeshStandardMaterial({ color: 0x222, emissive: ESS_COLOR[essId] || 0xffffff, emissiveIntensity: 1.4, roughness: 0.3 }));
+    token.position.y = 2.0; token.visible = false; g.add(token);
+    var light = new THREE.PointLight(ESS_COLOR[essId] || 0xffffff, 0, 9, 2); light.position.y = 2.1; g.add(light);
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g); markOccluder(g);
+    var ent = { type: 'essaltar', key: key, name: name, essId: essId, mesh: g, token: token, light: light,
+      position: g.position, active: true, interactRange: 2.4, claimedBy: null, claimedName: null };
+    tag(g, ent); essAltars.push(ent);
+    return ent;
+  }
+  // place an essence on an altar (versus only)
+  function useEssenceAltar(ent) {
+    if (!ent) return;
+    if (ent.claimedBy) { if (window.UI) UI.showActionText('The ' + ent.name + ' is already claimed by ' + (ent.claimedName || 'a rival') + '.'); return; }
+    if (Game.mode === 'coop') { if (window.UI) UI.showActionText('The essence altars are for the Versus race.'); return; }
+    if (!Skills.hasItem(ent.essId)) { if (window.UI) UI.showActionText('You need the ' + (Skills.ITEMS[ent.essId] ? Skills.ITEMS[ent.essId].name : 'essence') + ' to claim this altar.'); return; }
+    Skills.removeItem(ent.essId);
+    var myName = (window.Net && Net.myName) ? Net.myName : 'You';
+    var myId = (window.Net && Net.myId) ? Net.myId : 'me';
+    if (Game.online && window.Net && Net.sendPlaceEssence) Net.sendPlaceEssence(ent.key);
+    else onAltarClaimed(ent.key, myId, myName, true);
+    Game.log.push('altar:place:' + ent.key);
+  }
+  function essAltarByKey(k) { for (var i = 0; i < essAltars.length; i++) if (essAltars[i].key === k) return essAltars[i]; return null; }
+  // an altar was claimed (locally offline, or from the server) — lock it + score
+  function onAltarClaimed(key, byId, byName, mine) {
+    var ent = essAltarByKey(key);
+    if (!ent || ent.claimedBy) return;
+    ent.claimedBy = byId; ent.claimedName = byName;
+    ent.token.visible = true; ent.light.intensity = 2.2;
+    ent.active = false; untag(ent);   // no longer interactable
+    if (mine) Game.score = (Game.score || 0) + 1;
+    if (window.UI) {
+      if (UI.updateScore) UI.updateScore();
+      if (UI.announce) UI.announce(byName + ' claimed the ' + ent.name + '!', false);
+    }
+    Game.log.push('altar:claimed:' + key + ':' + (mine ? 'me' : 'rival'));
+  }
+
+  // ---------- raised ceremony platform (Egyptian altar-ruin with 4 stairs) ----------
   function makeCeremonyPlaza() {
-    var PLAZA_R = 14;
+    var P = World.PLAZA, half = P.half, H = P.height;
     var g = new THREE.Group();
     var sand = new THREE.MeshStandardMaterial({ color: 0xcdb082, roughness: 1, flatShading: true });
     var sandDark = new THREE.MeshStandardMaterial({ color: 0xb59468, roughness: 1, flatShading: true });
-    // flat inlaid stone floor (kept low so the player walks over it, no clipping)
-    var floor = new THREE.Mesh(new THREE.CylinderGeometry(PLAZA_R, PLAZA_R, 0.12, 40), sandDark);
-    floor.position.y = 0.06; floor.receiveShadow = true; g.add(floor);
-    var inner = new THREE.Mesh(new THREE.CylinderGeometry(PLAZA_R - 5, PLAZA_R - 5, 0.14, 40), sand);
-    inner.position.y = 0.08; inner.receiveShadow = true; g.add(inner);
-    var core = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.16, 32), sandDark);
-    core.position.y = 0.10; core.receiveShadow = true; g.add(core);
-    // ring of columns — some standing (drum-stacked + capital), some toppled
-    var cols = 14;
-    for (var i = 0; i < cols; i++) {
-      var a = (i / cols) * Math.PI * 2, cr = PLAZA_R - 1.5;
-      var cx = Math.cos(a) * cr, cz = Math.sin(a) * cr;
-      var toppled = (i % 4 === 0);
-      var colG = new THREE.Group();
-      var h = toppled ? Utils.randRange(2.4, 3.4) : Utils.randRange(4.5, 7.5);
-      var drums = Math.max(2, Math.round(h / 1.5));
-      for (var d = 0; d < drums; d++) {
-        var drum = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, (h / drums) * 0.98, 12), sand);
-        drum.position.y = (d + 0.5) * (h / drums); drum.castShadow = true; colG.add(drum);
+    // raised platform (solid block up to y=H) + a top course
+    var base = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 1.6, H, half * 2 + 1.6), sandDark);
+    base.position.y = H / 2; base.receiveShadow = true; g.add(base);
+    var top = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 0.16, half * 2), sand);
+    top.position.y = H - 0.08; top.receiveShadow = true; g.add(top);
+    // 4 staircases (N/E/S/W)
+    var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]], nSteps = 4, sw = P.stairHalf * 2 - 1.0, run = P.stairRun;
+    dirs.forEach(function (d) {
+      for (var s = 0; s < nSteps; s++) {
+        var topY = H * ((s + 1) / nSteps), depth = run / nSteps;
+        var outer = half + run - s * depth;
+        var box = new THREE.Mesh(new THREE.BoxGeometry(d[0] ? depth : sw, topY, d[1] ? depth : sw), sandDark);
+        box.position.set(d[0] * (outer - depth / 2), topY / 2, d[1] * (outer - depth / 2));
+        box.receiveShadow = true; g.add(box);
       }
-      if (!toppled) { var cap2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 1.5), sandDark); cap2.position.y = h + 0.2; cap2.castShadow = true; colG.add(cap2); }
-      colG.position.set(cx, 0.12, cz);
-      if (toppled) { colG.rotation.z = (Utils.rand() > 0.5 ? 1 : -1) * Math.PI / 2; colG.rotation.y = a; colG.position.y = 0.6; }
-      g.add(colG);
-      if (!toppled) markOccluder(colG);
+    });
+    // ring of broken columns on the platform top (gaps at the 4 stair openings)
+    var cols = 16;
+    for (var i = 0; i < cols; i++) {
+      var a = (i / cols) * Math.PI * 2;
+      if (Math.abs(Math.cos(a)) > 0.92 || Math.abs(Math.sin(a)) > 0.92) continue;   // leave the stairs clear
+      var cr = half - 1.0, cx = Math.cos(a) * cr, cz = Math.sin(a) * cr, toppled = (i % 5 === 0);
+      var colG = new THREE.Group(), h = toppled ? Utils.randRange(2.2, 3.2) : Utils.randRange(3.5, 6.0);
+      var drums = Math.max(2, Math.round(h / 1.4));
+      for (var dd = 0; dd < drums; dd++) {
+        var drum = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, (h / drums) * 0.98, 12), sand);
+        drum.position.y = (dd + 0.5) * (h / drums); drum.castShadow = true; colG.add(drum);
+      }
+      if (!toppled) { var capB = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.45, 1.3), sandDark); capB.position.y = h + 0.2; capB.castShadow = true; colG.add(capB); }
+      colG.position.set(cx, H, cz);
+      if (toppled) { colG.rotation.z = (Utils.rand() > 0.5 ? 1 : -1) * Math.PI / 2; colG.rotation.y = a; colG.position.y = H + 0.5; }
+      g.add(colG); if (!toppled) markOccluder(colG);
     }
-    // two weathered seated statues flanking a N/S gateway
-    [{ z: PLAZA_R - 2, ry: Math.PI }, { z: -(PLAZA_R - 2), ry: 0 }].forEach(function (p) {
+    // weathered statues in two corners, facing the centre
+    [[half - 1.4, half - 1.4], [-(half - 1.4), -(half - 1.4)]].forEach(function (p) {
       var st = new THREE.Group();
-      var base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 2.6), sandDark); base.position.y = 0.82; st.add(base);
-      var body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.2, 1.4), sand); body.position.set(0, 2.3, -0.2); st.add(body);
-      var head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), sand); head.position.set(0, 3.8, -0.2); st.add(head);
-      var nemes = new THREE.Mesh(new THREE.ConeGeometry(0.78, 0.8, 4), sandDark); nemes.rotation.y = Math.PI / 4; nemes.position.set(0, 4.25, -0.2); st.add(nemes);
-      st.position.set(0, 0.12, p.z); st.rotation.y = p.ry;
+      var b = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.2, 2.1), sandDark); b.position.y = 0.7; st.add(b);
+      var body = new THREE.Mesh(new THREE.BoxGeometry(1.25, 1.9, 1.15), sand); body.position.set(0, 2.0, -0.2); st.add(body);
+      var head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), sand); head.position.set(0, 3.25, -0.2); st.add(head);
+      var nemes = new THREE.Mesh(new THREE.ConeGeometry(0.66, 0.7, 4), sandDark); nemes.rotation.y = Math.PI / 4; nemes.position.set(0, 3.65, -0.2); st.add(nemes);
+      st.position.set(p[0], H, p[1]); st.rotation.y = Math.atan2(-p[0], -p[1]);
       st.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
       g.add(st); markOccluder(st);
     });
-    // flat hieroglyph slabs on the floor
-    for (var s2 = 0; s2 < 6; s2++) {
-      var a2 = Utils.randRange(0, Math.PI * 2), r2 = Utils.randRange(6, PLAZA_R - 5);
-      var slab = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.16, 2.0), sandDark);
-      slab.position.set(Math.cos(a2) * r2, 0.15, Math.sin(a2) * r2); slab.rotation.y = Utils.randRange(0, Math.PI); g.add(slab);
-    }
     scene.add(g);
-    return PLAZA_R;
+    return half;
   }
 
   function triggerWin(byMe, winnerName) {
@@ -1340,7 +1417,10 @@ var Entities = (function () {
     // --- ENDGAME: the ceremony plaza (Egyptian ruins) with the Obelisk + Altar ---
     var PLAZA_R = makeCeremonyPlaza();
     makeObelisk(0, 0); placed.push({ x: 0, z: 0 });
-    stations.push(makeStation(7, 5, 'altar')); placed.push({ x: 7, z: 5 });
+    // versus essence altars on the raised platform (east = bandit, west = merchant)
+    makeEssenceAltar('bandit', 5.5, 0, 'essence', 'Altar of the Bandit');
+    makeEssenceAltar('merchant', -5.5, 0, 'messence', 'Altar of the Merchant');
+    stations.push(makeStation(14, 8, 'altar')); placed.push({ x: 14, z: 8 });
     var clearR = PLAZA_R + 6;   // resources / scenery stay out of the plaza
 
     // --- BANDIT CAMPS: east and west, with wave combat + a boss ---
@@ -1632,6 +1712,7 @@ var Entities = (function () {
     updateBanditCamps(dt, t);
     updateCritters(dt, t);
     updateBuilds(dt);
+    for (i = 0; i < essAltars.length; i++) { var alt = essAltars[i]; if (alt.token && alt.token.visible) { alt.token.rotation.y += dt * 1.6; alt.token.position.y = 2.0 + Math.sin(t * 3 + i) * 0.1; } }
     // lift the roof off whichever building the local player is standing inside
     // (kept from the parallel branch; no-op while the town uses camps, not buildings)
     var pl = Game.player;
@@ -1775,6 +1856,15 @@ var Entities = (function () {
     }
     // camp fishing ponds back to level 1 / lowest tier
     for (var pi = 0; pi < pools.length; pi++) { if (pools[pi].upgradable) { pools[pi].level = 1; retierPond(pools[pi], 0); } }
+    // versus: un-claim the essence altars for a fresh race
+    for (var ea = 0; ea < essAltars.length; ea++) {
+      var alt = essAltars[ea];
+      alt.claimedBy = null; alt.claimedName = null; alt.active = true;
+      if (alt.token) alt.token.visible = false;
+      if (alt.light) alt.light.intensity = 0;
+      untag(alt); tag(alt.mesh, alt);
+    }
+    Game.score = 0;
     // wipe skills/inventory/gold, respawn the player, clear overlays
     if (window.Skills && Skills.init) Skills.init();
     if (window.Player && Player.reset) Player.reset();
@@ -1789,6 +1879,7 @@ var Entities = (function () {
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     sendCaravan: sendCaravan, merchantBusy: merchantBusy, sellToMerchant: sellToMerchant,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
+    useEssenceAltar: useEssenceAltar, onAltarClaimed: onAltarClaimed, get essAltars() { return essAltars; },
     pickupDrop: pickupDrop, spawnRaid: spawnRaid, spawnImps: spawnImps, clearRaiders: clearRaiders, tagExternal: tagExternal, untagExternal: untagExternal,
     spawnBuild: spawnBuild,
     get bandits() { return bandits; }, get banditCamps() { return banditCamps; }, get builds() { return builds; },
