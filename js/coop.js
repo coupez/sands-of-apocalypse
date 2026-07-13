@@ -473,6 +473,13 @@ var Coop = (function () {
     boss = null;
   }
   function bossVulnerable() { return !!(boss && boss.active && (boss.stage === 'vuln' || boss.stage === 'stagger')); }
+  // a fallen hero feeds the demon — Mahrûk regenerates a little (deters zerging).
+  // Online the server owns this; offline we apply it locally.
+  function onPlayerDeath() {
+    if (Game.online || !boss || !boss.active) return;
+    boss.hp = Math.min(boss.maxHp, boss.hp + Math.round(boss.maxHp * 0.05));
+    if (window.UI) { if (UI.updateBossBar) UI.updateBossBar(boss.hp, boss.maxHp, boss.stagger, boss.maxStagger); if (UI.announce) UI.announce('Mahrûk feeds on the fallen — its wounds knit shut.', false); }
+  }
 
   // ---- player struck a weak point (called from combat) ----
   // heart = real HP damage (bow/ballista); hand = a chip + `stagAmt` on the stagger meter (melee)
@@ -509,7 +516,7 @@ var Coop = (function () {
     update: update, teardown: teardown, startRitual: startRitual,
     build: build, onBuild: onBuild, BLUEPRINTS: BLUEPRINTS,
     onBossState: onBossState, onBossSlam: onBossSlam, onBossHit: onBossHit, onBossDead: onBossDead,
-    onBossHp: onBossHp, hitBoss: hitBoss, bossActive: bossActive, bossVulnerable: bossVulnerable, hasSigil: hasSigil,
+    onBossHp: onBossHp, hitBoss: hitBoss, bossActive: bossActive, bossVulnerable: bossVulnerable, hasSigil: hasSigil, onPlayerDeath: onPlayerDeath,
     get state() { return state; }, get active() { return active; }, get boss() { return boss; },
     litCount: litCount, THRESHOLD: THRESHOLD, SIGILS: SIGILS
   };

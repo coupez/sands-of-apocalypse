@@ -458,6 +458,7 @@ var Player = (function () {
     death.t = 0;
     death.baseY = group.position.y;
     death.onDone = onDone || null;
+    if (window.Coop && Coop.onPlayerDeath) Coop.onPlayerDeath();   // co-op: a death feeds the demon
     SFX.dead();
     // dying words — Flemish (West-Flanders flavored)
     Game.log.push('deathLine');

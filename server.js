@@ -343,6 +343,13 @@ const server = Bun.serve({
         if (Number.isFinite(msg.hp)) p.hp = msg.hp;
         if (msg.app && typeof msg.app === "object") p.app = msg.app;   // equipped gear tiers
         p.ready = true;
+        // a hero falling during the boss feeds Mahrûk a little (deters zerging)
+        const nowDead = (typeof p.hp === "number" && p.hp <= 0) || p.state === "dead";
+        if (nowDead && !p._dead && coop.boss && coop.boss.active) {
+          coop.boss.hp = Math.min(coop.boss.maxHp, coop.boss.hp + Math.round(coop.boss.maxHp * 0.05));
+          server.publish("game", JSON.stringify(bossFull()));
+        }
+        p._dead = nowDead;
       } else if (msg.type === "attack" && typeof msg.target === "string" && Number.isFinite(msg.dmg)) {
         // relay a PvP hit; victim's client is authoritative over its own HP
         const dmg = Math.max(0, Math.min(99, Math.floor(msg.dmg)));

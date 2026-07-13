@@ -588,6 +588,11 @@ var SelfTest = (function () {
         assert('a full stagger meter staggers Mahrûk', Coop.boss.stage === 'stagger');
         Skills.addItem('bow'); Skills.equipFromInventory(invIndexOf('bow'));
       }
+      // a hero falling mid-fight regenerates the boss (offline)
+      Coop.boss.hp = Math.round(Coop.boss.maxHp * 0.5);
+      var hp50 = Coop.boss.hp;
+      Coop.onPlayerDeath();
+      assert('a hero falling regenerates the boss (deters zerging)', Coop.boss.hp > hp50);
       // finish it: bow the heart during windows until Mahrûk is banished
       for (var bx = 0; bx < 600 && Coop.bossActive(); bx++) {
         invadeInvulnerable();
