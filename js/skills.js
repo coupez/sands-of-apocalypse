@@ -4,11 +4,13 @@
 // ============================================================
 
 var Skills = (function () {
-  var SKILL_ORDER = ['attack', 'strength', 'woodcutting', 'mining', 'fishing', 'cooking', 'smithing'];
-  // combat skills cap at 20; gathering/production skills cap at 12
+  var SKILL_ORDER = ['attack', 'strength', 'ranged', 'prayer', 'woodcutting', 'mining', 'fishing', 'cooking', 'smithing'];
+  // combat skills cap at 20; gathering/production/prayer skills cap at 12
   var data = {
     attack:      { name: 'Attack',      icon: '⚔️', xp: 0, level: 1, max: 20 },
     strength:    { name: 'Strength',    icon: '💪', xp: 0, level: 1, max: 20 },
+    ranged:      { name: 'Ranged',      icon: '🏹', xp: 0, level: 1, max: 20 },
+    prayer:      { name: 'Prayer',      icon: '🙏', xp: 0, level: 1, max: 12 },
     woodcutting: { name: 'Woodcutting', icon: '🪓', xp: 0, level: 1, max: 12 },
     mining:      { name: 'Mining',      icon: '⛏️', xp: 0, level: 1, max: 12 },
     fishing:     { name: 'Fishing',     icon: '🎣', xp: 0, level: 1, max: 12 },
@@ -35,7 +37,9 @@ var Skills = (function () {
     ironbar:   { id: 'ironbar',   name: 'Iron Bar',   icon: '▬', tint: 0x8a8f96 },
     silverbar: { id: 'silverbar', name: 'Silver Bar', icon: '▬', tint: 0xd8dce2 },
     goldbar:   { id: 'goldbar',   name: 'Gold Bar',   icon: '▬', tint: 0xffd24a },
-    orb:       { id: 'orb',       name: 'Orb of the Sands', icon: '🔮' }
+    essence:   { id: 'essence',   name: 'Bandit Essence',   icon: '🩸' },
+    bones:     { id: 'bones',     name: 'Pile of Bones',    icon: '🦴' },
+    orb:       { id: 'orb',       name: 'Heart of the Obelisk', icon: '❤️' }
   };
 
   // Only COOKED seafood is edible; eat raw and you gain nothing. Cook it at a
@@ -54,7 +58,8 @@ var Skills = (function () {
   var GEAR = {
     // right-hand weapons
     sword:   { id: 'sword',   name: 'Bronze Scimitar',    icon: '⚔️', slot: 'rhand', bonus: { maxHit: 4,   acc: 0.10 } },
-    gun:     { id: 'gun',     name: 'Hunting Bow',        icon: '🏹', slot: 'rhand', bonus: { maxHit: 8,   acc: 0.20 } },
+    gun:     { id: 'gun',     name: 'Hunting Bow',        icon: '🏹', slot: 'rhand', bonus: { maxHit: 8,   acc: 0.20 }, ranged: true },
+    bow:     { id: 'bow',     name: 'Desert Longbow',     icon: '🏹', slot: 'rhand', bonus: { maxHit: 5,   acc: 0.15 }, ranged: true },
     fanny:   { id: 'fanny',   name: "Genie's Lamp",       icon: '🪔', slot: 'rhand', bonus: { maxHit: 999, acc: 1.00 }, instakill: true },
     // left-hand off-hand
     shield:  { id: 'shield',  name: 'Round Shield',       icon: '🛡️', slot: 'lhand', bonus: { def: 6, hp: 5 } },
@@ -175,6 +180,11 @@ var Skills = (function () {
     if (s.level > before) {
       SFX.level();
       if (window.UI) UI.toast(s.name, s.level);
+      // global announcement to every player; a maxed skill gets an ominous one
+      var maxed = s.level >= (s.max || 99);
+      var nm = (window.Net && Net.myName) ? Net.myName : 'You';
+      if (window.UI && UI.announce) UI.announce(nm + ' reached ' + s.name + ' level ' + s.level + (maxed ? '!' : ''), maxed);
+      if (window.Net && Net.sendLevel) Net.sendLevel(s.name, s.level, maxed);
       Game.log.push('levelup:' + skill + ':' + s.level);
     }
     if (window.UI) UI.updateSkills();
@@ -228,6 +238,39 @@ var Skills = (function () {
     Game.log.push('eat:' + it.id);
     return true;
   }
+
+  // Bury a pile of bones for Prayer XP (bandits drop these).
+  var BONE_PRAYER_XP = 200;
+  function isBones(id) { return id === 'bones'; }
+  function bury(index) {
+    var it = Game.inventory[index];
+    if (!it || !isBones(it.id)) return false;
+    Game.inventory[index] = null;
+    addXp('prayer', BONE_PRAYER_XP);
+    if (window.Player && Player.startPraying) Player.startPraying();
+    if (window.UI) { UI.updateInventory(); UI.showActionText('You bury the bones. Your Prayer grows.'); }
+    Game.log.push('bury:bones');
+    return true;
+  }
+
+  // Fletch a Desert Longbow from any 2 logs (worked at the anvil).
+  function craftBow() {
+    var woods = [];
+    for (var i = 0; i < Game.inventory.length && woods.length < 2; i++) {
+      var it = Game.inventory[i];
+      if (it && WOOD_SET[it.id]) woods.push(i);
+    }
+    if (woods.length < 2) { if (window.UI) UI.showActionText('Fletching a bow needs 2 logs.'); return false; }
+    Game.inventory[woods[0]] = null; Game.inventory[woods[1]] = null;
+    addItem('bow');
+    addXp('smithing', 18);
+    if (window.UI) { UI.updateInventory(); UI.showActionText('You fletch a Desert Longbow.'); }
+    Game.log.push('craft:bow');
+    return true;
+  }
+  var WOOD_SET = { log: 1, palmwood: 1, blog: 1, elderwood: 1 };
+  // is the equipped right-hand weapon a ranged weapon (bow)?
+  function isRanged() { var g = GEAR[Game.equipment && Game.equipment.rhand]; return !!(g && g.ranged); }
 
   // Drop an item out of slot `index`.
   function dropItem(index) {
@@ -307,7 +350,7 @@ var Skills = (function () {
   function tintOf(id) { var g = GEAR[id]; return (g && g.tint) ? g.tint : 0; }
   function appearance() {
     var e = Game.equipment || {};
-    return { head: tintOf(e.head), body: tintOf(e.body), legs: tintOf(e.legs), weapon: tintOf(e.rhand) };
+    return { head: tintOf(e.head), body: tintOf(e.body), legs: tintOf(e.legs), weapon: tintOf(e.rhand), ranged: isRanged() };
   }
 
   // Push HP bonus into the player's max HP (other bonuses are read live in combat).
@@ -355,6 +398,7 @@ var Skills = (function () {
     doWoodcut: doWoodcut, doMine: doMine, doFish: doFish,
     equipFromInventory: equipFromInventory, unequip: unequip,
     eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
+    bury: bury, isBones: isBones, craftBow: craftBow, isRanged: isRanged,
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
     smith: smith, canSmith: canSmith, smithRecipe: smithRecipe, countItem: countItem,
     appearance: appearance,

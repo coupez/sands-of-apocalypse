@@ -12,10 +12,11 @@ var Entities = (function () {
   var trees = [], rocks = [], barrels = [], enemies = [], pools = [], chests = [], buildings = [], stations = [], camps = [];
   var interactMeshes = [];
   var obelisk = null;   // the central endgame monument
+  var bandits = [], banditCamps = [], drops = [];   // E/W bandit-camp wave system
+  var rats = [], birds = [];   // ambient critters (attackable rats) + flying birds
 
-  // Enemies are deactivated in the live game for now, but still spawned so the
-  // self-test's combat coverage and multiplayer index alignment stay intact.
-  // Flip ENEMIES_ENABLED back to true to bring them back into the live world.
+  // No roaming enemies in the open field — combat lives at the E/W bandit camps
+  // (and rats). Enemies still spawn hidden so the self-test + server indices align.
   var ENEMIES_ENABLED = false;
   var enemiesLive = true;         // resolved in init(): live if enabled OR self-test
 
@@ -35,9 +36,9 @@ var Entities = (function () {
   ];
   // Oasis fishing spots, gated by Fishing level (ids kept: shrimp/lobster/whale).
   var FISH_TIERS = [
-    { name: 'Sardine Shallows', reqLevel: 1, itemId: 'shrimp',  xp: 15, color: 0x9fd0e0, ring: 0.9 },
-    { name: 'Crab Pool',        reqLevel: 2, itemId: 'lobster', xp: 35, color: 0xff8a4a, ring: 1.4 },
-    { name: 'Perch Depths',     reqLevel: 3, itemId: 'whale',   xp: 90, color: 0x4ab6ff, ring: 2.1 }
+    { name: 'Sardine Shallows', reqLevel: 1,  itemId: 'shrimp',  xp: 15, color: 0x9fd0e0, ring: 0.9 },
+    { name: 'Crab Pool',        reqLevel: 5,  itemId: 'lobster', xp: 35, color: 0xff8a4a, ring: 1.4 },
+    { name: 'Perch Depths',     reqLevel: 12, itemId: 'whale',   xp: 90, color: 0x4ab6ff, ring: 2.1 }
   ];
   var ENEMY_TIERS = [
     { name: 'Sand Bandit',  reqLevel: 1,  hp: 10, def: 1, maxHit: 3,  color: 0xb8895a, eye: 0xffe08a, scale: 1.0, aggro: 8.5 },
@@ -405,10 +406,22 @@ var Entities = (function () {
       else if (window.UI && UI.openSellMenu) UI.openSellMenu(ent);
       else msg = 'The merchant eyes your goods.';
     } else if (ent.kind === 'altar') {
-      var mats = ['elderwood', 'whale', 'pore'];   // the top-tier log / fish / ore
-      if (Skills.hasItem('orb')) { msg = 'You already carry an Orb of the Sands.'; }
-      else if (mats.some(function (id) { return !Skills.hasItem(id); })) { msg = 'The altar needs one Elderwood, one Raw Perch and one Gold Ore.'; }
-      else { mats.forEach(function (id) { Skills.removeItem(id); }); Skills.addItem('orb'); msg = 'The relics fuse into an Orb of the Sands!'; }
+      // The Heart of the Obelisk: 1 raw fish + 1 ore + 1 Elderwood + 1 Bandit Essence,
+      // and the smith must have reached max Prayer.
+      var RAW = ['shrimp', 'lobster', 'whale'], ORE = ['ore', 'iron', 'silver', 'pore'];
+      var fish = RAW.filter(function (id) { return Skills.hasItem(id); })[0];
+      var ore = ORE.filter(function (id) { return Skills.hasItem(id); })[0];
+      var haveWood = Skills.hasItem('elderwood'), haveEss = Skills.hasItem('essence');
+      var pr = Skills.data.prayer, prayerMax = pr.level >= (pr.max || 12);
+      if (Skills.hasItem('orb')) { msg = 'You already carry the Heart of the Obelisk.'; }
+      else if (!prayerMax) { msg = 'You must reach max Prayer (Lv ' + (pr.max || 12) + ') to forge the Heart.'; }
+      else if (!fish || !ore || !haveWood || !haveEss) {
+        msg = 'The altar needs a raw fish, an ore, Elderwood and a Bandit Essence.';
+      } else {
+        Skills.removeItem(fish); Skills.removeItem(ore); Skills.removeItem('elderwood'); Skills.removeItem('essence');
+        Skills.addItem('orb');
+        msg = 'The relics fuse into the Heart of the Obelisk!';
+      }
     }
     if (window.UI && msg) UI.showActionText(msg);
     Game.log.push('station:' + ent.kind + (ent.lit ? ':lit' : ''));
@@ -493,13 +506,210 @@ var Entities = (function () {
   }
   function useObelisk() {
     if (obelisk && obelisk.done) { if (window.UI) UI.showActionText('The Obelisk blazes — the game is won.'); return; }
-    if (!Skills.hasItem('orb')) { if (window.UI) UI.showActionText('The Obelisk socket awaits an Orb of the Sands.'); return; }
+    if (!Skills.hasItem('orb')) { if (window.UI) UI.showActionText('The Obelisk socket awaits the Heart of the Obelisk.'); return; }
     Skills.removeItem('orb');
     var myName = (window.Net && Net.myName) ? Net.myName : 'You';
     triggerWin(true, myName);
     if (window.Net && Net.sendWin) Net.sendWin();
   }
   function remoteWin(name) { triggerWin(false, name); }
+
+  // ---------- bandit camps (E/W): waves → boss → drop ----------
+  // Each tier is a band of 5; clear all 5 and the camp escalates to the next,
+  // stronger tier. After the third band, the boss appears.
+  var BANDIT_WAVES = [
+    { count: 5, tier: 0, name: 'Bandit',           hp: 14, maxHit: 4 },
+    { count: 5, tier: 1, name: 'Bandit Raider',    hp: 26, maxHit: 7 },
+    { count: 5, tier: 2, name: 'Bandit Marauder',  hp: 44, maxHit: 10 },
+    { count: 1, tier: 2, name: 'Mahmut of the Valley', hp: 200, maxHit: 16, scale: 2.0, boss: true }
+  ];
+  function spawnWave(camp) {
+    var w = BANDIT_WAVES[camp.wave];
+    camp.alive = [];
+    for (var i = 0; i < w.count; i++) {
+      var a = Utils.randRange(0, Math.PI * 2), r = Utils.randRange(4, 9);
+      var b = makeEnemy(camp.x + Math.cos(a) * r, camp.z + Math.sin(a) * r, w.tier);
+      b.name = w.name; b.reqLevel = 1; b.noRespawn = true; b.banditCamp = camp; b.local = true;
+      b.hp = b.maxHp = w.hp; b.maxHit = w.maxHit;
+      b.home.set(camp.x, 0, camp.z); b.leashRange = 70; b.wanderRadius = 12;
+      if (w.scale) { b.mesh.scale.setScalar(w.scale); b.tierScale = w.scale; b.isBoss = true; }
+      bandits.push(b); camp.alive.push(b);
+    }
+  }
+  function makeBanditCamp(x, z, side) {
+    var g = new THREE.Group();
+    var cloth = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1, flatShading: true });
+    var pole = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1, flatShading: true });
+    for (var i = 0; i < 3; i++) {
+      var a = (i / 3) * Math.PI * 2;
+      var tent = new THREE.Mesh(new THREE.ConeGeometry(1.9, 2.4, 4), cloth);
+      tent.rotation.y = Math.PI / 4; tent.position.set(Math.cos(a) * 6, 1.2, Math.sin(a) * 6); g.add(tent);
+    }
+    var ring = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.22, 6, 12), new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 1 }));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.1; g.add(ring);
+    var flame = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.3, 6),
+      new THREE.MeshStandardMaterial({ color: 0xff7a1a, emissive: 0xff5a10, emissiveIntensity: 2, transparent: true, opacity: 0.9 }));
+    flame.position.y = 0.8; g.add(flame);
+    var light = new THREE.PointLight(0xff7a2a, 2, 16, 2); light.position.y = 1.6; g.add(light);
+    var p = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4.2, 6), pole); p.position.set(2.5, 2.1, 2.5); g.add(p);
+    var banner = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.95, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x8a2a2a, roughness: 0.7, side: THREE.DoubleSide }));
+    banner.position.set(3.2, 3.4, 2.5); g.add(banner);
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+    var camp = { x: x, z: z, side: side, mesh: g, flame: flame, light: light,
+      wave: 0, alive: [], between: 0, cleared: false };
+    banditCamps.push(camp);
+    spawnWave(camp);
+    return camp;
+  }
+
+  function makeDrop(x, z, itemId, name, bone) {
+    var g = new THREE.Group();
+    var gem;
+    if (bone) {
+      // a little pile of pale bones — softly self-lit so they read on the sand,
+      // but no PointLight (many can litter the ground; keep the light budget sane)
+      var boneMat = new THREE.MeshStandardMaterial({ color: 0xe6ddc4, emissive: 0x6a5a3a, emissiveIntensity: 0.4, roughness: 0.9, flatShading: true });
+      gem = new THREE.Group();
+      for (var i = 0; i < 3; i++) {
+        var seg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.7, 5), boneMat);
+        seg.rotation.z = Math.PI / 2; seg.rotation.y = (i / 3) * Math.PI; seg.position.y = 0.12 + i * 0.05; gem.add(seg);
+      }
+      gem.position.y = 0.12; g.add(gem);
+    } else {
+      gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0),
+        new THREE.MeshStandardMaterial({ color: 0xff3a4a, emissive: 0xff2a3a, emissiveIntensity: 1.3, roughness: 0.4 }));
+      gem.position.y = 0.7; g.add(gem);
+      var light = new THREE.PointLight(0xff4a5a, 2, 9, 2); light.position.y = 0.7; g.add(light);
+    }
+    g.position.set(x, terrainY(x, z), z);
+    scene.add(g);
+    var ent = { type: 'drop', name: name, itemId: itemId, mesh: g, gem: gem, bone: !!bone,
+      position: g.position, active: true, interactRange: 1.8 };
+    tag(g, ent); drops.push(ent);
+    return ent;
+  }
+  function pickupDrop(ent) {
+    if (!ent || !ent.active) return;
+    ent.active = false; untag(ent); scene.remove(ent.mesh);
+    Skills.addItem(ent.itemId);
+    if (window.UI) UI.showActionText('You pick up the ' + ent.name + '.');
+    Game.log.push('pickup:' + ent.itemId);
+  }
+
+  function updateBanditCamps(dt, t) {
+    for (var c = 0; c < banditCamps.length; c++) {
+      var camp = banditCamps[c];
+      if (camp.light) camp.light.intensity = 2 * (0.75 + 0.25 * Math.abs(Math.sin(t * 8 + c)));
+      if (camp.flame) camp.flame.scale.y = 0.85 + 0.2 * Math.abs(Math.sin(t * 10 + c));
+      if (!camp.cleared) {
+        var living = 0, lastPos = null;
+        for (var i = 0; i < camp.alive.length; i++) {
+          var b = camp.alive[i];
+          // every slain bandit drops a pile of bones (bury them for Prayer XP)
+          if ((b.state === 'dead' || b.state === 'gone') && !b._boned) {
+            b._boned = true;
+            makeDrop(b.mesh.position.x, b.mesh.position.z, 'bones', 'Pile of Bones', true);
+          }
+          if (b.active && b.state !== 'dead' && b.state !== 'gone') living++;
+          lastPos = b.mesh.position;
+        }
+        if (living === 0) {
+          var cur = BANDIT_WAVES[camp.wave];
+          if (cur.boss) {
+            camp.cleared = true;
+            makeDrop(lastPos ? lastPos.x : camp.x, lastPos ? lastPos.z : camp.z, 'essence', 'Bandit Essence');
+            if (window.UI) UI.showActionText('Mahmut of the Valley falls — a Bandit Essence drops!');
+          } else {
+            camp.between += dt;
+            if (camp.between >= 2.5) {
+              camp.wave++; camp.between = 0; spawnWave(camp);
+              if (window.UI) UI.showActionText(BANDIT_WAVES[camp.wave].boss ? 'Mahmut of the Valley emerges!' : 'A fiercer band of bandits attacks!');
+            }
+          }
+        }
+      }
+    }
+    for (var k = 0; k < bandits.length; k++) if (bandits[k].state !== 'gone') updateEnemy(bandits[k], dt, t);
+    for (var d = 0; d < drops.length; d++) if (drops[d].active) { drops[d].gem.rotation.y += dt * 2; drops[d].mesh.position.y = terrainY(drops[d].position.x, drops[d].position.z) + Math.sin(t * 3 + d) * 0.12; }
+  }
+
+  // ---------- ambient critters: rats (attackable, tiny XP) + flying birds ----------
+  function makeRat(x, z) {
+    var g = new THREE.Group();
+    var fur = new THREE.MeshStandardMaterial({ color: 0x6a5a48, roughness: 1, flatShading: true });
+    var pink = new THREE.MeshStandardMaterial({ color: 0xc98a86, roughness: 1, flatShading: true });
+    var body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 7, 6), fur); body.scale.set(1, 0.7, 1.6); body.position.y = 0.26; g.add(body);
+    var head = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.42, 6), fur); head.rotation.x = Math.PI / 2; head.position.set(0, 0.26, 0.42); g.add(head);
+    for (var e = 0; e < 2; e++) { var ear = new THREE.Mesh(new THREE.CircleGeometry(0.11, 8), pink); ear.position.set(e ? 0.11 : -0.11, 0.44, 0.3); g.add(ear); }
+    var tail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.01, 0.7, 4), pink); tail.rotation.x = Math.PI / 2.3; tail.position.set(0, 0.22, -0.5); g.add(tail);
+    g.scale.setScalar(0.9);
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+    var ent = { type: 'enemy', name: 'Desert Rat', reqLevel: 1, isRat: true, local: true, tierScale: 0.9,
+      mesh: g, position: g.position, active: true, interactRange: 1.3,
+      hp: 3, maxHp: 3, def: 0, maxHit: 0, xpAtk: 1, xpStr: 1,
+      home: new THREE.Vector3(x, 0, z), wanderRadius: 10,
+      state: 'wander', dying: 0, _wt: null, _idle: 0, _phase: Utils.randRange(0, 6) };
+    tag(g, ent); rats.push(ent);
+    return ent;
+  }
+  function updateRats(dt, t) {
+    for (var i = 0; i < rats.length; i++) {
+      var r = rats[i], pos = r.mesh.position;
+      if (r.state === 'dead') {
+        r.dying -= dt * 1.4;
+        r.mesh.scale.setScalar(Math.max(r.dying, 0.01) * 0.9);
+        r.mesh.rotation.z += dt * 8;
+        if (r.dying <= 0) { r.mesh.visible = false; r.state = 'gone'; }
+        continue;
+      }
+      if (r.state === 'gone') continue;
+      // skittish wander around home; scurry away if the player gets very close
+      var pp = Game.player && !Game.player.isDead ? Game.player.position : null;
+      var flee = pp && Math.hypot(pp.x - pos.x, pp.z - pos.z) < 4;
+      var tx, tz, speed;
+      if (flee) {
+        var ax = pos.x - pp.x, az = pos.z - pp.z, ad = Math.hypot(ax, az) || 1;
+        tx = pos.x + ax / ad * 3; tz = pos.z + az / ad * 3; speed = 4.5;
+      } else {
+        if (!r._wt || r._idle > 0) { r._idle -= dt; if (!r._wt) { var a = Utils.randRange(0, Math.PI * 2), rr = Utils.randRange(1, r.wanderRadius); r._wt = { x: r.home.x + Math.cos(a) * rr, z: r.home.z + Math.sin(a) * rr }; r._idle = 0; } }
+        tx = r._wt.x; tz = r._wt.z; speed = 1.9;
+      }
+      var dx = tx - pos.x, dz = tz - pos.z, d = Math.hypot(dx, dz);
+      if (d > 0.2) { var step = Math.min(speed * dt, d); pos.x += dx / d * step; pos.z += dz / d * step; r.mesh.rotation.y = Math.atan2(dx, dz); }
+      else if (!flee) { r._wt = null; r._idle = Utils.randRange(0.5, 2.5); }
+      pos.y = terrainY(pos.x, pos.z) + Math.abs(Math.sin(t * 12 + r._phase)) * 0.05;   // scurry bob
+    }
+  }
+
+  function makeBird(cx, cz, radius, y, dir) {
+    var g = new THREE.Group();
+    var mat = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 1, flatShading: true, side: THREE.DoubleSide });
+    var wingL = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.05, 0.5), mat); wingL.position.x = -0.7; g.add(wingL);
+    var wingR = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.05, 0.5), mat); wingR.position.x = 0.7; g.add(wingR);
+    var bodyM = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.8, 5), mat); bodyM.rotation.x = Math.PI / 2; g.add(bodyM);
+    scene.add(g);
+    var bird = { g: g, wingL: wingL, wingR: wingR, cx: cx, cz: cz, radius: radius, y: y,
+      ang: Utils.randRange(0, Math.PI * 2), speed: Utils.randRange(0.12, 0.22) * dir, phase: Utils.randRange(0, 6) };
+    birds.push(bird);
+    return bird;
+  }
+  function updateBirds(dt, t) {
+    for (var i = 0; i < birds.length; i++) {
+      var b = birds[i];
+      b.ang += b.speed * dt;
+      var x = b.cx + Math.cos(b.ang) * b.radius, z = b.cz + Math.sin(b.ang) * b.radius;
+      b.g.position.set(x, b.y + Math.sin(t * 0.5 + b.phase) * 1.5, z);
+      b.g.rotation.y = -b.ang + (b.speed > 0 ? -Math.PI / 2 : Math.PI / 2);
+      var flap = Math.sin(t * 8 + b.phase) * 0.7;
+      b.wingL.rotation.z = flap; b.wingR.rotation.z = -flap;
+    }
+  }
+  function updateCritters(dt, t) { updateRats(dt, t); updateBirds(dt, t); }
 
   // Scatter n points near (cx,cz) within `spread`, honouring min separation.
   function clusterAround(cx, cz, n, spread, avoidList, minSep) {
@@ -882,36 +1092,44 @@ var Entities = (function () {
     makeObelisk(0, 0); placed.push({ x: 0, z: 0 });
     stations.push(makeStation(7, 5, 'altar')); placed.push({ x: 7, z: 5 });
 
-    // Resources scattered between the camps, tiered by distance from the centre:
-    // easy tiers near the poles, rarer/higher tiers toward the middle.
-    // NOTE: tree/rock totals (11 / 8) are mirrored in server.js RES — keep aligned.
-    // Trees (11): 5 Dead (lv1) near camps, 3 Palm (lv4) mid, 2 Ancient (lv7) inner, 1 Elder (lv10) centre.
-    scatterRect(3, -24, 24, -40, -26, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
-    scatterRect(2, -24, 24,  26,  40, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
-    scatterRect(2, -22, 22, -22, -12, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
-    scatterRect(1, -22, 22,  12,  22, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
-    scatterRect(2, -18, 18, -11,  11, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 2)); placed.push(trees[trees.length - 1]); });
-    scatterRect(1,  -8,  8,  -6,   6, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 3)); placed.push(trees[trees.length - 1]); });
-    // Rocks (8): 4 Copper (lv1) near camps, 2 Iron (lv4) mid, 1 Silver (lv7) inner, 1 Gold (lv10) centre.
-    scatterRect(2, -24, 24, -40, -26, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(2, -24, 24,  26,  40, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(1, -22, 22, -22, -12, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(1, -22, 22,  12,  22, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(1, -16, 16, -10,  10, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 2)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(1,  -8,  8,  -6,   6, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 3)); placed.push(rocks[rocks.length - 1]); });
+    // --- BANDIT CAMPS: east and west, with wave combat + a boss ---
+    var BC = World.BANDIT_CAMPS;
+    makeBanditCamp(BC.east.x, BC.east.z, 'east'); placed.push({ x: BC.east.x, z: BC.east.z });
+    makeBanditCamp(BC.west.x, BC.west.z, 'west'); placed.push({ x: BC.west.x, z: BC.west.z });
 
-    // --- populate the middle: neutral fishing spots + desert scenery ---
-    // shared ponds anyone can fish (not upgradable), spread through the corridor
-    [ { t: 0, x: -15, z: -8 }, { t: 1, x: 15, z: 9 }, { t: 2, x: 17, z: -3 } ].forEach(function (pp) {
+    // Resources scattered in the N/S corridor, tiered by distance from the centre.
+    // NOTE: tree/rock totals (11 / 8) are mirrored in server.js RES — keep aligned.
+    // Trees (11): 5 Dead near camps, 3 Palm mid, 2 Ancient inner, 1 Elder centre.
+    scatterRect(3, -30, 30, -78, -50, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
+    scatterRect(2, -30, 30,  50,  78, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
+    scatterRect(2, -28, 28, -44, -24, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
+    scatterRect(1, -28, 28,  24,  44, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
+    scatterRect(2, -22, 22, -20,  20, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 2)); placed.push(trees[trees.length - 1]); });
+    scatterRect(1, -11, 11,  -9,   9, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 3)); placed.push(trees[trees.length - 1]); });
+    // Rocks (8): 4 Copper near camps, 2 Iron mid, 1 Silver inner, 1 Gold centre.
+    scatterRect(2, -30, 30, -78, -50, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(2, -30, 30,  50,  78, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(1, -28, 28, -44, -24, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(1, -28, 28,  24,  44, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(1, -22, 22, -20,  20, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 2)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(1, -11, 11,  -9,   9, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 3)); placed.push(rocks[rocks.length - 1]); });
+
+    // --- populate the field: neutral fishing spots + desert scenery (all directions) ---
+    [ { t: 0, x: -28, z: -30 }, { t: 1, x: 30, z: 28 }, { t: 2, x: 22, z: -6 }, { t: 1, x: -30, z: 34 } ].forEach(function (pp) {
       pools.push(makePond(pp.x, pp.z, pp.t)); placed.push(pools[pools.length - 1]);
     });
-    scatterRect(8,  -30, 30, -34, 34, placed, 5).forEach(function (p) { makeCactus(p.x, p.z); placed.push(p); });
-    scatterRect(11, -34, 34, -38, 38, placed, 4).forEach(function (p) { makeBoulder(p.x, p.z); placed.push(p); });
-    scatterRect(14, -36, 36, -40, 40, placed, 3).forEach(function (p) { makeBush(p.x, p.z); });
+    scatter(14, 14, 72, placed, 6).forEach(function (p) { makeCactus(p.x, p.z); placed.push(p); });
+    scatter(18, 18, 78, placed, 5).forEach(function (p) { makeBoulder(p.x, p.z); placed.push(p); });
+    scatter(22, 14, 80, placed, 3).forEach(function (p) { makeBush(p.x, p.z); });
 
     // a brazier at each camp for light
     clusterAround(C.north.x, C.north.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
     clusterAround(C.south.x, C.south.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
+
+    // --- ambient life: skittering rats (attackable, tiny XP) + birds circling overhead ---
+    scatter(9, 12, 78, placed, 8).forEach(function (p) { makeRat(p.x, p.z); });
+    makeBird(0, 0, 55, 30, 1); makeBird(20, -15, 40, 26, -1); makeBird(-30, 10, 48, 34, 1);
+    makeBird(10, 40, 36, 24, 1); makeBird(-20, -35, 44, 32, -1);
 
     // enemies still spawn (for the self-test + server alignment) but are hidden
     // in the live game unless ENEMIES_ENABLED. Placed in an outer ring.
@@ -972,7 +1190,7 @@ var Entities = (function () {
     if (!ent.active) return;
     ent.active = false; ent.state = 'dead'; ent.dying = 1.0;
     untag(ent);
-    makePortal(ent);
+    if (!ent.isRat) makePortal(ent);   // rats just squish — no hell portal
     Game.log.push('enemy:killed');
   }
   function respawnEnemy(ent) {
@@ -1029,12 +1247,14 @@ var Entities = (function () {
     if (ent.state === 'dead') {
       if (runDeath(ent, dt, t)) {
         ent.mesh.visible = false; removePortal(ent);
-        if (Game.online) { ent.state = 'hidden'; }
+        if (ent.noRespawn) { ent.state = 'gone'; }          // bandits don't return
+        else if (Game.online) { ent.state = 'hidden'; }
         else { ent.state = 'respawning'; ent.respawn = Utils.randRange(4, 7); }
       }
       return;
     }
-    if (Game.online) { updateEnemyOnline(ent, dt, t); return; }
+    // client-side entities (bandits, rats) run local AI even in online games
+    if (Game.online && !ent.local) { updateEnemyOnline(ent, dt, t); return; }
     if (ent.state === 'respawning') { ent.respawn -= dt; if (ent.respawn <= 0) respawnEnemy(ent); return; }
 
     var player = Game.player;
@@ -1164,6 +1384,8 @@ var Entities = (function () {
       obelisk.cap.rotation.y += dt * 1.5;
       obelisk.socket.material.emissiveIntensity = 2 + Math.abs(Math.sin(obelisk.t * 6));
     }
+    updateBanditCamps(dt, t);
+    updateCritters(dt, t);
     // lift the roof off whichever building the local player is standing inside
     // (kept from the parallel branch; no-op while the town uses camps, not buildings)
     var pl = Game.player;
@@ -1261,6 +1483,9 @@ var Entities = (function () {
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     sendCaravan: sendCaravan, merchantBusy: merchantBusy,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
+    pickupDrop: pickupDrop,
+    get bandits() { return bandits; }, get banditCamps() { return banditCamps; },
+    get drops() { return drops; }, get rats() { return rats; },
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
     serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,
     enemyAttackAnim: enemyAttackAnim,

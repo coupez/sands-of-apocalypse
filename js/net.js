@@ -76,6 +76,12 @@ var Net = (function () {
       else if (msg.type === 'enemyRespawn') { Entities.serverEnemyRespawn(msg.i, msg.x, msg.z); }
       else if (msg.type === 'resource') { Entities.setResourceState(msg.kind, msg.i, msg.active); }
       else if (msg.type === 'win') { if (window.Entities) Entities.remoteWin(msg.name || 'A rival'); }
+      else if (msg.type === 'level') {
+        // a level-up announcement from any player; our own is already shown locally
+        if (msg.id !== myId && window.UI && UI.announce) {
+          UI.announce((msg.name || 'A wanderer') + ' reached ' + msg.skill + ' level ' + msg.level + (msg.max ? '!' : ''), !!msg.max);
+        }
+      }
       else if (msg.type === 'chat') { /* reserved */ }
     };
     ws.onclose = function () { connected = false; if (window.Entities) Entities.goOffline(); setStatus(); scheduleReconnect(); };
@@ -117,9 +123,15 @@ var Net = (function () {
     var wh = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.5, 0.09), new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 1, flatShading: true })); wh.position.y = -0.25;
     var wb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.3, 0.05), matWeapon); wb.position.y = -1.2; wb.rotation.z = 0.25;
     weapon.add(wh); weapon.add(wb); weapon.position.set(0.05, -0.4, 0.12); weapon.rotation.z = 0.18; weapon.visible = false; armR.add(weapon);
+    // bow in right hand — shown when they wield a ranged weapon
+    var bow = new THREE.Group();
+    var bl = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.05, 6, 14, Math.PI * 1.15), new THREE.MeshStandardMaterial({ color: 0x6a4a24, roughness: 0.8, flatShading: true }));
+    bl.rotation.z = Math.PI * 0.92; bow.add(bl);
+    var bstr = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.92, 4), new THREE.MeshStandardMaterial({ color: 0xe4d8b8, roughness: 1 })); bstr.position.x = 0.34; bow.add(bstr);
+    bow.position.set(0.06, -0.95, 0.16); bow.visible = false; armR.add(bow);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     return { group: g, legL: legL, legR: legR, armL: armL, armR: armR,
-      matBody: matBody, matHead: matHead, matLegs: matLegs, matWeapon: matWeapon, weapon: weapon, baseColor: color };
+      matBody: matBody, matHead: matHead, matLegs: matLegs, matWeapon: matWeapon, weapon: weapon, bow: bow, baseColor: color };
   }
 
   // recolour a remote avatar to reflect the gear tiers it's wearing
@@ -129,7 +141,9 @@ var Net = (function () {
     o.matHead.color.setHex(app.head || o.baseColor); o.matHead.metalness = app.head ? 0.6 : 0;
     o.matBody.color.setHex(app.body || o.baseColor); o.matBody.metalness = app.body ? 0.6 : 0;
     o.matLegs.color.setHex(app.legs || 0x20261a);    o.matLegs.metalness = app.legs ? 0.6 : 0;
-    if (app.weapon) { o.matWeapon.color.setHex(app.weapon); o.weapon.visible = true; }
+    var ranged = !!app.ranged;
+    if (o.bow) o.bow.visible = ranged;
+    if (app.weapon && !ranged) { o.matWeapon.color.setHex(app.weapon); o.weapon.visible = true; }
     else o.weapon.visible = false;
   }
 
@@ -186,6 +200,10 @@ var Net = (function () {
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'win', name: myName }));
   }
+  function sendLevel(skill, level, max) {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'level', name: myName, skill: skill, level: level | 0, max: !!max }));
+  }
 
   function sync(list) {
     var seen = {};
@@ -199,7 +217,7 @@ var Net = (function () {
         var av = buildAvatar(colorInt);
         o = { group: av.group, legL: av.legL, legR: av.legR, armL: av.armL, armR: av.armR,
               matBody: av.matBody, matHead: av.matHead, matLegs: av.matLegs, matWeapon: av.matWeapon,
-              weapon: av.weapon, baseColor: av.baseColor,
+              weapon: av.weapon, bow: av.bow, baseColor: av.baseColor,
               phase: 0, target: { x: pl.x, z: pl.z, ry: pl.ry }, state: pl.state,
               name: pl.name, colorHex: pl.color || '#8dff3a', hp: pl.hp,
               // fields that let player.js treat this as an attackable target
@@ -308,7 +326,7 @@ var Net = (function () {
 
   return {
     init: init, update: update, sendAttack: sendAttack,
-    sendAttackEnemy: sendAttackEnemy, sendGather: sendGather, sendWin: sendWin,
+    sendAttackEnemy: sendAttackEnemy, sendGather: sendGather, sendWin: sendWin, sendLevel: sendLevel,
     get enabled() { return enabled; },
     get myName() { return myName; },
     get remoteMeshes() { return remoteMeshes; }

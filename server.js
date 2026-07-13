@@ -63,8 +63,8 @@ const ETIERS = [
   { hp: 22, def: 4, maxHit: 6,  aggro: 9.5, speed: 3.8, atk: 1.6, range: 2.4 },
   { hp: 45, def: 8, maxHit: 10, aggro: 11,  speed: 4.1, atk: 1.8, range: 3.0 },
 ];
-// Enemies deactivated for now (matches the client's ENEMIES_ENABLED flag).
-// Restore to [[4, 0], [3, 1], [2, 2]] (9 total) to bring them back.
+// No roaming enemies (combat is at the client-side bandit camps). Restore to
+// [[4, 0], [3, 1], [2, 2]] (9 total) to bring the open-field mutants back.
 const ENEMY_PLAN = [];
 const BANDS = [[12, 30], [28, 44], [42, 56]];
 const enemies = [];
@@ -280,6 +280,12 @@ const server = Bun.serve({
         // first player to place the Orb wins — relay to everyone
         const p = players.get(ws.data.id);
         server.publish("game", JSON.stringify({ type: "win", name: (p && p.name) ? p.name : (typeof msg.name === "string" ? msg.name.slice(0, 24) : "A rival") }));
+      } else if (msg.type === "level" && typeof msg.skill === "string" && Number.isFinite(msg.level)) {
+        // broadcast a level-up so everyone hears it (id lets the sender skip its echo)
+        const p = players.get(ws.data.id);
+        server.publish("game", JSON.stringify({ type: "level", id: ws.data.id,
+          name: (p && p.name) ? p.name : (typeof msg.name === "string" ? msg.name.slice(0, 24) : "A wanderer"),
+          skill: msg.skill.slice(0, 16), level: Math.max(1, Math.min(99, Math.floor(msg.level))), max: !!msg.max }));
       }
     },
     close(ws) {

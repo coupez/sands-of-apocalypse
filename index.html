@@ -35,7 +35,7 @@
       </div>
     </div>
 
-    <!-- Top-left: gold purse -->
+    <!-- Top-right, under HP: gold purse -->
     <div id="gold-counter"><span class="coin">🪙</span> <span id="gold-num">0</span></div>
 
     <!-- Bottom-right: toggleable tab panels (only one open at a time) -->
@@ -56,8 +56,9 @@
       </div>
     </div>
 
-    <!-- Bottom-right: tab buttons to open each panel -->
+    <!-- Bottom-right: tab buttons to open each panel (+ music toggle) -->
     <div id="tab-bar">
+      <button class="tab-btn music-btn" id="music-btn" title="Toggle music">🔊</button>
       <button class="tab-btn" data-tab="inventory" title="Inventory">🎒</button>
       <button class="tab-btn" data-tab="skills" title="Skills">📊</button>
       <button class="tab-btn" data-tab="equipment" title="Equipment">🛡️</button>
@@ -68,6 +69,9 @@
 
     <!-- Top-center: target / status readout -->
     <div id="target-readout"></div>
+
+    <!-- Top-center: global level-up announcements -->
+    <div id="announce-layer"></div>
 
     <!-- Bottom-left: controls hint -->
     <div id="controls-hint">

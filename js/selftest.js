@@ -72,6 +72,8 @@ var SelfTest = (function () {
       assert('skill: fishing', !!Skills.data.fishing);
       assert('skill: cooking added', !!Skills.data.cooking);
       assert('skill: smithing added', !!Skills.data.smithing);
+      assert('skill: prayer added', !!Skills.data.prayer && Skills.data.prayer.max === 12);
+      assert('skill: ranged added', !!Skills.data.ranged && Skills.data.ranged.max === 20);
       assert('defence skill removed', !Skills.data.defence);
       assert('combat skills cap at 20', Skills.data.attack.max === 20 && Skills.data.strength.max === 20);
       assert('other skills cap at 12', Skills.data.mining.max === 12 && Skills.data.cooking.max === 12);
@@ -85,6 +87,11 @@ var SelfTest = (function () {
         assert('fishing xp gained', Skills.data.fishing.xp > fxp0, 'xp=' + Skills.data.fishing.xp);
         assert('shrimp in inventory', Game.inventory.some(function (i) { return i && i.id === 'shrimp'; }));
       }
+      // fishing scales to Lv12: Sardine(1) → Crab(5) → Perch(12, the cap)
+      var crabPool = Entities.pools.filter(function (p) { return p.itemId === 'lobster'; })[0];
+      var perchPool = Entities.pools.filter(function (p) { return p.itemId === 'whale'; })[0];
+      assert('crab pool requires Fishing 5', !!crabPool && crabPool.reqLevel === 5, 'req=' + (crabPool && crabPool.reqLevel));
+      assert('perch pool requires Fishing 12 (the cap)', !!perchPool && perchPool.reqLevel === 12, 'req=' + (perchPool && perchPool.reqLevel));
 
       var invStacks = Game.inventory.filter(Boolean).length;
       assert('inventory populated', invStacks > 0, invStacks + ' stacks');
@@ -236,17 +243,92 @@ var SelfTest = (function () {
         assert('upgraded pond offers a higher catch', camppond.reqLevel > 1);
       }
 
-      // -- endgame: forge the Orb at the altar, place it in the Obelisk to win --
+      // -- bandit camps: waves → boss (Mahmut) → essence + bones drops --
       clearBag();
+      invadeInvulnerable();
+      assert('two bandit camps stand east & west', Entities.banditCamps.length === 2, Entities.banditCamps.length + ' camps');
+      var bcamp = Entities.banditCamps[0];
+      assert('camp opens with a band of 5 bandits', !!bcamp && bcamp.alive.length === 5, 'alive=' + (bcamp && bcamp.alive.length));
+      assert('bandits are local (fightable while online)', !!bcamp && bcamp.alive[0].local === true);
+      function clearBand(camp) { camp.alive.slice().forEach(function (b) { b.hp = 0; Entities.killEnemy(b); }); }
+      if (bcamp) {
+        var bonesBefore = Entities.drops.filter(function (d) { return d.itemId === 'bones'; }).length;
+        clearBand(bcamp); Main.advance(3.2);
+        assert('a cleared band drops bones', Entities.drops.filter(function (d) { return d.itemId === 'bones'; }).length > bonesBefore);
+        assert('clearing 5 escalates to band 2 (5 raiders)', bcamp.wave === 1 && bcamp.alive.length === 5, 'wave=' + bcamp.wave + ' alive=' + bcamp.alive.length);
+        clearBand(bcamp); Main.advance(3.2);
+        assert('clearing 5 escalates to band 3 (5 marauders)', bcamp.wave === 2 && bcamp.alive.length === 5, 'wave=' + bcamp.wave + ' alive=' + bcamp.alive.length);
+        clearBand(bcamp); Main.advance(3.2);
+        assert('clearing band 3 summons the boss Mahmut of the Valley',
+          bcamp.wave === 3 && bcamp.alive.length === 1 && bcamp.alive[0].name === 'Mahmut of the Valley',
+          'wave=' + bcamp.wave + ' name=' + (bcamp.alive[0] && bcamp.alive[0].name));
+        clearBand(bcamp); Main.advance(2.5);
+        assert('defeating the boss clears the camp', bcamp.cleared === true);
+        assert('the boss drops a Bandit Essence', Entities.drops.some(function (d) { return d.itemId === 'essence' && d.active; }));
+      }
+      // picking up a drop grants its item
+      var essDrop = Entities.drops.filter(function (d) { return d.itemId === 'essence' && d.active; })[0];
+      assert('an essence drop lies on the ground', !!essDrop);
+      if (essDrop) { Entities.pickupDrop(essDrop); assert('picking up a drop grants the item', Skills.hasItem('essence')); }
+
+      // -- Prayer: burying bandit bones trains the Prayer skill --
+      var boneDrop = Entities.drops.filter(function (d) { return d.itemId === 'bones' && d.active; })[0];
+      assert('bones lie on the ground to bury', !!boneDrop);
+      if (boneDrop) {
+        Entities.pickupDrop(boneDrop);
+        var prayer0 = Skills.data.prayer.xp;
+        Skills.bury(invIndexOf('bones'));
+        assert('burying bones trains Prayer', Skills.data.prayer.xp > prayer0, 'xp=' + Skills.data.prayer.xp);
+        assert('bones are consumed on burial', invIndexOf('bones') < 0);
+      }
+
+      // -- ranged weapon: fletch a Desert Longbow and confirm it reads as ranged --
+      clearBag();
+      Skills.addItem('log'); Skills.addItem('log');
+      assert('fletching a bow from 2 logs works', Skills.craftBow() === true && invIndexOf('bow') >= 0);
+      Skills.equipFromInventory(invIndexOf('bow'));
+      assert('bow equips to the right hand', Game.equipment.rhand === 'bow');
+      assert('the bow reads as a ranged weapon', Skills.isRanged() === true);
+      // firing a bow trains the Ranged skill (not Attack/Strength)
+      invadeInvulnerable();
+      var rangedXp0 = Skills.data.ranged.xp, atkXpBow0 = Skills.data.attack.xp;
+      var bowTarget = Entities.enemies.filter(function (e) { return e.active; })[0];
+      assert('found a target to shoot', !!bowTarget);
+      if (bowTarget) {
+        for (var bq = 0; bq < 6; bq++) Combat.playerAttack(bowTarget);
+        assert('firing a bow trains Ranged', Skills.data.ranged.xp > rangedXp0, 'ranged xp=' + Skills.data.ranged.xp);
+        assert('firing a bow does not train melee Attack', Skills.data.attack.xp === atkXpBow0);
+      }
+      Skills.unequip('rhand');
+      assert('unarmed is not ranged', Skills.isRanged() === false);
+
+      // -- rats: ambient, attackable critters giving tiny XP --
+      assert('rats populate the desert', Entities.rats.length > 0, Entities.rats.length + ' rats');
+      var rat = Entities.rats.filter(function (r) { return r.active; })[0];
+      assert('found a live rat', !!rat);
+      assert('rats are local (fightable while online)', !!rat && rat.local === true);
+      if (rat) {
+        invadeInvulnerable();
+        var ratKills0 = Game.log.filter(function (l) { return l === 'enemy:killed'; }).length;
+        for (var rk = 0; rk < 10 && rat.active; rk++) Combat.playerAttack(rat);
+        assert('a rat can be slain', Game.log.filter(function (l) { return l === 'enemy:killed'; }).length > ratKills0);
+      }
+
+      // -- endgame: forge the Heart of the Obelisk at the altar, place it to win --
+      clearBag();
+      Skills.data.prayer.xp = 0; Skills.data.prayer.level = 1;   // start un-maxed
       var altar = Entities.stations.filter(function (s) { return s.kind === 'altar'; })[0];
       assert('ancient altar exists', !!altar);
       if (altar) {
-        Entities.useStation(altar);   // no materials yet
-        assert('altar needs the top-tier mats', invCount('orb') === 0);
-        Skills.addItem('elderwood'); Skills.addItem('whale'); Skills.addItem('pore');
+        Skills.addItem('elderwood'); Skills.addItem('whale'); Skills.addItem('pore'); Skills.addItem('essence');
         Entities.useStation(altar);
-        assert('altar forges the Orb from elderwood + perch + gold ore', invCount('orb') === 1);
-        assert('altar consumed the materials', !Skills.hasItem('elderwood') && !Skills.hasItem('whale') && !Skills.hasItem('pore'));
+        assert('altar is blocked until Prayer is maxed', invCount('orb') === 0);
+        Skills.addXp('prayer', 9999999);
+        assert('Prayer caps at level 12', Skills.data.prayer.level === 12, 'lvl=' + Skills.data.prayer.level);
+        Entities.useStation(altar);
+        assert('altar forges the Heart from fish + ore + elderwood + essence at max Prayer', invCount('orb') === 1);
+        assert('altar consumed the materials',
+          !Skills.hasItem('elderwood') && !Skills.hasItem('whale') && !Skills.hasItem('pore') && !Skills.hasItem('essence'));
       }
       var obel = Entities.obelisk;
       assert('obelisk stands at the centre', !!obel);
@@ -377,6 +459,10 @@ var SelfTest = (function () {
       assert('respawn restores hp', Player.stats.hp === Player.stats.maxHp,
         'hp=' + Player.stats.hp + '/' + Player.stats.maxHp);
       assert('respawn state idle', !Player.isDead && Player.state === 'idle', 'state=' + Player.state);
+      // player respawns at their OWN camp (default test slot = 1 = north)
+      assert('respawn returns the player to their camp',
+        dist(Player.position, World.CAMPS.north.x, World.CAMPS.north.z) < 1.5,
+        'pos=' + Player.position.x.toFixed(1) + ',' + Player.position.z.toFixed(1));
 
     } catch (err) {
       assert('NO EXCEPTIONS', false, (err && err.stack) ? err.stack : String(err));

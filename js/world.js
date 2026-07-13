@@ -7,11 +7,11 @@ var World = (function () {
   var ground, groundMat;
   var sunLight, hemiLight;
   var clock;
-  var WORLD_SIZE = 120;
+  var WORLD_SIZE = 240;
 
-  // Two player camps at the north and south poles. Player 1 spawns north,
-  // player 2 south. Shared with entities.js (flags/stations) and player.js (spawn).
-  var CAMPS = { north: { x: 0, z: -45 }, south: { x: 0, z: 45 } };
+  // Player camps at the N/S poles; bandit camps at the E/W poles.
+  var CAMPS = { north: { x: 0, z: -85 }, south: { x: 0, z: 85 } };
+  var BANDIT_CAMPS = { east: { x: 85, z: 0 }, west: { x: -85, z: 0 } };
 
   // Flat desert floor (no dunes → no geometry clipping with objects).
   function buildTerrain() {
@@ -27,6 +27,71 @@ var World = (function () {
     scene.add(ground);
     // terrain is flat, so height is always 0
     ground.userData.heightAt = function () { return 0; };
+  }
+
+  // A ring of great pyramids and giant boulders out past the play area, so you
+  // feel like you're deep in the desert surrounded by ancient monuments.
+  function buildDesertHorizon() {
+    var group = new THREE.Group();
+    var sand = new THREE.MeshStandardMaterial({ color: 0xd8b878, roughness: 1, flatShading: true });
+    var sand2 = new THREE.MeshStandardMaterial({ color: 0xc9a463, roughness: 1, flatShading: true });
+    var rockMat = new THREE.MeshStandardMaterial({ color: 0xb08050, roughness: 1, flatShading: true });
+    var N = 18;
+    for (var i = 0; i < N; i++) {
+      var a = (i / N) * Math.PI * 2 + Utils.randRange(-0.12, 0.12);
+      var r = Utils.randRange(132, 178);
+      var x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (i % 2 === 0) {
+        var h = Utils.randRange(24, 44), w = h * Utils.randRange(0.9, 1.3);
+        var p = new THREE.Mesh(new THREE.ConeGeometry(w, h, 4), (i % 4) ? sand : sand2);
+        p.rotation.y = Math.PI / 4; p.position.set(x, h / 2 - 3, z);
+        group.add(p);
+      } else {
+        for (var k = 0; k < 3; k++) {
+          var rr = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(6, 15), 0), rockMat);
+          rr.position.set(x + Utils.randRange(-12, 12), Utils.randRange(2, 7), z + Utils.randRange(-12, 12));
+          rr.rotation.set(Utils.rand(), Utils.rand() * 3, Utils.rand());
+          group.add(rr);
+        }
+      }
+    }
+    scene.add(group);
+  }
+
+  // Low, wind-blown sand drifting across the whole floor — pure atmosphere.
+  var sandDrift = null;
+  var DRIFT_R = 130;
+  function buildSandDrift() {
+    if (Game.headless) return;
+    var N = 520;
+    var geo = new THREE.BufferGeometry();
+    var pos = new Float32Array(N * 3);
+    for (var i = 0; i < N; i++) {
+      pos[i * 3]     = Utils.randRange(-DRIFT_R, DRIFT_R);
+      pos[i * 3 + 1] = Utils.randRange(0.15, 3.2);
+      pos[i * 3 + 2] = Utils.randRange(-DRIFT_R, DRIFT_R);
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    var mat = new THREE.PointsMaterial({ color: 0xdcc79a, size: 0.3, transparent: true,
+      opacity: 0.5, depthWrite: false, sizeAttenuation: true });
+    sandDrift = new THREE.Points(geo, mat);
+    sandDrift.frustumCulled = false;
+    scene.add(sandDrift);
+  }
+  function updateSandDrift(dt, t) {
+    if (!sandDrift) return;
+    var arr = sandDrift.geometry.attributes.position.array;
+    var wx = 9 * dt, wz = 3.4 * dt;   // prevailing wind: toward +x, a touch of +z
+    for (var i = 0; i < arr.length; i += 3) {
+      arr[i]     += wx + Math.sin(t * 0.7 + arr[i + 1]) * 0.03;
+      arr[i + 2] += wz + Math.cos(t * 0.5 + arr[i]) * 0.03;
+      arr[i + 1] += Math.sin(t * 2 + i) * 0.006;                  // gentle shimmer
+      if (arr[i] > DRIFT_R) arr[i] -= 2 * DRIFT_R;
+      if (arr[i + 2] > DRIFT_R) arr[i + 2] -= 2 * DRIFT_R;
+      if (arr[i + 1] < 0.1) arr[i + 1] = 0.1;
+      if (arr[i + 1] > 3.4) arr[i + 1] = 3.4;
+    }
+    sandDrift.geometry.attributes.position.needsUpdate = true;
   }
 
   function init(canvas) {
@@ -68,6 +133,8 @@ var World = (function () {
     scene.add(sunLight);
 
     buildTerrain();
+    buildDesertHorizon();
+    buildSandDrift();
 
     clock = new THREE.Clock();
 
@@ -87,7 +154,7 @@ var World = (function () {
   }
 
   function update(dt, t) {
-    // nothing animated in the world layer now that the haze is gone
+    updateSandDrift(dt, t);
   }
 
   function render() {
@@ -100,6 +167,6 @@ var World = (function () {
     get camera() { return camera; },
     get renderer() { return renderer; },
     get ground() { return ground; },
-    WORLD_SIZE: WORLD_SIZE, CAMPS: CAMPS
+    WORLD_SIZE: WORLD_SIZE, CAMPS: CAMPS, BANDIT_CAMPS: BANDIT_CAMPS
   };
 })();

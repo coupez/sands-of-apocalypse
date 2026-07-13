@@ -8,14 +8,28 @@
 var Combat = (function () {
   var _v = new THREE.Vector3();
 
+  function isRangedAttack() { return !!(Skills.isRanged && Skills.isRanged()); }
   function playerMaxHit() {
     var b = Skills.equipBonus();
-    // each Strength level adds +2 max hit, so even level 2 hits noticeably harder
-    return 2 + (Skills.data.strength.level + b.str) * 2 + b.maxHit;
+    // bows scale with Ranged; melee scales with Strength. Each level adds +2 max hit.
+    var lvl = isRangedAttack() ? Skills.data.ranged.level : (Skills.data.strength.level + b.str);
+    return 2 + lvl * 2 + b.maxHit;
   }
   function playerAccuracy(targetDef) {
     var b = Skills.equipBonus();
-    return Utils.clamp(0.5 + Skills.data.attack.level * 0.02 + b.acc - (targetDef || 0) * 0.03, 0.35, 0.98);
+    var lvl = isRangedAttack() ? Skills.data.ranged.level : Skills.data.attack.level;
+    return Utils.clamp(0.5 + lvl * 0.02 + b.acc - (targetDef || 0) * 0.03, 0.35, 0.98);
+  }
+  // award combat XP for a hit/kill, to Ranged for bows or Attack+Strength for melee
+  function awardHitXp(dmg) {
+    if (isRangedAttack()) Skills.addXp('ranged', 5 + Math.floor(dmg * 2.5));
+    else { Skills.addXp('attack', 4 + Math.floor(dmg * 2)); Skills.addXp('strength', 2 + Math.floor(dmg * 2)); }
+  }
+  function awardKillXp(enemy) {
+    var ranged = isRangedAttack();
+    if (enemy.xpAtk != null) { Skills.addXp(ranged ? 'ranged' : 'attack', enemy.xpAtk); if (!ranged) Skills.addXp('strength', enemy.xpStr); }
+    else if (ranged) Skills.addXp('ranged', 25);
+    else { Skills.addXp('attack', 15); Skills.addXp('strength', 10); }
   }
 
   function playerAttack(enemy) {
@@ -31,25 +45,24 @@ var Combat = (function () {
       type = (dmg >= maxHit) ? 'crit' : 'hit';
     }
 
-    Skills.addXp('attack', 4 + Math.floor(dmg * 2));
-    Skills.addXp('strength', 2 + Math.floor(dmg * 2));
+    awardHitXp(dmg);
     Game.log.push('playerAttack:' + dmg);
 
-    if (Game.online) {
-      // authoritative: server applies damage + death; splat comes back via enemyHit
+    // Server-owned enemies are resolved authoritatively; client-side entities
+    // (bandits, rats — flagged `local`) are always resolved locally, even online.
+    if (Game.online && !enemy.local) {
       if (window.Net && Net.sendAttackEnemy) Net.sendAttackEnemy(enemy.index, eq.instakill ? 9999 : dmg);
       return;
     }
 
-    // offline / single-player
+    // offline / single-player OR a local client-side entity
     enemy.hp = Math.max(0, enemy.hp - dmg);
     _v.set(enemy.position.x, enemy.position.y + 2.6, enemy.position.z);
     if (window.UI) UI.spawnHitsplat(_v, eq.instakill ? '☠' : dmg, type);
     if (enemy.hp <= 0) {
       Entities.killEnemy(enemy);
-      Skills.addXp('attack', 15);
-      Skills.addXp('strength', 10);
-      if (window.UI) UI.showActionText('The mutant is dragged to hell.');
+      awardKillXp(enemy);
+      if (window.UI) UI.showActionText(enemy.isRat ? 'You squish the rat.' : (enemy.isBoss ? 'Mahmut of the Valley is slain!' : (enemy.banditCamp ? 'The bandit is dragged to hell.' : 'The mutant is dragged to hell.')));
     }
   }
 

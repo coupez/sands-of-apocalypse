@@ -139,20 +139,20 @@ html, body {
   justify-content: space-between;
 }
 
-/* Gold purse (top-left) */
+/* Gold purse (top-right, under the HP globe) */
 #gold-counter {
   position: absolute;
-  top: 18px; left: 18px;
+  top: 144px; right: 16px;
   display: flex; align-items: center; gap: 6px;
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 20px;
-  padding: 6px 15px 6px 11px;
-  font-size: 18px; font-weight: 800;
+  padding: 5px 14px 5px 10px;
+  font-size: 17px; font-weight: 800;
   color: #ffe08a; text-shadow: 0 1px 2px #000;
   box-shadow: 0 3px 14px rgba(0,0,0,0.5);
 }
-#gold-counter .coin { font-size: 19px; }
+#gold-counter .coin { font-size: 18px; }
 
 /* Vitals / HP globe (top-right, enlarged) */
 #vitals {
@@ -287,12 +287,13 @@ html, body {
 /* Inventory */
 #inv-count { color: var(--ink); font-weight: 400; letter-spacing: 0; }
 
-/* Equipment loadout: head / body / legs stacked, both hands on the bottom row */
+/* Equipment loadout: a paperdoll — head on top, the two weapon hands flanking
+   the body/chest slot, then legs and feet down the centre. */
 #equipment-grid {
   display: grid;
-  grid-template-columns: 54px 54px;
+  grid-template-columns: 54px 54px 54px;
   grid-auto-rows: 54px;
-  gap: 8px 12px;
+  gap: 8px 10px;
   justify-content: center;
   padding: 6px 0 2px;
 }
@@ -308,13 +309,14 @@ html, body {
   font-size: 26px;
   cursor: pointer;
 }
-/* head, body, legs and feet sit centered across both columns */
-.equip-slot.slot-head,
-.equip-slot.slot-body,
-.equip-slot.slot-legs,
-.equip-slot.slot-feet { grid-column: 1 / span 2; justify-self: center; }
-.equip-slot.slot-lhand { grid-column: 1; }
-.equip-slot.slot-rhand { grid-column: 2; }
+.equip-slot.slot-head  { grid-column: 2; grid-row: 1; }
+.equip-slot.slot-lhand { grid-column: 1; grid-row: 2; }
+.equip-slot.slot-body  { grid-column: 2; grid-row: 2; }
+.equip-slot.slot-rhand { grid-column: 3; grid-row: 2; }
+.equip-slot.slot-legs  { grid-column: 2; grid-row: 3; }
+.equip-slot.slot-feet  { grid-column: 2; grid-row: 4; }
+/* the weapon hands read as a matched pair beside the chest */
+.equip-slot.slot-lhand, .equip-slot.slot-rhand { border-color: rgba(214,168,92,0.35); }
 .equip-slot.empty { cursor: default; border-style: dashed; }
 .equip-slot.filled { background: rgba(80,56,22,0.5); border-color: rgba(214,168,92,0.5); }
 .equip-slot.filled:hover { border-color: var(--toxic); box-shadow: 0 0 8px var(--toxic-glow); }
@@ -370,6 +372,20 @@ html, body {
   display: flex; justify-content: space-between; align-items: baseline;
 }
 .smith-lvl { font-size: 11px; color: var(--ink); font-weight: 400; }
+/* metal picker tabs — one per tier, coloured to the metal */
+.smith-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.smith-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 16px; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: #efe1c2;
+  background: rgba(0,0,0,0.3); border: 1.5px solid rgba(214,168,92,0.3);
+  transition: transform 0.08s ease, box-shadow 0.1s ease;
+}
+.smith-tab .mt-dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,0.6); }
+.smith-tab:hover { transform: translateY(-1px); }
+.smith-tab.active { background: rgba(214,168,92,0.22); box-shadow: 0 0 10px var(--toxic-glow); }
+.smith-tab.locked { opacity: 0.55; }
+.smith-item.fletch { margin-top: 8px; border-top: 1px dashed rgba(214,168,92,0.25); padding-top: 10px; }
 .smith-list { display: flex; flex-direction: column; gap: 3px; }
 .smith-item {
   display: grid;
@@ -664,3 +680,43 @@ html, body {
   animation: dmgflash 0.35s ease-out;
 }
 @keyframes dmgflash { from { opacity: 1; } to { opacity: 0; } }
+
+/* Music mute button (in the tab bar) */
+.music-btn.muted { opacity: 0.6; border-color: rgba(214,168,92,0.25); }
+.music-btn.muted:hover { opacity: 1; }
+
+/* Global level-up announcements (top-center banner) */
+#announce-layer {
+  position: absolute;
+  top: 64px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none;
+  z-index: 8;
+  width: max-content; max-width: 80vw;
+}
+.announce {
+  padding: 8px 20px;
+  border-radius: 22px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: #ffe9b8;
+  font-size: 15px; font-weight: 700; letter-spacing: 0.3px;
+  text-shadow: 0 1px 3px #000;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+  opacity: 1;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  animation: announce-in 0.3s ease;
+}
+@keyframes announce-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.announce.out { opacity: 0; transform: translateY(-8px); }
+.announce.ominous {
+  font-size: 19px; letter-spacing: 1px;
+  color: #ffdcc0;
+  background: linear-gradient(180deg, rgba(60,10,10,0.94), rgba(30,6,10,0.94));
+  border-color: #b3402a;
+  box-shadow: 0 0 26px rgba(200,40,20,0.55), inset 0 0 16px rgba(120,10,10,0.6);
+  text-shadow: 0 0 10px rgba(255,80,40,0.8), 0 1px 3px #000;
+  animation: announce-in 0.3s ease, ominous-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ominous-pulse { 0%,100% { box-shadow: 0 0 26px rgba(200,40,20,0.5), inset 0 0 16px rgba(120,10,10,0.6); } 50% { box-shadow: 0 0 40px rgba(255,60,30,0.8), inset 0 0 20px rgba(150,20,10,0.7); } }

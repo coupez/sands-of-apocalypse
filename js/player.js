@@ -3,7 +3,7 @@
 // ============================================================
 
 var Player = (function () {
-  var group, rightArm, leftArm, rightLeg, leftLeg, torso, head, weapon;
+  var group, rightArm, leftArm, rightLeg, leftLeg, torso, head, weapon, bowModel;
   var matHead, matBody, matLegs, matWeapon;   // recoloured by equipped gear tier
   var BASE_HEAD = 0x7fa86a, BASE_BODY = 0x3b4a2a, BASE_LEGS = 0x232b18;
   var SPEED = 6.2;
@@ -20,6 +20,7 @@ var Player = (function () {
   var IMPACT = 0.72;            // the strike connects here — effect fires now
 
   var eatAnim = 0;              // eating gesture timer (visual)
+  var prayAnim = 0;            // burying/praying gesture timer (visual)
   var eatLock = 0;             // can't attack while > 0 (seconds)
   var EAT_LOCK = 3.0;         // attack lockout after eating
   var mySlot = 1;             // which camp this player belongs to (1 = N, 2 = S)
@@ -82,6 +83,28 @@ var Player = (function () {
     weapon.rotation.z = 0.18;   // held at the side, blade pointing down
     weapon.visible = false;
     rightArm.add(weapon);
+
+    // bow held in the right hand — shown when a ranged weapon is equipped
+    bowModel = new THREE.Group();
+    var bowWood = new THREE.MeshStandardMaterial({ color: 0x6a4a24, roughness: 0.8, flatShading: true });
+    var bowLimb = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.05, 6, 14, Math.PI * 1.15), bowWood);
+    bowLimb.rotation.z = Math.PI * 0.92;   // open side faces forward
+    bowModel.add(bowLimb);
+    var bowString = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.92, 4),
+      new THREE.MeshStandardMaterial({ color: 0xe4d8b8, roughness: 1 }));
+    bowString.position.x = 0.34; bowModel.add(bowString);
+    var arrow = new THREE.Group();
+    var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.85, 5), bowWood);
+    shaft.rotation.x = Math.PI / 2; arrow.add(shaft);
+    var tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.15, 5),
+      new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.6, roughness: 0.4, flatShading: true }));
+    tip.rotation.x = Math.PI / 2; tip.position.z = 0.5; arrow.add(tip);
+    arrow.position.set(0.28, 0, 0); bowModel.add(arrow);
+    bowModel.position.set(0.06, -0.95, 0.16);
+    bowModel.rotation.set(0, 0, 0);
+    bowModel.visible = false;
+    rightArm.add(bowModel);
+
     group.add(rightArm);
 
     leftArm = new THREE.Group();
@@ -201,6 +224,7 @@ var Player = (function () {
 
     if (dodge.cooldown > 0) dodge.cooldown = Math.max(0, dodge.cooldown - dt);
     if (eatAnim > 0) eatAnim = Math.max(0, eatAnim - dt);
+    if (prayAnim > 0) prayAnim = Math.max(0, prayAnim - dt);
     if (eatLock > 0) eatLock = Math.max(0, eatLock - dt);
     if (death.active) { updateDeath(dt); return; }
     if (dodge.active) { updateDodge(dt); return; }
@@ -212,6 +236,8 @@ var Player = (function () {
       var ep = ent.position;
       dest = new THREE.Vector3(ep.x, 0, ep.z);
       stopDist = ent.interactRange || 2.0;
+      // a bow lets you loose arrows from range — stop short and fire
+      if (ent.type === 'enemy' && window.Skills && Skills.isRanged && Skills.isRanged()) stopDist = 8;
     } else if (interaction && interaction.entity && !interaction.entity.active) {
       interaction = null; state = 'idle'; actionKind = null;
     } else if (moveTarget) {
@@ -242,6 +268,9 @@ var Player = (function () {
             interaction = null; state = 'idle'; actionKind = null;
           } else if (ent.type === 'obelisk') {
             Entities.useObelisk();
+            interaction = null; state = 'idle'; actionKind = null;
+          } else if (ent.type === 'drop') {
+            Entities.pickupDrop(ent);
             interaction = null; state = 'idle'; actionKind = null;
           } else {
             state = 'acting';
@@ -362,6 +391,11 @@ var Player = (function () {
       var eb = Math.sin((1.2 - eatAnim) * Math.PI * 5) * 0.14;
       rightArm.rotation.x = -2.25 + eb;
     }
+    // praying/burying gesture: both hands raised, a slight reverent bow
+    if (prayAnim > 0 && rightArm) {
+      rightArm.rotation.x = -2.5; leftArm.rotation.x = -2.5;
+      torso.rotation.x = 0.25;
+    }
   }
 
   // ---- damage / death ----
@@ -389,6 +423,7 @@ var Player = (function () {
     if (actionKind === 'attack') { actionKind = null; interaction = null; state = 'idle'; }
   }
   function canAttack() { return eatLock <= 0 && !death.active && state !== 'dead'; }
+  function startPraying() { prayAnim = 1.4; }
 
   // recolour the character to show equipped gear tiers (0/undefined = default)
   function applyAppearance(app) {
@@ -397,7 +432,10 @@ var Player = (function () {
     matHead.color.setHex(app.head || BASE_HEAD); matHead.metalness = app.head ? 0.6 : 0;
     matBody.color.setHex(app.body || BASE_BODY); matBody.metalness = app.body ? 0.6 : 0;
     matLegs.color.setHex(app.legs || BASE_LEGS); matLegs.metalness = app.legs ? 0.6 : 0;
-    if (app.weapon) { matWeapon.color.setHex(app.weapon); weapon.visible = true; }
+    // ranged weapon → show the bow; otherwise show a metal scimitar (if any)
+    var ranged = !!app.ranged;
+    if (bowModel) bowModel.visible = ranged;
+    if (app.weapon && !ranged) { matWeapon.color.setHex(app.weapon); weapon.visible = true; }
     else if (weapon) { weapon.visible = false; }
   }
 
@@ -475,19 +513,22 @@ var Player = (function () {
   function reset() {
     death.active = false; death.phase = null; death.t = 0; death._cx = undefined;
     dodge.active = false; dodge.t = 0; dodge.cooldown = 0;
-    eatAnim = 0; eatLock = 0;
+    eatAnim = 0; prayAnim = 0; eatLock = 0;
     state = 'idle';
     interaction = null; moveTarget = null; actionKind = null; actionTimer = 0;
-    stats.hp = stats.maxHp;
     if (group) {
-      // respawn back at your own camp
+      // rebuild a fresh mesh FIRST (build() re-centres it at the origin), THEN
+      // place it back at your own camp — slot 1 = north, slot 2 = south — and
+      // re-apply equipped gear (tier colours + bow) and max HP.
+      restoreColors();
       var C = (window.World && World.CAMPS) ? World.CAMPS : null;
       var c = C ? (mySlot === 2 ? C.south : C.north) : { x: 0, z: 0 };
       group.position.set(c.x, terrainY(c.x, c.z), c.z);
       group.rotation.set(0, Math.atan2(0 - c.x, 0 - c.z), 0);
-      // restore original materials by rebuilding colors
-      restoreColors();
+      if (window.Skills && Skills.applyEquipmentToStats) Skills.applyEquipmentToStats();
+      if (window.CameraRig) CameraRig.setTarget(group.position);
     }
+    stats.hp = stats.maxHp;
     UI.updateVitals();
   }
 
@@ -503,7 +544,7 @@ var Player = (function () {
     walkTo: walkTo, interactWith: interactWith, stop: stop,
     takeDamage: takeDamage, heal: heal, startDeath: startDeath, reset: reset,
     applyBonuses: applyBonuses, moveToCamp: moveToCamp,
-    startEating: startEating, canAttack: canAttack, applyAppearance: applyAppearance,
+    startEating: startEating, startPraying: startPraying, canAttack: canAttack, applyAppearance: applyAppearance,
     dodge: dodge_, isInvulnerable: isInvulnerable,
     get state() { return state; },
     get position() { return group ? group.position : new THREE.Vector3(); },

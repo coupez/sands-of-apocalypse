@@ -47,7 +47,7 @@ var CameraRig = (function () {
       if (!dragging) return;
       var dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      yaw += dx * 0.008;
+      yaw -= dx * 0.008;   // drag right → orbit left
       pitch = Utils.clamp(pitch - dy * 0.006, minPitch, maxPitch);
     });
   }

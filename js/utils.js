@@ -118,6 +118,87 @@ var SFX = (function () {
   };
 })();
 
+// ---- Ambient soundtrack (WebAudio) — sandy wind + a subtle sitar drone/plucks ----
+// Fully synthesized (no asset files). Started on the first user gesture so the
+// browser lets audio play. Deliberately very quiet — atmosphere, not music.
+var Ambient = (function () {
+  var ctx = null, started = false, master = null, alive = false, muted = false;
+  var LEVEL = 0.55;
+  var SCALE = [220.0, 246.94, 293.66, 329.63, 392.0, 440.0];  // A minor pentatonic-ish
+
+  function noiseBuffer(c) {
+    var len = c.sampleRate * 2, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0), last = 0;
+    for (var i = 0; i < len; i++) { var w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.2; }
+    return b;
+  }
+  function start() {
+    if (started || Game.headless) return;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    started = true; alive = true;
+    if (ctx.state === 'suspended') ctx.resume();
+    master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, ctx.currentTime);
+    master.gain.setTargetAtTime(muted ? 0.0001 : LEVEL, ctx.currentTime, muted ? 0.1 : 4);   // slow fade-in
+    master.connect(ctx.destination);
+
+    // --- wind: filtered noise with slow gusts on cutoff + gain ---
+    var wind = ctx.createBufferSource(); wind.buffer = noiseBuffer(ctx); wind.loop = true;
+    var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 480;
+    var wg = ctx.createGain(); wg.gain.value = 0.11;
+    wind.connect(lp); lp.connect(wg); wg.connect(master);
+    var gust = ctx.createOscillator(); gust.frequency.value = 0.05;
+    var gustAmt = ctx.createGain(); gustAmt.gain.value = 280;
+    gust.connect(gustAmt); gustAmt.connect(lp.frequency); gust.start();
+    var gust2 = ctx.createOscillator(); gust2.frequency.value = 0.08;
+    var gust2Amt = ctx.createGain(); gust2Amt.gain.value = 0.055;
+    gust2.connect(gust2Amt); gust2Amt.connect(wg.gain); gust2.start();
+    wind.start();
+
+    // --- sitar drone: a few detuned saws through a soft lowpass ---
+    var drone = ctx.createGain(); drone.gain.value = 0.028; drone.connect(master);
+    var dlp = ctx.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 700; dlp.connect(drone);
+    [110.0, 110.55, 164.81].forEach(function (f) {
+      var o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      var g = ctx.createGain(); g.gain.value = 0.5; o.connect(g); g.connect(dlp); o.start();
+    });
+
+    schedulePluck();
+  }
+  function pluck(freq) {
+    if (!alive || !ctx) return;
+    var t = ctx.currentTime;
+    var o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq;
+    var o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = freq * 2.01;
+    var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = freq * 3; bp.Q.value = 5;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.7);
+    o.connect(bp); o2.connect(bp); bp.connect(g); g.connect(master);
+    o.start(t); o2.start(t); o.stop(t + 1.8); o2.stop(t + 1.8);
+  }
+  function schedulePluck() {
+    if (!alive) return;
+    pluck(SCALE[Math.floor(Math.random() * SCALE.length)]);
+    setTimeout(schedulePluck, 3200 + Math.random() * 4500);
+  }
+  function stop() { alive = false; if (master && ctx) master.gain.setTargetAtTime(0.0001, ctx.currentTime, 1); }
+  // mute/unmute — ramps the master gain; starts the audio if it isn't running yet
+  function setMuted(m) {
+    muted = !!m;
+    if (started && master && ctx) master.gain.setTargetAtTime(muted ? 0.0001 : LEVEL, ctx.currentTime, 0.35);
+    return !muted;
+  }
+  function toggle() {
+    muted = !muted;
+    if (!started) start();   // start() reads `muted` for its initial gain (this is a user gesture)
+    else if (master && ctx) master.gain.setTargetAtTime(muted ? 0.0001 : LEVEL, ctx.currentTime, 0.35);
+    return !muted;           // true = music now ON
+  }
+  function isOn() { return !muted; }
+  return { start: start, stop: stop, toggle: toggle, setMuted: setMuted, isOn: isOn };
+})();
+
 // ---- Voice (browser TTS) — makes the mutant actually shout its line ----
 var Voice = (function () {
   var voices = [];

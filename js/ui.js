@@ -54,7 +54,7 @@ var UI = (function () {
   // ---------- right-side tab panels ----------
   var _activeTab = null;
   function wireTabs() {
-    var btns = document.querySelectorAll('#tab-bar .tab-btn');
+    var btns = document.querySelectorAll('#tab-bar .tab-btn[data-tab]');
     for (var i = 0; i < btns.length; i++) {
       (function (btn) {
         btn.addEventListener('click', function () {
@@ -63,6 +63,14 @@ var UI = (function () {
         });
       })(btns[i]);
     }
+    // music mute toggle (not a panel tab)
+    var mb = document.getElementById('music-btn');
+    if (mb) mb.addEventListener('click', function () {
+      var on = window.Ambient ? Ambient.toggle() : false;
+      mb.textContent = on ? '🔊' : '🔇';
+      mb.classList.toggle('muted', !on);
+      mb.title = on ? 'Music: on (click to mute)' : 'Music: muted (click to unmute)';
+    });
   }
   function setActiveTab(name) {
     _activeTab = name;
@@ -192,6 +200,7 @@ var UI = (function () {
       if (!it) return;
       if (Skills.isGear(it.id)) Skills.equipFromInventory(index);
       else if (Skills.isFood(it.id)) Skills.eat(index);
+      else if (Skills.isBones(it.id)) Skills.bury(index);
     });
     // right-click opens the item's action menu (Use/Equip/Eat + Drop)
     slot.addEventListener('contextmenu', function (e) {
@@ -259,6 +268,7 @@ var UI = (function () {
     // gear can be worn; food can be eaten; everything can be dropped
     if (Skills.isGear(item.id)) opts.push({ label: 'Wield ' + item.name, fn: function () { Skills.equipFromInventory(index); } });
     else if (Skills.isFood(item.id)) opts.push({ label: 'Eat ' + item.name, fn: function () { Skills.eat(index); } });
+    else if (Skills.isBones(item.id)) opts.push({ label: 'Bury ' + item.name + ' (Prayer)', fn: function () { Skills.bury(index); } });
     opts.push({ label: 'Drop ' + item.name, fn: function () { Skills.dropItem(index); } });
     showContextMenu(x, y, opts);
   }
@@ -303,18 +313,41 @@ var UI = (function () {
     if (_sellSession && _sellSession.sold && window.Entities) Entities.sendCaravan(_sellSession.ent);
     _sellSession = null;
   }
+  // remembers which metal tab you were on between opens
+  var _smithMetal = null;
+  var _WOOD_IDS = ['log', 'palmwood', 'blog', 'elderwood'];
+  function woodCount() { var n = 0; for (var i = 0; i < _WOOD_IDS.length; i++) n += Skills.countItem(_WOOD_IDS[i]); return n; }
   function openSmithMenu(anvilLevel) {
     if (Game.headless) return;
     _sellSession = null;
     anvilLevel = anvilLevel || 1;
+    var metals = Skills.METALS;
+    if (!_smithMetal) _smithMetal = metals[0].key;
     var m = ensureSmithMenu();
     m.innerHTML = '';
     var head = document.createElement('div');
     head.className = 'smith-title';
-    head.innerHTML = 'What do you want to smith? <span class="smith-lvl">Anvil Lv ' + anvilLevel + '</span>';
+    head.innerHTML = 'Smithing <span class="smith-lvl">Anvil Lv ' + anvilLevel + '</span>';
     m.appendChild(head);
+
+    // metal tab bar — pick a metal, see its gear below. Higher metals show a lock
+    // until the anvil is upgraded to their tier.
+    var tabs = document.createElement('div'); tabs.className = 'smith-tabs';
+    for (var mi = 0; mi < metals.length; mi++) {
+      (function (M) {
+        var locked = anvilLevel < M.level;
+        var tab = document.createElement('div');
+        tab.className = 'smith-tab' + (M.key === _smithMetal ? ' active' : '') + (locked ? ' locked' : '');
+        tab.style.borderColor = hex6(M.color);
+        tab.innerHTML = '<span class="mt-dot" style="background:' + hex6(M.color) + '"></span>' + M.name + (locked ? ' 🔒' : '');
+        tab.addEventListener('click', function () { _smithMetal = M.key; openSmithMenu(anvilLevel); });
+        tabs.appendChild(tab);
+      })(metals[mi]);
+    }
+    m.appendChild(tabs);
+
     var list = document.createElement('div'); list.className = 'smith-list'; m.appendChild(list);
-    var recipes = Skills.SMITH_RECIPES;
+    var recipes = Skills.SMITH_RECIPES.filter(function (r) { return r.id.indexOf(_smithMetal + '_') === 0; });
     for (var i = 0; i < recipes.length; i++) {
       (function (r) {
         var why = Skills.canSmith(r, anvilLevel);   // null = craftable, else reason
@@ -332,6 +365,18 @@ var UI = (function () {
         list.appendChild(row);
       })(recipes[i]);
     }
+
+    // fletching bench: a ranged Desert Longbow from any 2 logs (always available)
+    var wc = woodCount();
+    var bow = document.createElement('div');
+    bow.className = 'smith-item fletch' + (wc < 2 ? ' disabled' : '');
+    bow.innerHTML = '<span class="si-icon">🏹</span>' +
+      '<span class="si-name">Desert Longbow</span>' +
+      '<span class="si-cost">2× Logs (' + wc + ')</span>' +
+      '<span class="si-note">' + (wc < 2 ? 'Needs 2 logs' : 'Fletch a ranged bow') + '</span>';
+    if (wc >= 2) bow.addEventListener('click', function () { Skills.craftBow(); openSmithMenu(anvilLevel); });
+    list.appendChild(bow);
+
     m.style.display = 'block';
   }
 
@@ -434,6 +479,23 @@ var UI = (function () {
     el.actionText.classList.add('show');
     clearTimeout(_actionTimer);
     _actionTimer = setTimeout(function () { el.actionText.classList.remove('show'); }, 1600);
+  }
+
+  // ---------- global level-up announcements (top-center banner) ----------
+  function announce(text, ominous) {
+    if (Game.headless) return;
+    var layer = $('announce-layer');
+    if (!layer) return;
+    var d = document.createElement('div');
+    d.className = 'announce' + (ominous ? ' ominous' : '');
+    d.textContent = (ominous ? '☠ ' : '★ ') + text;
+    layer.appendChild(d);
+    // fade + remove; ominous messages linger longer
+    var life = ominous ? 6000 : 3200;
+    setTimeout(function () { d.classList.add('out'); }, life - 500);
+    setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, life);
+    // keep the stack short
+    while (layer.children.length > 4) layer.removeChild(layer.firstChild);
   }
 
   function setTarget(txt) {
@@ -550,8 +612,8 @@ var UI = (function () {
     d.id = 'victory';
     d.innerHTML = '<div class="vic-inner"><div class="vic-title">' + (byMe ? '★ VICTORY ★' : 'GAME OVER') + '</div>' +
       '<div class="vic-sub">' + (byMe
-        ? 'You placed the Orb of the Sands and claimed the desert!'
-        : esc + ' placed the Orb of the Sands and won the game.') + '</div></div>';
+        ? 'You placed the Heart of the Obelisk and claimed the desert!'
+        : esc + ' placed the Heart of the Obelisk and won the game.') + '</div></div>';
     document.body.appendChild(d);
   }
 
@@ -561,7 +623,7 @@ var UI = (function () {
     updateInventory: updateInventory,
     updateEquipment: updateEquipment, setActiveTab: setActiveTab, toast: toast,
     updateGold: updateGold, openSmithMenu: openSmithMenu, openSellMenu: openSellMenu, openStationMenu: openStationMenu,
-    showActionText: showActionText, setTarget: setTarget,
+    showActionText: showActionText, setTarget: setTarget, announce: announce,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
     updateCampLabels: updateCampLabels,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,
