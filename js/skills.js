@@ -19,15 +19,20 @@ var Skills = (function () {
     blog:  { id: 'blog',  name: 'Blightwood Log', icon: '🎍' },
     ore:   { id: 'ore',   name: 'Uranium Ore',    icon: '☢️' },
     pore:  { id: 'pore',  name: 'Plutonium Ore',  icon: '🟣' },
-    shrimp:  { id: 'shrimp',  name: 'Irradiated Shrimp', icon: '🦐' },
-    lobster: { id: 'lobster', name: 'Mutant Lobster',    icon: '🦞' },
-    whale:   { id: 'whale',   name: 'Toxic Whale',       icon: '🐋' },
-    cfish:   { id: 'cfish',   name: 'Cooked Fish',       icon: '🍤' },
+    shrimp:  { id: 'shrimp',  name: 'Raw Shrimp',        icon: '🦐' },
+    lobster: { id: 'lobster', name: 'Raw Lobster',       icon: '🦞' },
+    whale:   { id: 'whale',   name: 'Raw Whale Meat',    icon: '🐋' },
+    cshrimp: { id: 'cshrimp', name: 'Cooked Shrimp',     icon: '🍤' },
+    clobster:{ id: 'clobster',name: 'Cooked Lobster',    icon: '🍲' },
+    cwhale:  { id: 'cwhale',  name: 'Cooked Whale Steak', icon: '🍖' },
     bar:     { id: 'bar',     name: 'Scrap Metal Bar',   icon: '🔩' }
   };
 
-  // Edible items: id -> HP healed when eaten (cooked food heals more).
-  var FOOD = { shrimp: 2, lobster: 5, whale: 12, cfish: 8 };
+  // Only COOKED seafood is edible; eat raw and you gain nothing. Cook it at a
+  // campfire first. id -> HP healed when eaten.
+  var FOOD = { cshrimp: 2, clobster: 4, cwhale: 6 };
+  // raw -> cooked mapping used by the campfire
+  var COOK = { shrimp: 'cshrimp', lobster: 'clobster', whale: 'cwhale' };
   function isFood(id) { return Object.prototype.hasOwnProperty.call(FOOD, id); }
 
   // Equipment slots the player has: head, body, legs, and a weapon in each hand.
@@ -113,10 +118,18 @@ var Skills = (function () {
   // Eat a food item in slot `index`, healing the player.
   function eat(index) {
     var it = Game.inventory[index];
-    if (!it || !isFood(it.id)) return false;
+    if (!it) return false;
+    if (!isFood(it.id)) {
+      // raw seafood can't be eaten — must be cooked first
+      if (window.UI) UI.showActionText(COOK[it.id] ? 'You must cook the ' + it.name.replace('Raw ', '') + ' first.' : "You can't eat that.");
+      return false;
+    }
     var heal = FOOD[it.id];
     Game.inventory[index] = null;
-    if (window.Player && Player.heal) Player.heal(heal);
+    if (window.Player) {
+      if (Player.heal) Player.heal(heal);
+      if (Player.startEating) Player.startEating();   // eat animation + brief attack lockout
+    }
     if (window.SFX && SFX.pickup) SFX.pickup();
     if (window.UI) { UI.updateInventory(); UI.showActionText('You eat the ' + it.name + '. (+' + heal + ' HP)'); }
     Game.log.push('eat:' + it.id);
@@ -239,6 +252,7 @@ var Skills = (function () {
     equipFromInventory: equipFromInventory, unequip: unequip,
     eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
+    COOK: COOK,
     get data() { return data; },
     ITEMS: ITEMS, GEAR: GEAR, EQUIP_SLOTS: EQUIP_SLOTS, SKILL_ORDER: SKILL_ORDER
   };

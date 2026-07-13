@@ -241,11 +241,11 @@ var Entities = (function () {
           ? (lightStation(ent), 'You light the campfire.')
           : 'You need a log to light the campfire.';
       } else {
-        var raw = ['shrimp', 'lobster', 'whale'], cooked = false;
-        for (var i = 0; i < raw.length; i++) {
-          if (Skills.removeItem(raw[i])) { Skills.addItem('cfish'); Skills.addXp('fishing', 10); cooked = true; break; }
+        var raws = ['shrimp', 'lobster', 'whale'], cooked = null;
+        for (var i = 0; i < raws.length; i++) {
+          if (Skills.removeItem(raws[i])) { cooked = Skills.COOK[raws[i]]; Skills.addItem(cooked); Skills.addXp('fishing', 10); break; }
         }
-        msg = cooked ? 'You cook a fish over the fire.' : 'You have no raw fish to cook.';
+        msg = cooked ? 'You cook the catch over the fire.' : 'You have no raw catch to cook.';
       }
     } else if (ent.kind === 'anvil') {
       msg = Skills.removeItem('bar')

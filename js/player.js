@@ -17,6 +17,11 @@ var Player = (function () {
   var WINDUP_END = 0.48;        // reach the raised/wound-up pose by here
   var IMPACT = 0.72;            // the strike connects here — effect fires now
 
+  var eatAnim = 0;              // eating gesture timer (visual)
+  var eatLock = 0;             // can't attack while > 0 (seconds)
+  var EAT_LOCK = 3.0;         // attack lockout after eating
+  var mySlot = 1;             // which camp this player belongs to (1 = N, 2 = S)
+
   var BASE_MAXHP = 20;
   var stats = { hp: 20, maxHp: 20, attackTick: 0 };
 
@@ -173,6 +178,7 @@ var Player = (function () {
   // Spawn/teleport the player to their camp (slot 1 = north, 2 = south).
   function moveToCamp(slot) {
     if (!group) return;
+    mySlot = (slot === 2) ? 2 : 1;
     var C = (window.World && World.CAMPS) ? World.CAMPS : { north: { x: 0, z: 0 }, south: { x: 0, z: 0 } };
     var c = (slot === 2) ? C.south : C.north;
     group.position.set(c.x, terrainY(c.x, c.z), c.z);
@@ -185,6 +191,8 @@ var Player = (function () {
     if (!group) return;
 
     if (dodge.cooldown > 0) dodge.cooldown = Math.max(0, dodge.cooldown - dt);
+    if (eatAnim > 0) eatAnim = Math.max(0, eatAnim - dt);
+    if (eatLock > 0) eatLock = Math.max(0, eatLock - dt);
     if (death.active) { updateDeath(dt); return; }
     if (dodge.active) { updateDodge(dt); return; }
 
@@ -259,6 +267,7 @@ var Player = (function () {
     else if (actionKind === 'mine') { Skills.doMine(ent); SFX.mine(); }
     else if (actionKind === 'fish') { Skills.doFish(ent); SFX.mine(); }
     else if (actionKind === 'attack') {
+      if (!canAttack()) { if (window.UI) UI.showActionText('You are too full to attack.'); return; }
       if (ent.type === 'player') Combat.playerAttackPlayer(ent);
       else Combat.playerAttack(ent);
       SFX.hit();
@@ -336,6 +345,11 @@ var Player = (function () {
       leftLeg.rotation.x = Utils.damp(leftLeg.rotation.x, 0, 6, dt);
       torso.rotation.x = Utils.damp(torso.rotation.x, 0, 6, dt);
     }
+    // eating gesture overrides the arm pose: hand to the mouth with a chew bob
+    if (eatAnim > 0 && rightArm) {
+      var eb = Math.sin((1.2 - eatAnim) * Math.PI * 5) * 0.14;
+      rightArm.rotation.x = -2.25 + eb;
+    }
   }
 
   // ---- damage / death ----
@@ -354,6 +368,15 @@ var Player = (function () {
     stats.hp = Utils.clamp(stats.hp + n, 0, stats.maxHp);
     if (window.UI) UI.updateVitals();
   }
+
+  // eating: play a gesture and lock out attacks for a few seconds
+  function startEating() {
+    eatAnim = 1.2;
+    eatLock = EAT_LOCK;
+    // cancel any attack in progress
+    if (actionKind === 'attack') { actionKind = null; interaction = null; state = 'idle'; }
+  }
+  function canAttack() { return eatLock <= 0 && !death.active && state !== 'dead'; }
 
   function startDeath(onDone) {
     if (death.active) return;
@@ -429,12 +452,16 @@ var Player = (function () {
   function reset() {
     death.active = false; death.phase = null; death.t = 0; death._cx = undefined;
     dodge.active = false; dodge.t = 0; dodge.cooldown = 0;
+    eatAnim = 0; eatLock = 0;
     state = 'idle';
     interaction = null; moveTarget = null; actionKind = null; actionTimer = 0;
     stats.hp = stats.maxHp;
     if (group) {
-      group.position.set(0, terrainY(0, 0), 0);
-      group.rotation.set(0, 0, 0);
+      // respawn back at your own camp
+      var C = (window.World && World.CAMPS) ? World.CAMPS : null;
+      var c = C ? (mySlot === 2 ? C.south : C.north) : { x: 0, z: 0 };
+      group.position.set(c.x, terrainY(c.x, c.z), c.z);
+      group.rotation.set(0, Math.atan2(0 - c.x, 0 - c.z), 0);
       // restore original materials by rebuilding colors
       restoreColors();
     }
@@ -453,6 +480,7 @@ var Player = (function () {
     walkTo: walkTo, interactWith: interactWith, stop: stop,
     takeDamage: takeDamage, heal: heal, startDeath: startDeath, reset: reset,
     applyBonuses: applyBonuses, moveToCamp: moveToCamp,
+    startEating: startEating, canAttack: canAttack,
     dodge: dodge_, isInvulnerable: isInvulnerable,
     get state() { return state; },
     get position() { return group ? group.position : new THREE.Vector3(); },

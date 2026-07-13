@@ -19,6 +19,7 @@ var Combat = (function () {
 
   function playerAttack(enemy) {
     if (!enemy || !enemy.active) return;
+    if (window.Player && Player.canAttack && !Player.canAttack()) return; // eating lockout
     var eq = Skills.equipBonus();
     var maxHit = playerMaxHit();
     var dmg = 0, type = 'miss';
@@ -77,6 +78,7 @@ var Combat = (function () {
   // ---- PvP ----
   function playerAttackPlayer(target) {
     if (!target || !target.active) return;
+    if (window.Player && Player.canAttack && !Player.canAttack()) return; // eating lockout
     var eq = Skills.equipBonus();
     var maxHit = playerMaxHit();
     var dmg = 0;

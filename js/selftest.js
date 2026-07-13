@@ -188,8 +188,8 @@ var SelfTest = (function () {
         Entities.useStation(campfire);                // log lights the campfire
         assert('campfire lights when given a log', campfire.lit === true);
         Skills.addItem('shrimp');
-        Entities.useStation(campfire);                // raw fish cooks into cooked fish
-        assert('lit campfire cooks raw fish', invCount('cfish') === 1, 'cfish=' + invCount('cfish'));
+        Entities.useStation(campfire);                // raw shrimp cooks into cooked shrimp
+        assert('lit campfire cooks raw shrimp into cooked', invCount('cshrimp') === 1, 'cshrimp=' + invCount('cshrimp'));
       }
       clearBag();
 
@@ -199,12 +199,22 @@ var SelfTest = (function () {
       Skills.addItem('log'); Skills.addItem('log');
       assert('logs do not stack (each takes a slot)', countId('log') === logs0 + 2, countId('log') + ' log slots');
 
+      // raw seafood is inedible; only cooked heals — and eating locks out attacks
+      assert('raw shrimp is not edible', Skills.isFood('shrimp') === false);
+      assert('cooked shrimp is edible', Skills.isFood('cshrimp') === true);
       Player.stats.maxHp = 20; Player.stats.hp = 5;
       Skills.addItem('shrimp');
-      var fish0 = countId('shrimp');
-      Skills.eat(invIndexOf('shrimp'));
-      assert('eating shrimp heals HP', Player.stats.hp > 5, 'hp=' + Player.stats.hp);
-      assert('eating shrimp consumes one', countId('shrimp') === fish0 - 1, fish0 + ' -> ' + countId('shrimp'));
+      Skills.eat(invIndexOf('shrimp'));                 // raw: no effect, not consumed
+      assert('eating raw shrimp does nothing', Player.stats.hp === 5 && countId('shrimp') === 1, 'hp=' + Player.stats.hp);
+      Skills.addItem('cshrimp');
+      var cs0 = countId('cshrimp');
+      Skills.eat(invIndexOf('cshrimp'));                // cooked: heals +2 and starts the lockout
+      assert('eating cooked shrimp heals +2 HP', Player.stats.hp === 7, 'hp=' + Player.stats.hp);
+      assert('cooked shrimp consumed', countId('cshrimp') === cs0 - 1);
+      assert('cannot attack right after eating', Player.canAttack() === false);
+      invadeInvulnerable();                             // survive the wait while enemies roam
+      Main.advance(3.2);                                // wait out the ~3s lockout
+      assert('can attack again after the lockout', Player.canAttack() === true);
 
       Skills.addItem('ore');
       var ore0 = countId('ore');
