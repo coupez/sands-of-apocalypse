@@ -174,17 +174,26 @@ var SelfTest = (function () {
         Entities.useStation(furnace);                 // log lights the furnace
         assert('furnace lights when given a log', furnace.lit === true);
         Skills.addItem('ore');
-        Entities.useStation(furnace);                 // ore smelts into a bar
-        assert('lit furnace smelts ore into a bar', invCount('bar') === 1, 'bars=' + invCount('bar'));
+        Entities.useStation(furnace);                 // copper ore smelts into a bronze bar
+        assert('lit furnace smelts copper into a bronze bar', invCount('bronzebar') === 1, 'bars=' + invCount('bronzebar'));
         assert('smelting trains Smithing', Skills.data.smithing.xp > 0, 'xp=' + Skills.data.smithing.xp);
+        // higher metals are gated by Smithing level
+        Skills.addItem('silver');
+        Entities.useStation(furnace);                 // Smithing 1 can't smelt silver (needs 7)
+        assert('silver ore gated by Smithing level at the furnace', invCount('silverbar') === 0 && Skills.hasItem('silver'));
       }
+      // -- smithing at the anvil (level + bar gated) --
       var anvil = Entities.stations.filter(function (s) { return s.kind === 'anvil'; })[0];
       assert('anvil exists in town', !!anvil);
-      if (anvil) {
-        var sw0 = invCount('sword');
-        Entities.useStation(anvil);                   // bar smiths into a sword
-        assert('anvil smiths a bar into gear', invCount('sword') === sw0 + 1);
-      }
+      clearBag();
+      Skills.addItem('bronzebar');
+      assert('can smith a Bronze Helmet (1 bar, lv1)', Skills.smith('bronze_helmet') === true);
+      assert('bronze helmet is in the bag', invCount('bronze_helmet') === 1);
+      assert('helmet equips into the head slot', (function () { Skills.equipFromInventory(invIndexOf('bronze_helmet')); return Game.equipment.head === 'bronze_helmet'; })());
+      assert('smithing above your level is blocked', Skills.smith('silver_platebody') === false && invCount('silver_platebody') === 0);
+      Skills.addItem('bronzebar');                    // only 1 bar; platebody needs 3
+      assert('smithing without enough bars is blocked', Skills.smith('bronze_platebody') === false);
+      assert('boots go in the new feet slot', (function () { clearBag(); Skills.addItem('bronzebar'); Skills.smith('bronze_boots'); Skills.equipFromInventory(invIndexOf('bronze_boots')); return Game.equipment.feet === 'bronze_boots'; })());
       var campfire = Entities.stations.filter(function (s) { return s.kind === 'campfire'; })[0];
       assert('campfire exists in town', !!campfire);
       if (campfire) {

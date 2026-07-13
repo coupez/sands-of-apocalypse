@@ -72,6 +72,7 @@ var UI = (function () {
     { slot: 'head',  label: 'Head' },
     { slot: 'body',  label: 'Body' },
     { slot: 'legs',  label: 'Legs' },
+    { slot: 'feet',  label: 'Feet' },
     { slot: 'lhand', label: 'Left Hand' },
     { slot: 'rhand', label: 'Right Hand' }
   ];
@@ -271,6 +272,51 @@ var UI = (function () {
     m.style.top = Math.min(y, window.innerHeight - rect.height - 4) + 'px';
   }
 
+  // ---------- smithing menu (anvil) ----------
+  var _smithEl = null;
+  function ensureSmithMenu() {
+    if (_smithEl) return _smithEl;
+    _smithEl = document.createElement('div');
+    _smithEl.id = 'smith-menu';
+    _smithEl.style.display = 'none';
+    document.body.appendChild(_smithEl);
+    document.addEventListener('pointerdown', function (e) {
+      if (_smithEl.style.display !== 'none' && !_smithEl.contains(e.target)) closeSmithMenu();
+    });
+    window.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSmithMenu(); });
+    return _smithEl;
+  }
+  function closeSmithMenu() { if (_smithEl) _smithEl.style.display = 'none'; }
+  function openSmithMenu() {
+    if (Game.headless) return;
+    var m = ensureSmithMenu();
+    m.innerHTML = '';
+    var head = document.createElement('div');
+    head.className = 'smith-title';
+    head.innerHTML = 'What do you want to smith? <span class="smith-lvl">Smithing ' + Skills.data.smithing.level + '</span>';
+    m.appendChild(head);
+    var list = document.createElement('div'); list.className = 'smith-list'; m.appendChild(list);
+    var recipes = Skills.SMITH_RECIPES;
+    for (var i = 0; i < recipes.length; i++) {
+      (function (r) {
+        var why = Skills.canSmith(r);               // null = craftable, else reason
+        var have = Skills.countItem(r.bar);
+        var row = document.createElement('div');
+        row.className = 'smith-item' + (why ? ' disabled' : '');
+        row.innerHTML = '<span class="si-icon">' + r.icon + '</span>' +
+          '<span class="si-name">' + r.name + '</span>' +
+          '<span class="si-cost">' + r.bars + '× ' + r.barName + ' (' + have + ')</span>' +
+          '<span class="si-note">' + (why || 'Smith') + '</span>';
+        if (!why) row.addEventListener('click', function () {
+          Skills.smith(r.id);
+          openSmithMenu();   // refresh counts/availability so you can keep forging
+        });
+        list.appendChild(row);
+      })(recipes[i]);
+    }
+    m.style.display = 'block';
+  }
+
   // ---------- vitals ----------
   function updateVitals() {
     var p = Game.player;
@@ -433,6 +479,7 @@ var UI = (function () {
     updateVitals: updateVitals, updateSkills: updateSkills,
     updateInventory: updateInventory,
     updateEquipment: updateEquipment, setActiveTab: setActiveTab, toast: toast,
+    openSmithMenu: openSmithMenu,
     showActionText: showActionText, setTarget: setTarget,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
     updateCampLabels: updateCampLabels,

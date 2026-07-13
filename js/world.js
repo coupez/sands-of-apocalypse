@@ -13,22 +13,10 @@ var World = (function () {
   // player 2 south. Shared with entities.js (flags/stations) and player.js (spawn).
   var CAMPS = { north: { x: 0, z: -45 }, south: { x: 0, z: 45 } };
 
-  // Low-poly displaced terrain, tinted sickly grey-green.
+  // Flat desert floor (no dunes → no geometry clipping with objects).
   function buildTerrain() {
-    var seg = 40;   // fewer segments → cheaper mesh + faster height raycasts
-    var geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, seg, seg);
+    var geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 1, 1);
     geo.rotateX(-Math.PI / 2);
-    var pos = geo.attributes.position;
-    for (var i = 0; i < pos.count; i++) {
-      var x = pos.getX(i), z = pos.getZ(i);
-      // gentle rolling dunes; keep the central spawn area flatter
-      var d = Math.sqrt(x * x + z * z);
-      var h = Math.sin(x * 0.08) * Math.cos(z * 0.07) * 1.6
-            + Math.sin(x * 0.21 + z * 0.13) * 0.5;
-      h *= Utils.clamp((d - 6) / 20, 0, 1); // flatten near center
-      pos.setY(i, h);
-    }
-    geo.computeVertexNormals();
     groundMat = new THREE.MeshStandardMaterial({
       color: 0xceb27f, roughness: 1.0, metalness: 0.0, flatShading: true   // desert sand
     });
@@ -37,40 +25,8 @@ var World = (function () {
     ground.name = 'ground';
     ground.userData.kind = 'ground';
     scene.add(ground);
-
-    // sample terrain height at (x,z) via a raycast helper
-    var _ray = new THREE.Raycaster();
-    var _down = new THREE.Vector3(0, -1, 0);
-    ground.userData.heightAt = function (x, z) {
-      _ray.set(new THREE.Vector3(x, 40, z), _down);
-      var hits = _ray.intersectObject(ground, false);
-      return hits.length ? hits[0].point.y : 0;
-    };
-  }
-
-  // A ring of jagged sandstone cliffs enclosing the arena — you're in a canyon.
-  function buildCanyon() {
-    var group = new THREE.Group();
-    var geo = new THREE.BoxGeometry(1, 1, 1);
-    var tones = [0x9c5a34, 0xb06a3c, 0x86482a, 0xa85f38];  // sandstone reds/browns
-    var mats = tones.map(function (c) { return new THREE.MeshStandardMaterial({ color: c, roughness: 1, flatShading: true, fog: false }); });
-    // two staggered rings for depth
-    for (var ring = 0; ring < 2; ring++) {
-      var N = 34, baseR = 56 + ring * 7;
-      for (var i = 0; i < N; i++) {
-        var a = (i / N) * Math.PI * 2 + ring * 0.09;
-        var h = Utils.randRange(12, 30) + ring * 6;
-        var w = Utils.randRange(7, 13);
-        var r = baseR + Utils.randRange(-3, 3);
-        var m = new THREE.Mesh(geo, mats[i % mats.length]);
-        m.scale.set(w, h, w);
-        m.position.set(Math.cos(a) * r, h / 2 - 3, Math.sin(a) * r);
-        m.rotation.y = Utils.randRange(0, Math.PI);
-        m.castShadow = true; m.receiveShadow = true;
-        group.add(m);
-      }
-    }
-    scene.add(group);
+    // terrain is flat, so height is always 0
+    ground.userData.heightAt = function () { return 0; };
   }
 
   function init(canvas) {
@@ -112,7 +68,6 @@ var World = (function () {
     scene.add(sunLight);
 
     buildTerrain();
-    buildCanyon();
 
     clock = new THREE.Clock();
 

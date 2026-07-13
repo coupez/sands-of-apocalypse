@@ -45,8 +45,12 @@ var Entities = (function () {
   ];
 
   var WOOD_IDS = ['log', 'palmwood', 'blog', 'elderwood'];  // any log fuels a fire
-  var ORE_IDS  = ['ore', 'iron', 'silver', 'pore'];         // any ore can be smelted
   function removeFirstItem(ids) { for (var i = 0; i < ids.length; i++) if (Skills.removeItem(ids[i])) return true; return false; }
+  // smelt the richest ore first; each metal needs a Smithing level
+  var SMELT_PLAN = [
+    { ore: 'pore',   level: 10 }, { ore: 'silver', level: 7 },
+    { ore: 'iron',   level: 4 },  { ore: 'ore',    level: 1 }
+  ];
 
   function terrainY(x, z) {
     if (World.ground && World.ground.userData.heightAt) return World.ground.userData.heightAt(x, z);
@@ -197,55 +201,53 @@ var Entities = (function () {
     if (ent.ring) ent.ring.material.color.setHex(T.color);
   }
 
-  // ---------- player camp (Arabian tent + carpet + flag + nameplate) ----------
+  // ---------- player camp: big open canopy (poles + sheet) over the whole base ----------
   function makeCamp(x, z, num, color) {
     var g = new THREE.Group();
-    var faceZ = (z < 0) ? 1 : -1;   // doorway/carpet face the centre of the map
+    var faceZ = (z < 0) ? 1 : -1;   // camp opens toward the centre of the map
+    var cz = faceZ * 3.0, hx = 9.5, hz = 6.0, poleH = 5.2;
 
-    // woven carpet in front of the tent (a patterned rug)
-    var rug = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.08, 3.0),
+    // big woven carpet under the whole camp
+    var rug = new THREE.Mesh(new THREE.BoxGeometry(2 * hx - 1, 0.08, 2 * hz - 1),
       new THREE.MeshStandardMaterial({ color: 0x7a2f3a, roughness: 0.9, flatShading: true }));
-    rug.position.set(0, 0.05, faceZ * 2.6); g.add(rug);
-    var rugTrim = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.1, 2.2),
-      new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.15, roughness: 0.9, flatShading: true }));
-    rugTrim.position.set(0, 0.06, faceZ * 2.6); g.add(rugTrim);
-    var rugCore = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 1.2),
-      new THREE.MeshStandardMaterial({ color: 0xe0b96a, roughness: 0.9, flatShading: true }));
-    rugCore.rotation.y = Math.PI / 4; rugCore.position.set(0, 0.07, faceZ * 2.6); g.add(rugCore);
+    rug.position.set(0, 0.05, cz); g.add(rug);
+    var rugTrim = new THREE.Mesh(new THREE.BoxGeometry(2 * hx - 4, 0.1, 2 * hz - 4),
+      new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.1, roughness: 0.9, flatShading: true }));
+    rugTrim.position.set(0, 0.06, cz); g.add(rugTrim);
+    var rugCore = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.12, 3.5),
+      new THREE.MeshStandardMaterial({ color: 0xd9b26a, roughness: 0.9, flatShading: true }));
+    rugCore.position.set(0, 0.07, cz); g.add(rugCore);
 
-    // the tent — cloth wall + peaked roof with a dark doorway, set back-left of camp
-    var tent = new THREE.Group();
-    tent.position.set(-3.2, 0, -faceZ * 1.2);
-    var clothMat = new THREE.MeshStandardMaterial({ color: 0xe4cf9c, roughness: 1, flatShading: true, side: THREE.DoubleSide });
-    var wall = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.8, 1.9, 10), clothMat);
-    wall.position.y = 0.95; tent.add(wall);
-    var roof = new THREE.Mesh(new THREE.ConeGeometry(3.2, 2.6, 10),
+    // four corner poles
+    var poleMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1c, roughness: 1, flatShading: true });
+    var corners = [[-hx, cz - hz], [hx, cz - hz], [-hx, cz + hz], [hx, cz + hz]];
+    for (var c = 0; c < 4; c++) {
+      var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, poleH, 6), poleMat);
+      pole.position.set(corners[c][0], poleH / 2, corners[c][1]); g.add(pole);
+    }
+
+    // cloth roof — hides when the (top-down) camera looks through it, so you can
+    // always see the camp underneath. A low central peak gives it a tented shape.
+    var roof = new THREE.Group();
+    var sheet = new THREE.Mesh(new THREE.BoxGeometry(2 * hx + 1.2, 0.12, 2 * hz + 1.2),
+      new THREE.MeshStandardMaterial({ color: 0xe4cf9c, roughness: 1, flatShading: true, side: THREE.DoubleSide }));
+    sheet.position.set(0, poleH, cz); roof.add(sheet);
+    var peak = new THREE.Mesh(new THREE.ConeGeometry(hz + 1.5, 1.8, 4),
       new THREE.MeshStandardMaterial({ color: 0xc23b3b, roughness: 1, flatShading: true }));
-    roof.position.y = 3.1; tent.add(roof);
-    // striped valance under the roof
-    var valance = new THREE.Mesh(new THREE.CylinderGeometry(2.85, 2.85, 0.4, 10, 1, true),
-      new THREE.MeshStandardMaterial({ color: color, roughness: 1, flatShading: true, side: THREE.DoubleSide }));
-    valance.position.y = 1.85; tent.add(valance);
-    // dark doorway facing the map centre
-    var door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 0.3),
-      new THREE.MeshStandardMaterial({ color: 0x1a1108, roughness: 1 }));
-    door.position.set(0, 0.75, faceZ * 2.6); tent.add(door);
-    // finial on top
-    var finial = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6),
-      new THREE.MeshStandardMaterial({ color: 0xffd24a, emissive: 0xffb020, emissiveIntensity: 0.5, roughness: 0.4, metalness: 0.6 }));
-    finial.position.y = 4.5; tent.add(finial);
-    g.add(tent);
+    peak.rotation.y = Math.PI / 4; peak.position.set(0, poleH + 0.9, cz); roof.add(peak);
+    var valance = new THREE.Mesh(new THREE.BoxGeometry(2 * hx + 1.2, 0.5, 0.12),
+      new THREE.MeshStandardMaterial({ color: color, roughness: 1, flatShading: true }));
+    valance.position.set(0, poleH - 0.25, cz + hz + 0.6); roof.add(valance);
+    g.add(roof);
 
-    // banner flag beside the tent
-    var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4.4, 6),
-      new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 1, flatShading: true }));
-    pole.position.set(2.9, 2.2, faceZ * 1.5); g.add(pole);
-    var flag = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 0.06),
+    // banner flag on a front corner pole
+    var flag = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.95, 0.06),
       new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.35, roughness: 0.6, side: THREE.DoubleSide }));
-    flag.position.set(3.6, 3.7, faceZ * 1.5); g.add(flag);
+    flag.position.set(hx - 0.75, poleH - 0.5, cz + hz); g.add(flag);
 
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    markOccluder(roof);
     scene.add(g);
     var camp = { num: num, name: "Player " + num + "'s Camp",
       colorHex: '#' + ('000000' + color.toString(16)).slice(-6),
@@ -323,9 +325,18 @@ var Entities = (function () {
         msg = removeFirstItem(WOOD_IDS)
           ? (lightStation(ent), 'You fire up the furnace.')
           : 'You need a log to fire up the furnace.';
-      } else if (removeFirstItem(ORE_IDS)) {
-        Skills.addItem('bar'); Skills.addXp('smithing', 15); msg = 'You smelt a bronze bar.';
-      } else { msg = 'You need ore to smelt (the furnace is lit).'; }
+      } else {
+        // smelt the best ore the player has the Smithing level for
+        var smelted = false, gatedMsg = null;
+        for (var si = 0; si < SMELT_PLAN.length; si++) {
+          var sp = SMELT_PLAN[si];
+          if (!Skills.hasItem(sp.ore)) continue;
+          if (Skills.data.smithing.level < sp.level) { gatedMsg = 'Needs Smithing ' + sp.level + ' to smelt ' + Skills.ITEMS[sp.ore].name + '.'; continue; }
+          Skills.removeItem(sp.ore); Skills.addItem(Skills.SMELT[sp.ore]); Skills.addXp('smithing', 8 + sp.level * 2);
+          msg = 'You smelt a ' + Skills.ITEMS[Skills.SMELT[sp.ore]].name + '.'; smelted = true; break;
+        }
+        if (!smelted) msg = gatedMsg || 'You need ore to smelt (the furnace is lit).';
+      }
     } else if (ent.kind === 'campfire') {
       if (!ent.lit) {
         msg = removeFirstItem(WOOD_IDS)
@@ -339,9 +350,8 @@ var Entities = (function () {
         msg = cooked ? 'You cook the catch over the fire.' : 'You have no raw catch to cook.';
       }
     } else if (ent.kind === 'anvil') {
-      msg = Skills.removeItem('bar')
-        ? (Skills.addItem('sword'), Skills.addXp('smithing', 20), 'You smith a Bronze Scimitar from a bar.')
-        : 'You need a bronze bar to smith on the anvil.';
+      if (window.UI && UI.openSmithMenu) UI.openSmithMenu();   // pop the "what to smith?" chooser
+      else msg = 'You need the smithing menu to forge here.';
     }
     if (window.UI && msg) UI.showActionText(msg);
     Game.log.push('station:' + ent.kind + (ent.lit ? ':lit' : ''));

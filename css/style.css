@@ -292,10 +292,11 @@ html, body {
   font-size: 26px;
   cursor: pointer;
 }
-/* head, body and legs sit centered across both columns */
+/* head, body, legs and feet sit centered across both columns */
 .equip-slot.slot-head,
 .equip-slot.slot-body,
-.equip-slot.slot-legs { grid-column: 1 / span 2; justify-self: center; }
+.equip-slot.slot-legs,
+.equip-slot.slot-feet { grid-column: 1 / span 2; justify-self: center; }
 .equip-slot.slot-lhand { grid-column: 1; }
 .equip-slot.slot-rhand { grid-column: 2; }
 .equip-slot.empty { cursor: default; border-style: dashed; }
@@ -329,6 +330,45 @@ html, body {
   white-space: nowrap;
 }
 .ctx-item:hover { background: rgba(120,200,70,0.22); color: #fff; }
+
+/* Smithing menu (anvil) */
+#smith-menu {
+  position: fixed;
+  z-index: 60;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 460px; max-width: 92vw;
+  max-height: 78vh; overflow-y: auto;
+  background: rgba(12, 18, 9, 0.97);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+  backdrop-filter: blur(3px);
+}
+.smith-title {
+  font-size: 15px; font-weight: 700; letter-spacing: 0.5px;
+  color: var(--toxic); text-shadow: 0 0 6px var(--toxic-glow);
+  border-bottom: 1px solid var(--panel-border);
+  padding-bottom: 8px; margin-bottom: 8px;
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.smith-lvl { font-size: 11px; color: var(--ink); font-weight: 400; }
+.smith-list { display: flex; flex-direction: column; gap: 3px; }
+.smith-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 0 8px; align-items: center;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer;
+}
+.smith-item:hover:not(.disabled) { background: rgba(120,200,70,0.2); }
+.si-icon { grid-row: 1 / 3; font-size: 20px; text-align: center; }
+.si-name { font-size: 13px; font-weight: 600; color: #eaf6dc; }
+.si-cost { grid-column: 3; grid-row: 1; font-size: 11px; color: var(--ink); }
+.si-note { grid-column: 2 / 4; grid-row: 2; font-size: 11px; color: var(--toxic); }
+.smith-item.disabled { opacity: 0.5; cursor: not-allowed; }
+.smith-item.disabled .si-note { color: #d98a6a; }
 #inventory-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

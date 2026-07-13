@@ -31,7 +31,10 @@ var Skills = (function () {
     cshrimp: { id: 'cshrimp', name: 'Grilled Sardine', icon: '🍢' },
     clobster:{ id: 'clobster',name: 'Grilled Crab',    icon: '🦀' },
     cwhale:  { id: 'cwhale',  name: 'Grilled Perch',   icon: '🍖' },
-    bar:     { id: 'bar',     name: 'Bronze Bar',    icon: '🟫' }
+    bronzebar: { id: 'bronzebar', name: 'Bronze Bar', icon: '🟫' },
+    ironbar:   { id: 'ironbar',   name: 'Iron Bar',   icon: '⬛' },
+    silverbar: { id: 'silverbar', name: 'Silver Bar', icon: '⬜' },
+    goldbar:   { id: 'goldbar',   name: 'Gold Bar',   icon: '🟨' }
   };
 
   // Only COOKED seafood is edible; eat raw and you gain nothing. Cook it at a
@@ -41,8 +44,8 @@ var Skills = (function () {
   var COOK = { shrimp: 'cshrimp', lobster: 'clobster', whale: 'cwhale' };
   function isFood(id) { return Object.prototype.hasOwnProperty.call(FOOD, id); }
 
-  // Equipment slots the player has: head, body, legs, and a weapon in each hand.
-  var EQUIP_SLOTS = ['head', 'body', 'legs', 'lhand', 'rhand'];
+  // Equipment slots: head, body, legs, feet, and a weapon/off-hand in each hand.
+  var EQUIP_SLOTS = ['head', 'body', 'legs', 'feet', 'lhand', 'rhand'];
 
   // Equippable gear. Each piece has a slot and a set of stat bonuses:
   //   maxHit (extra damage), acc (accuracy), def (damage mitigation),
@@ -65,7 +68,60 @@ var Skills = (function () {
     greaves: { id: 'greaves', name: 'Leather Greaves',    icon: '👖', slot: 'legs', bonus: { def: 4, hp: 5 } }
   };
 
+  // ---- smithing: metals × gear types → generated equippable gear + recipes ----
+  var METALS = [
+    { key: 'bronze', name: 'Bronze', bar: 'bronzebar', level: 1 },
+    { key: 'iron',   name: 'Iron',   bar: 'ironbar',   level: 4 },
+    { key: 'silver', name: 'Silver', bar: 'silverbar', level: 7 },
+    { key: 'gold',   name: 'Gold',   bar: 'goldbar',   level: 10 }
+  ];
+  var GTYPES = [
+    { key: 'helmet',    slot: 'head',  name: 'Helmet',    icon: '⛑️', bars: 1, per: { def: 2, hp: 1 } },
+    { key: 'platebody', slot: 'body',  name: 'Platebody', icon: '🦺', bars: 3, per: { def: 4, hp: 3 } },
+    { key: 'platelegs', slot: 'legs',  name: 'Platelegs', icon: '👖', bars: 2, per: { def: 3, hp: 2 } },
+    { key: 'boots',     slot: 'feet',  name: 'Boots',     icon: '🥾', bars: 1, per: { def: 1, hp: 1 } },
+    { key: 'shield',    slot: 'lhand', name: 'Shield',    icon: '🛡️', bars: 2, per: { def: 3, hp: 2 } },
+    { key: 'scimitar',  slot: 'rhand', name: 'Scimitar',  icon: '⚔️', bars: 2, per: { maxHit: 2, acc: 0.04 } }
+  ];
+  // ore -> bar produced when smelted (each ore makes its own metal bar)
+  var SMELT = { ore: 'bronzebar', iron: 'ironbar', silver: 'silverbar', pore: 'goldbar' };
+
+  var SMITH_RECIPES = [];
+  (function buildSmithing() {
+    for (var mi = 0; mi < METALS.length; mi++) {
+      var M = METALS[mi], mult = mi + 1;
+      for (var ti = 0; ti < GTYPES.length; ti++) {
+        var T = GTYPES[ti], bonus = {};
+        for (var k in T.per) bonus[k] = (k === 'acc') ? +(T.per[k] * mult).toFixed(2) : T.per[k] * mult;
+        var id = M.key + '_' + T.key;
+        GEAR[id] = { id: id, name: M.name + ' ' + T.name, icon: T.icon, slot: T.slot, bonus: bonus };
+        SMITH_RECIPES.push({ id: id, name: M.name + ' ' + T.name, icon: T.icon,
+          bar: M.bar, barName: M.name + ' Bar', bars: T.bars, level: M.level });
+      }
+    }
+  })();
+
   function isGear(id) { return !!GEAR[id]; }
+  function countItem(id) { var n = 0; for (var i = 0; i < Game.inventory.length; i++) if (Game.inventory[i] && Game.inventory[i].id === id) n++; return n; }
+
+  function smithRecipe(id) { for (var i = 0; i < SMITH_RECIPES.length; i++) if (SMITH_RECIPES[i].id === id) return SMITH_RECIPES[i]; return null; }
+  // returns null if craftable, else a reason string
+  function canSmith(r) {
+    if (!r) return 'no recipe';
+    if (data.smithing.level < r.level) return 'Needs Smithing ' + r.level;
+    if (countItem(r.bar) < r.bars) return 'Needs ' + r.bars + ' ' + r.barName;
+    return null;
+  }
+  function smith(id) {
+    var r = smithRecipe(id), why = canSmith(r);
+    if (why) { if (window.UI) UI.showActionText(why); return false; }
+    for (var b = 0; b < r.bars; b++) removeItem(r.bar);   // frees slots, so the result always fits
+    addItem(r.id);
+    addXp('smithing', 10 * r.bars + r.level * 2);
+    if (window.UI) UI.showActionText('You smith a ' + r.name + '.');
+    Game.log.push('smith:' + r.id);
+    return true;
+  }
 
   function init() {
     for (var k in data) { data[k].xp = 0; data[k].level = 1; }
@@ -74,7 +130,7 @@ var Skills = (function () {
     Game.inventory = [];
     for (var s = 0; s < Game.invMax; s++) Game.inventory[s] = null;
     // equipment slots, all empty to start
-    Game.equipment = { head: null, body: null, legs: null, lhand: null, rhand: null };
+    Game.equipment = { head: null, body: null, legs: null, feet: null, lhand: null, rhand: null };
     applyEquipmentToStats();
     if (window.UI) { UI.updateSkills(); UI.updateInventory(); UI.updateEquipment(); }
   }
@@ -258,7 +314,8 @@ var Skills = (function () {
     equipFromInventory: equipFromInventory, unequip: unequip,
     eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
-    COOK: COOK,
+    smith: smith, canSmith: canSmith, smithRecipe: smithRecipe, countItem: countItem,
+    COOK: COOK, SMELT: SMELT, SMITH_RECIPES: SMITH_RECIPES,
     get data() { return data; },
     ITEMS: ITEMS, GEAR: GEAR, EQUIP_SLOTS: EQUIP_SLOTS, SKILL_ORDER: SKILL_ORDER
   };
