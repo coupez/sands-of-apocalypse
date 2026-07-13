@@ -4,14 +4,16 @@
 // ============================================================
 
 var Skills = (function () {
-  var SKILL_ORDER = ['attack', 'strength', 'defence', 'woodcutting', 'mining', 'fishing'];
+  var SKILL_ORDER = ['attack', 'strength', 'woodcutting', 'mining', 'fishing', 'cooking', 'smithing'];
+  // combat skills cap at 20; gathering/production skills cap at 12
   var data = {
-    attack:      { name: 'Attack',      icon: '⚔️', xp: 0, level: 1 },
-    strength:    { name: 'Strength',    icon: '💪', xp: 0, level: 1 },
-    defence:     { name: 'Defence',     icon: '🛡️', xp: 0, level: 1 },
-    woodcutting: { name: 'Woodcutting', icon: '🪓', xp: 0, level: 1 },
-    mining:      { name: 'Mining',      icon: '⛏️', xp: 0, level: 1 },
-    fishing:     { name: 'Fishing',     icon: '🎣', xp: 0, level: 1 }
+    attack:      { name: 'Attack',      icon: '⚔️', xp: 0, level: 1, max: 20 },
+    strength:    { name: 'Strength',    icon: '💪', xp: 0, level: 1, max: 20 },
+    woodcutting: { name: 'Woodcutting', icon: '🪓', xp: 0, level: 1, max: 12 },
+    mining:      { name: 'Mining',      icon: '⛏️', xp: 0, level: 1, max: 12 },
+    fishing:     { name: 'Fishing',     icon: '🎣', xp: 0, level: 1, max: 12 },
+    cooking:     { name: 'Cooking',     icon: '🍳', xp: 0, level: 1, max: 12 },
+    smithing:    { name: 'Smithing',    icon: '🔨', xp: 0, level: 1, max: 12 }
   };
 
   var ITEMS = {
@@ -78,7 +80,7 @@ var Skills = (function () {
     if (!s || amount <= 0) return;
     var before = s.level;
     s.xp += amount;
-    s.level = Utils.levelForXp(s.xp);
+    s.level = Math.min(Utils.levelForXp(s.xp), s.max || 99);
     if (s.level > before) {
       SFX.level();
       if (window.UI) UI.toast(s.name, s.level);

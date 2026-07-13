@@ -67,10 +67,14 @@ var SelfTest = (function () {
           Game.inventory.some(function (i) { return i && i.id === 'ore'; }));
       }
 
-      // -- new skills exist --
+      // -- skill roster --
       assert('skill: strength', !!Skills.data.strength);
-      assert('skill: defence', !!Skills.data.defence);
       assert('skill: fishing', !!Skills.data.fishing);
+      assert('skill: cooking added', !!Skills.data.cooking);
+      assert('skill: smithing added', !!Skills.data.smithing);
+      assert('defence skill removed', !Skills.data.defence);
+      assert('combat skills cap at 20', Skills.data.attack.max === 20 && Skills.data.strength.max === 20);
+      assert('other skills cap at 12', Skills.data.mining.max === 12 && Skills.data.cooking.max === 12);
 
       // -- fishing (a shrimp pond near a camp: reqLevel 1) --
       var pool = Entities.pools.filter(function (p) { return p.active && p.reqLevel === 1; })[0];
@@ -113,9 +117,8 @@ var SelfTest = (function () {
       assert('enemy attacked player (aggro)',
         Game.log.some(function (l) { return l.indexOf('enemyAttack:') === 0; }));
 
-      // -- combat trains Strength & Defence --
+      // -- combat trains Strength --
       assert('strength trained by dealing damage', Skills.data.strength.xp > 0, 'xp=' + Skills.data.strength.xp);
-      assert('defence trained by being attacked', Skills.data.defence.xp > 0, 'xp=' + Skills.data.defence.xp);
 
       // -- level gating: high-tier tree yields nothing at low level --
       var hardTree = Entities.trees.filter(function (t) { return t.reqLevel > 1; })[0];
@@ -173,6 +176,7 @@ var SelfTest = (function () {
         Skills.addItem('ore');
         Entities.useStation(furnace);                 // ore smelts into a bar
         assert('lit furnace smelts ore into a bar', invCount('bar') === 1, 'bars=' + invCount('bar'));
+        assert('smelting trains Smithing', Skills.data.smithing.xp > 0, 'xp=' + Skills.data.smithing.xp);
       }
       var anvil = Entities.stations.filter(function (s) { return s.kind === 'anvil'; })[0];
       assert('anvil exists in town', !!anvil);
@@ -190,7 +194,13 @@ var SelfTest = (function () {
         Skills.addItem('shrimp');
         Entities.useStation(campfire);                // raw shrimp cooks into cooked shrimp
         assert('lit campfire cooks raw shrimp into cooked', invCount('cshrimp') === 1, 'cshrimp=' + invCount('cshrimp'));
+        assert('cooking trains Cooking', Skills.data.cooking.xp > 0, 'xp=' + Skills.data.cooking.xp);
       }
+      // -- level caps: gathering/production cap at 12, combat at 20 --
+      Skills.data.woodcutting.xp = 0; Skills.addXp('woodcutting', 9999999);
+      assert('woodcutting caps at level 12', Skills.data.woodcutting.level === 12, 'lvl=' + Skills.data.woodcutting.level);
+      Skills.data.attack.xp = 0; Skills.addXp('attack', 9999999);
+      assert('attack caps at level 20', Skills.data.attack.level === 20, 'lvl=' + Skills.data.attack.level);
       clearBag();
 
       // -- items: non-stacking, edible fish, dropping --

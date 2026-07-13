@@ -247,7 +247,7 @@ var Entities = (function () {
           ? (lightStation(ent), 'You fire up the furnace.')
           : 'You need a log to fire up the furnace.';
       } else if (Skills.removeItem('ore') || Skills.removeItem('pore')) {
-        Skills.addItem('bar'); Skills.addXp('mining', 20); msg = 'You smelt a metal bar.';
+        Skills.addItem('bar'); Skills.addXp('smithing', 15); msg = 'You smelt a bronze bar.';
       } else { msg = 'You need ore to smelt (the furnace is lit).'; }
     } else if (ent.kind === 'campfire') {
       if (!ent.lit) {
@@ -257,14 +257,14 @@ var Entities = (function () {
       } else {
         var raws = ['shrimp', 'lobster', 'whale'], cooked = null;
         for (var i = 0; i < raws.length; i++) {
-          if (Skills.removeItem(raws[i])) { cooked = Skills.COOK[raws[i]]; Skills.addItem(cooked); Skills.addXp('fishing', 10); break; }
+          if (Skills.removeItem(raws[i])) { cooked = Skills.COOK[raws[i]]; Skills.addItem(cooked); Skills.addXp('cooking', 12); break; }
         }
         msg = cooked ? 'You cook the catch over the fire.' : 'You have no raw catch to cook.';
       }
     } else if (ent.kind === 'anvil') {
       msg = Skills.removeItem('bar')
-        ? (Skills.addItem('sword'), Skills.addXp('attack', 8), 'You smith a Scrap Sword from a bar.')
-        : 'You need a metal bar to smith on the anvil.';
+        ? (Skills.addItem('sword'), Skills.addXp('smithing', 20), 'You smith a Bronze Scimitar from a bar.')
+        : 'You need a bronze bar to smith on the anvil.';
     }
     if (window.UI && msg) UI.showActionText(msg);
     Game.log.push('station:' + ent.kind + (ent.lit ? ':lit' : ''));

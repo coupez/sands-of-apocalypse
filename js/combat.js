@@ -10,7 +10,8 @@ var Combat = (function () {
 
   function playerMaxHit() {
     var b = Skills.equipBonus();
-    return 2 + Math.floor((Skills.data.strength.level + b.str) * 0.5) + b.maxHit;
+    // each Strength level adds +2 max hit, so even level 2 hits noticeably harder
+    return 2 + (Skills.data.strength.level + b.str) * 2 + b.maxHit;
   }
   function playerAccuracy(targetDef) {
     var b = Skills.equipBonus();
@@ -62,15 +63,14 @@ var Combat = (function () {
       Game.log.push('dodgeAvoided');
       return;
     }
-    // Defence (skill + armour bonus) lowers the enemy's chance to land a blow
-    var def = Skills.data.defence.level + Skills.equipBonus().def;
-    var hitChance = Utils.clamp(0.6 - def * 0.015, 0.15, 0.85);
+    // armour alone lowers the enemy's chance to land a blow (Defence skill removed)
+    var def = Skills.equipBonus().def;
+    var hitChance = Utils.clamp(0.6 - def * 0.02, 0.15, 0.85);
     var dmg = 0, type = 'miss';
     if (Utils.rand() < hitChance) { dmg = Utils.randInt(1, enemy.maxHit); type = 'hit'; }
     var p = player.position;
     _v.set(p.x, p.y + 2.6, p.z);
     if (window.UI) UI.spawnHitsplat(_v, dmg, type);
-    Skills.addXp('defence', 3 + dmg);          // tanking trains Defence
     Game.log.push('enemyAttack:' + dmg);
     if (dmg > 0) player.takeDamage(dmg);
   }
@@ -101,7 +101,6 @@ var Combat = (function () {
       return;
     }
     if (window.UI) UI.spawnHitsplat(_v, dmg, dmg > 0 ? 'hit' : 'miss');
-    Skills.addXp('defence', 2 + dmg);
     Game.log.push('pvpHit:' + dmg);
     if (dmg > 0) player.takeDamage(dmg);
   }

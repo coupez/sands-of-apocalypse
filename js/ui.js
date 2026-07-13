@@ -132,7 +132,7 @@ var UI = (function () {
       row.innerHTML =
         '<span class="skill-icon">' + d.icon + '</span>' +
         '<span class="skill-name">' + d.name + '</span>' +
-        '<span class="skill-level"><b id="lvl-' + k + '">1</b>/99</span>' +
+        '<span class="skill-level"><b id="lvl-' + k + '">1</b>/' + (d.max || 99) + '</span>' +
         '<div class="xp-bar"><div class="xp-fill" id="xp-' + k + '"></div></div>';
       el.skillsList.appendChild(row);
     }
@@ -291,9 +291,14 @@ var UI = (function () {
       var barEl = $('xp-' + k);
       if (lvlEl) lvlEl.textContent = d.level;
       if (barEl) {
-        var lo = Utils.xpForLevel(d.level);
-        var hi = Utils.xpForLevel(Math.min(d.level + 1, 99));
-        var frac = hi > lo ? (d.xp - lo) / (hi - lo) : 1;
+        var mx = d.max || 99;
+        var frac;
+        if (d.level >= mx) { frac = 1; }                 // maxed → full bar
+        else {
+          var lo = Utils.xpForLevel(d.level);
+          var hi = Utils.xpForLevel(Math.min(d.level + 1, mx));
+          frac = hi > lo ? (d.xp - lo) / (hi - lo) : 1;
+        }
         barEl.style.width = Utils.clamp(frac, 0, 1) * 100 + '%';
       }
     });
