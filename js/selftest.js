@@ -394,7 +394,7 @@ var SelfTest = (function () {
         't' + Entities.trees.length + ' r' + Entities.rocks.length + ' e' + Entities.enemies.length);
       // resources spread across the field but stay OUT of the centre ceremony plaza
       assert('centre plaza is kept clear of resources',
-        Entities.trees.concat(Entities.rocks).every(function (e) { return Math.hypot(e.position.x, e.position.z) >= 24; }),
+        Entities.trees.concat(Entities.rocks).every(function (e) { return Math.hypot(e.position.x, e.position.z) >= 18; }),
         'min r=' + Math.round(Math.min.apply(null, Entities.trees.concat(Entities.rocks).map(function (e) { return Math.hypot(e.position.x, e.position.z); }))));
       // smithed gear uses distinct per-type icons (not a single '■')
       assert('smithed gear has distinct type icons',

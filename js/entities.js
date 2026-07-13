@@ -28,11 +28,12 @@ var Entities = (function () {
     { name: 'Ancient Palm', reqLevel: 7,  itemId: 'blog',      xp: 70,  style: 'palm', bark: 0x5a3a1c, frond: 0x4a7a2a, dates: 0xc86a2a, h: [6.0, 7.5] },
     { name: 'Elder Palm',   reqLevel: 10, itemId: 'elderwood', xp: 120, style: 'palm', bark: 0x4a2f18, frond: 0x2e8f3a, dates: 0xffd24a, h: [8.5, 10.5], scale: 1.15 }
   ];
+  // Each vein has its own distinct silhouette (built in makeRock), not just a recolour.
   var ROCK_TIERS = [
-    { name: 'Copper Vein', reqLevel: 1,  itemId: 'ore',    xp: 30,  ore: 0xc87838, rock: 0xb59468 },
-    { name: 'Iron Vein',   reqLevel: 4,  itemId: 'iron',   xp: 55,  ore: 0x9a8a7a, rock: 0xa08868 },
-    { name: 'Silver Vein', reqLevel: 7,  itemId: 'silver', xp: 90,  ore: 0xd8d8e0, rock: 0x9890a0 },
-    { name: 'Gold Vein',   reqLevel: 10, itemId: 'pore',   xp: 140, ore: 0xffd24a, rock: 0xa8895c }
+    { name: 'Copper Vein', reqLevel: 1,  itemId: 'ore',    xp: 30,  ore: 0xd07a30, rock: 0x9a9aa2 },  // silvery rock, copper flecks
+    { name: 'Iron Vein',   reqLevel: 4,  itemId: 'iron',   xp: 55,  ore: 0x5a5a64, rock: 0x8a7c6a },  // lumpy boulder, dark iron
+    { name: 'Silver Vein', reqLevel: 7,  itemId: 'silver', xp: 90,  ore: 0xeaeaf2, rock: 0x8890a0 },  // crystal spikes
+    { name: 'Gold Vein',   reqLevel: 10, itemId: 'pore',   xp: 140, ore: 0xffd24a, rock: 0x8a6a3c }   // glowing gold nuggets
   ];
   // Oasis fishing spots, gated by Fishing level (ids kept: shrimp/lobster/whale).
   var FISH_TIERS = [
@@ -170,16 +171,62 @@ var Entities = (function () {
     var T = ROCK_TIERS[tierIdx];
     var g = new THREE.Group();
     var rockMat = new THREE.MeshStandardMaterial({ color: T.rock, roughness: 1, flatShading: true });
-    var oreMat = new THREE.MeshStandardMaterial({ color: 0x243018, emissive: T.ore, emissiveIntensity: 0.7, roughness: 0.6, flatShading: true });
-    var body = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(1.0, 1.5), 0), rockMat);
-    body.position.y = 0.7; body.rotation.set(Utils.randRange(0, 1), Utils.randRange(0, 3), Utils.randRange(0, 1)); g.add(body);
-    var veins = new THREE.Group();
-    for (var i = 0; i < 6; i++) {
-      var v = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(0.12, 0.24), 0), oreMat);
-      var a = Utils.randRange(0, Math.PI * 2), r = Utils.randRange(0.6, 1.1);
-      v.position.set(Math.cos(a) * r, 0.7 + Utils.randRange(-0.3, 0.5), Math.sin(a) * r);
-      veins.add(v);
+    var veins = new THREE.Group(), body, oreMat, a, r, i;
+
+    if (tierIdx === 0) {
+      // Copper — a jagged SILVERY rock studded with copper crystal flecks
+      oreMat = new THREE.MeshStandardMaterial({ color: 0x3a2410, emissive: T.ore, emissiveIntensity: 0.85, roughness: 0.5, metalness: 0.4, flatShading: true });
+      body = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(1.0, 1.4), 0), rockMat);
+      body.position.y = 0.7; body.rotation.set(Utils.randRange(0, 1), Utils.randRange(0, 3), Utils.randRange(0, 1)); g.add(body);
+      for (i = 0; i < 7; i++) {
+        var fleck = new THREE.Mesh(new THREE.OctahedronGeometry(Utils.randRange(0.12, 0.22), 0), oreMat);
+        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.5, 1.0);
+        fleck.position.set(Math.cos(a) * r, 0.7 + Utils.randRange(-0.3, 0.6), Math.sin(a) * r);
+        fleck.rotation.set(Utils.rand(), Utils.rand(), Utils.rand());
+        veins.add(fleck);
+      }
+    } else if (tierIdx === 1) {
+      // Iron — a big, rounded, LUMPY boulder with dark metallic streaks
+      body = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(1.3, 1.7), 1), rockMat);
+      body.position.y = 0.9; body.scale.set(1.2, 0.9, 1.1); body.rotation.y = Utils.randRange(0, 3); g.add(body);
+      for (i = 0; i < 5; i++) { // bumps → boulder texture
+        var lump = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(0.3, 0.55), 0), rockMat);
+        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.7, 1.2);
+        lump.position.set(Math.cos(a) * r, 0.9 + Utils.randRange(-0.4, 0.5), Math.sin(a) * r);
+        lump.rotation.set(Utils.rand(), Utils.rand(), Utils.rand()); g.add(lump);
+      }
+      oreMat = new THREE.MeshStandardMaterial({ color: T.ore, roughness: 0.55, metalness: 0.7, flatShading: true });
+      for (i = 0; i < 5; i++) {
+        var chunk = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(0.18, 0.3), 0), oreMat);
+        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.5, 1.1);
+        chunk.position.set(Math.cos(a) * r, 0.9 + Utils.randRange(-0.3, 0.6), Math.sin(a) * r);
+        veins.add(chunk);
+      }
+    } else if (tierIdx === 2) {
+      // Silver — a cluster of bright crystal SPIKES on a low rock base
+      body = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(0.9, 1.2), 0), rockMat);
+      body.position.y = 0.5; body.scale.y = 0.65; g.add(body);
+      oreMat = new THREE.MeshStandardMaterial({ color: 0x2a3040, emissive: T.ore, emissiveIntensity: 0.55, roughness: 0.2, metalness: 0.85, flatShading: true });
+      for (i = 0; i < 7; i++) {
+        var spike = new THREE.Mesh(new THREE.ConeGeometry(Utils.randRange(0.11, 0.2), Utils.randRange(0.7, 1.4), 5), oreMat);
+        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.05, 0.6);
+        spike.position.set(Math.cos(a) * r, 0.75 + Utils.randRange(0, 0.35), Math.sin(a) * r);
+        spike.rotation.z = Utils.randRange(-0.45, 0.45); spike.rotation.x = Utils.randRange(-0.45, 0.45);
+        veins.add(spike);
+      }
+    } else {
+      // Gold — a dark rock cracked open with big GLOWING gold nuggets
+      body = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(1.1, 1.5), 0), rockMat);
+      body.position.y = 0.75; body.rotation.set(Utils.randRange(0, 1), Utils.randRange(0, 3), Utils.randRange(0, 1)); g.add(body);
+      oreMat = new THREE.MeshStandardMaterial({ color: 0x4a3410, emissive: T.ore, emissiveIntensity: 0.95, roughness: 0.3, metalness: 0.9, flatShading: true });
+      for (i = 0; i < 6; i++) {
+        var nugget = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(0.2, 0.34), 0), oreMat);
+        a = Utils.randRange(0, Math.PI * 2); r = Utils.randRange(0.4, 0.95);
+        nugget.position.set(Math.cos(a) * r, 0.75 + Utils.randRange(-0.2, 0.6), Math.sin(a) * r);
+        veins.add(nugget);
+      }
     }
+
     g.add(veins);
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
@@ -532,7 +579,7 @@ var Entities = (function () {
   // A big flat sandstone floor ringed with broken columns + weathered statues, so
   // the centre reads as an ancient ceremony ground (no resources spawn here).
   function makeCeremonyPlaza() {
-    var PLAZA_R = 20;
+    var PLAZA_R = 14;
     var g = new THREE.Group();
     var sand = new THREE.MeshStandardMaterial({ color: 0xcdb082, roughness: 1, flatShading: true });
     var sandDark = new THREE.MeshStandardMaterial({ color: 0xb59468, roughness: 1, flatShading: true });
@@ -619,7 +666,7 @@ var Entities = (function () {
       var b = makeEnemy(camp.x + Math.cos(a) * r, camp.z + Math.sin(a) * r, w.tier);
       b.name = w.name; b.reqLevel = 1; b.noRespawn = true; b.banditCamp = camp; b.local = true;
       b.hp = b.maxHp = w.hp; b.maxHit = w.maxHit;
-      b.home.set(camp.x, 0, camp.z); b.leashRange = 70; b.wanderRadius = 12;
+      b.home.set(camp.x, 0, camp.z); b.leashRange = 45; b.wanderRadius = 10;
       if (w.scale) { b.mesh.scale.setScalar(w.scale); b.tierScale = w.scale; b.isBoss = true; }
       bandits.push(b); camp.alive.push(b);
     }
@@ -1193,37 +1240,37 @@ var Entities = (function () {
 
     // Resources spread evenly around the whole field in concentric rings, richest
     // nearest the plaza. Totals 11 trees / 8 rocks — mirrored in server.js RES.
-    scatter(5, 52, 80, placed, 8).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
-    scatter(3, 40, 56, placed, 8).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
-    scatter(2, 30, 42, placed, 8).forEach(function (p) { trees.push(makeTree(p.x, p.z, 2)); placed.push(trees[trees.length - 1]); });
-    scatter(1, clearR, clearR + 8, placed, 8).forEach(function (p) { trees.push(makeTree(p.x, p.z, 3)); placed.push(trees[trees.length - 1]); });
-    scatter(4, 52, 80, placed, 8).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
-    scatter(2, 40, 56, placed, 8).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
-    scatter(1, 30, 42, placed, 8).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 2)); placed.push(rocks[rocks.length - 1]); });
-    scatter(1, clearR, clearR + 8, placed, 8).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 3)); placed.push(rocks[rocks.length - 1]); });
+    scatter(5, 34, 46, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
+    scatter(3, 27, 37, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
+    scatter(2, 21, 29, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 2)); placed.push(trees[trees.length - 1]); });
+    scatter(1, clearR, clearR + 5, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 3)); placed.push(trees[trees.length - 1]); });
+    scatter(4, 34, 46, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
+    scatter(2, 27, 37, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
+    scatter(1, 21, 29, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 2)); placed.push(rocks[rocks.length - 1]); });
+    scatter(1, clearR, clearR + 5, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 3)); placed.push(rocks[rocks.length - 1]); });
 
     // --- neutral fishing spots + desert scenery, spread around the ring ---
-    [ { t: 0, x: -38, z: -30 }, { t: 1, x: 40, z: 28 }, { t: 2, x: 30, z: -34 }, { t: 1, x: -34, z: 40 } ].forEach(function (pp) {
+    [ { t: 0, x: -23, z: -18 }, { t: 1, x: 24, z: 17 }, { t: 2, x: 18, z: -22 }, { t: 1, x: -20, z: 24 } ].forEach(function (pp) {
       pools.push(makePond(pp.x, pp.z, pp.t)); placed.push(pools[pools.length - 1]);
     });
-    scatter(16, clearR, 84, placed, 6).forEach(function (p) { makeCactus(p.x, p.z); placed.push(p); });
-    scatter(20, clearR, 88, placed, 5).forEach(function (p) { makeBoulder(p.x, p.z); placed.push(p); });
-    scatter(24, clearR, 90, placed, 3).forEach(function (p) { makeBush(p.x, p.z); });
+    scatter(12, clearR, 50, placed, 5).forEach(function (p) { makeCactus(p.x, p.z); placed.push(p); });
+    scatter(16, clearR, 54, placed, 5).forEach(function (p) { makeBoulder(p.x, p.z); placed.push(p); });
+    scatter(18, clearR, 56, placed, 3).forEach(function (p) { makeBush(p.x, p.z); });
 
     // a brazier at each camp for light
     clusterAround(C.north.x, C.north.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
     clusterAround(C.south.x, C.south.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
 
     // --- ambient life: skittering rats (attackable, tiny XP) + birds circling overhead ---
-    scatter(9, clearR, 84, placed, 8).forEach(function (p) { makeRat(p.x, p.z); });
+    scatter(8, clearR, 50, placed, 6).forEach(function (p) { makeRat(p.x, p.z); });
     makeBird(0, 0, 55, 30, 1); makeBird(20, -15, 40, 26, -1); makeBird(-30, 10, 48, 34, 1);
     makeBird(10, 40, 36, 24, 1); makeBird(-20, -35, 44, 32, -1);
 
     // enemies still spawn (for the self-test + server alignment) but are hidden
     // in the live game unless ENEMIES_ENABLED. Placed in an outer ring.
-    scatter(4, 12, 30, placed, 6).forEach(function (p) { var e = makeEnemy(p.x, p.z, 0); enemies.push(e); placed.push(e); });
-    scatter(3, 28, 44, placed, 7).forEach(function (p) { var e = makeEnemy(p.x, p.z, 1); enemies.push(e); placed.push(e); });
-    scatter(2, 42, 56, placed, 8).forEach(function (p) { var e = makeEnemy(p.x, p.z, 2); enemies.push(e); placed.push(e); });
+    scatter(4, 10, 24, placed, 5).forEach(function (p) { var e = makeEnemy(p.x, p.z, 0); enemies.push(e); placed.push(e); });
+    scatter(3, 22, 34, placed, 5).forEach(function (p) { var e = makeEnemy(p.x, p.z, 1); enemies.push(e); placed.push(e); });
+    scatter(2, 32, 44, placed, 5).forEach(function (p) { var e = makeEnemy(p.x, p.z, 2); enemies.push(e); placed.push(e); });
     if (!enemiesLive) {
       for (var q = 0; q < enemies.length; q++) {
         var e = enemies[q];

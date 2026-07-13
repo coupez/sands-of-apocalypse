@@ -7,11 +7,11 @@ var World = (function () {
   var ground, groundMat;
   var sunLight, hemiLight;
   var clock;
-  var WORLD_SIZE = 240;
+  var WORLD_SIZE = 144;   // ~40% smaller playfield
 
   // Player camps at the N/S poles; bandit camps at the E/W poles.
-  var CAMPS = { north: { x: 0, z: -85 }, south: { x: 0, z: 85 } };
-  var BANDIT_CAMPS = { east: { x: 85, z: 0 }, west: { x: -85, z: 0 } };
+  var CAMPS = { north: { x: 0, z: -51 }, south: { x: 0, z: 51 } };
+  var BANDIT_CAMPS = { east: { x: 51, z: 0 }, west: { x: -51, z: 0 } };
 
   // Flat desert floor (no dunes → no geometry clipping with objects).
   function buildTerrain() {
@@ -39,7 +39,7 @@ var World = (function () {
     var N = 18;
     for (var i = 0; i < N; i++) {
       var a = (i / N) * Math.PI * 2 + Utils.randRange(-0.12, 0.12);
-      var r = Utils.randRange(132, 178);
+      var r = Utils.randRange(82, 116);
       var x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (i % 2 === 0) {
         var h = Utils.randRange(24, 44), w = h * Utils.randRange(0.9, 1.3);
@@ -60,7 +60,7 @@ var World = (function () {
 
   // Low, wind-blown sand drifting across the whole floor — pure atmosphere.
   var sandDrift = null;
-  var DRIFT_R = 130;
+  var DRIFT_R = 78;
   function buildSandDrift() {
     if (Game.headless) return;
     var N = 520;
