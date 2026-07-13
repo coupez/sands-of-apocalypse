@@ -1,16 +1,17 @@
 /* ============================================================
    Sands of Apocalypse — HUD / overlay styling
-   Toxic-green post-apocalyptic theme, cartoony but grim.
+   Warm Middle-Eastern desert theme: gold, amber & dark leather.
+   (--toxic vars kept as names; now carry the gold accent palette.)
    ============================================================ */
 
 :root {
-  --toxic: #9bff3d;
-  --toxic-dim: #5c9b28;
-  --toxic-glow: rgba(120, 255, 60, 0.55);
-  --danger: #ff3b2f;
-  --panel-bg: rgba(10, 16, 8, 0.72);
-  --panel-border: rgba(120, 200, 70, 0.35);
-  --ink: #d6f5b8;
+  --toxic: #e8b74a;                       /* gold accent */
+  --toxic-dim: #a8792a;                   /* deep amber */
+  --toxic-glow: rgba(230, 180, 80, 0.55); /* warm glow */
+  --danger: #e0492f;
+  --panel-bg: rgba(32, 21, 10, 0.82);     /* dark leather/wood */
+  --panel-border: rgba(214, 168, 92, 0.45);
+  --ink: #f0e2c0;                         /* cream parchment */
 }
 
 * { box-sizing: border-box; }
@@ -21,7 +22,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #05070a;
+  background: #160e05;
   font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
   user-select: none;
@@ -250,7 +251,7 @@ html, body {
 .tab-btn:hover { transform: translateY(-2px); border-color: var(--toxic); }
 .tab-btn.active {
   border-color: var(--toxic);
-  box-shadow: 0 0 12px var(--toxic-glow), inset 0 0 10px rgba(120,200,70,0.25);
+  box-shadow: 0 0 12px var(--toxic-glow), inset 0 0 10px rgba(214,168,92,0.25);
 }
 
 /* Skills panel */
@@ -270,8 +271,8 @@ html, body {
 .xp-bar {
   grid-column: 2 / 4;
   height: 5px;
-  background: #071005;
-  border: 1px solid rgba(120,200,70,0.25);
+  background: #1a1206;
+  border: 1px solid rgba(214,168,92,0.25);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -299,7 +300,7 @@ html, body {
   width: 54px;
   height: 54px;
   background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(120,200,70,0.2);
+  border: 1px solid rgba(214,168,92,0.2);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -315,7 +316,7 @@ html, body {
 .equip-slot.slot-lhand { grid-column: 1; }
 .equip-slot.slot-rhand { grid-column: 2; }
 .equip-slot.empty { cursor: default; border-style: dashed; }
-.equip-slot.filled { background: rgba(40,60,20,0.5); border-color: rgba(120,200,70,0.5); }
+.equip-slot.filled { background: rgba(80,56,22,0.5); border-color: rgba(214,168,92,0.5); }
 .equip-slot.filled:hover { border-color: var(--toxic); box-shadow: 0 0 8px var(--toxic-glow); }
 
 /* Inventory drag-and-drop feedback */
@@ -340,11 +341,11 @@ html, body {
 .ctx-item {
   padding: 7px 10px;
   border-radius: 4px;
-  color: #dfeccb;
+  color: #efe1c2;
   cursor: pointer;
   white-space: nowrap;
 }
-.ctx-item:hover { background: rgba(120,200,70,0.22); color: #fff; }
+.ctx-item:hover { background: rgba(214,168,92,0.22); color: #fff; }
 
 /* Smithing menu (anvil) */
 #smith-menu {
@@ -377,9 +378,9 @@ html, body {
   gap: 0 8px; align-items: center;
   padding: 6px 8px; border-radius: 6px; cursor: pointer;
 }
-.smith-item:hover:not(.disabled) { background: rgba(120,200,70,0.2); }
+.smith-item:hover:not(.disabled) { background: rgba(214,168,92,0.2); }
 .si-icon { grid-row: 1 / 3; font-size: 20px; text-align: center; }
-.si-name { font-size: 13px; font-weight: 600; color: #eaf6dc; }
+.si-name { font-size: 13px; font-weight: 600; color: #f2e6c8; }
 .si-cost { grid-column: 3; grid-row: 1; font-size: 11px; color: var(--ink); }
 .si-note { grid-column: 2 / 4; grid-row: 2; font-size: 11px; color: var(--toxic); }
 .smith-item.disabled { opacity: 0.5; cursor: not-allowed; }
@@ -393,14 +394,14 @@ html, body {
   position: relative;
   aspect-ratio: 1 / 1;
   background: rgba(0,0,0,0.35);
-  border: 1px solid rgba(120,200,70,0.15);
+  border: 1px solid rgba(214,168,92,0.15);
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
 }
-.inv-slot.filled { background: rgba(40,60,20,0.5); border-color: rgba(120,200,70,0.4); }
+.inv-slot.filled { background: rgba(80,56,22,0.5); border-color: rgba(214,168,92,0.4); }
 .inv-slot .count {
   position: absolute;
   top: 1px; left: 3px;
@@ -451,7 +452,7 @@ html, body {
   bottom: 14px;
   left: 16px;
   font-size: 11px;
-  color: rgba(200,230,170,0.6);
+  color: rgba(224,200,150,0.6);
   text-shadow: 0 1px 2px #000;
   max-width: 46vw;
   line-height: 1.5;
@@ -466,7 +467,7 @@ html, body {
   font-family: monospace;
   font-size: 11px;
   letter-spacing: 0.5px;
-  color: rgba(200,230,170,0.6);
+  color: rgba(224,200,150,0.6);
   text-shadow: 0 1px 2px #000;
   pointer-events: none;
 }
@@ -518,7 +519,7 @@ html, body {
   padding: 6px 12px;
   border-radius: 12px;
   border: 2px solid #7cff4a;
-  box-shadow: 0 0 14px rgba(120,255,60,0.5), 0 3px 8px rgba(0,0,0,0.6);
+  box-shadow: 0 0 14px rgba(230,180,80,0.5), 0 3px 8px rgba(0,0,0,0.6);
   white-space: nowrap;
   animation: speech 2.2s ease-out forwards;
 }

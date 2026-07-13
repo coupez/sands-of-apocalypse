@@ -458,6 +458,43 @@ var Entities = (function () {
     barrels.push(ent); return ent;
   }
 
+  // ---------- desert decor (non-interactive scenery) ----------
+  function makeCactus(x, z) {
+    var g = new THREE.Group();
+    var mat = new THREE.MeshStandardMaterial({ color: 0x4a7a3a, roughness: 1, flatShading: true });
+    var h = Utils.randRange(1.6, 2.8);
+    var body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, h, 7), mat); body.position.y = h / 2; g.add(body);
+    for (var i = 0; i < 2; i++) {
+      var side = i ? 1 : -1;
+      var arm = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.9, 6), mat);
+      arm.position.set(side * 0.4, h * 0.55, 0); arm.rotation.z = side * 0.9; g.add(arm);
+      var up = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.7, 6), mat);
+      up.position.set(side * 0.62, h * 0.72, 0); g.add(up);
+    }
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g); markOccluder(g);
+  }
+  function makeBoulder(x, z) {
+    var mat = new THREE.MeshStandardMaterial({ color: Utils.pick([0xb08050, 0x9c6a3c, 0xc0955f]), roughness: 1, flatShading: true });
+    var m = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(0.8, 1.9), 0), mat);
+    m.position.set(x, terrainY(x, z) + 0.3, z);
+    m.rotation.set(Utils.rand(), Utils.rand() * 3, Utils.rand());
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m); markOccluder(m);
+  }
+  function makeBush(x, z) {
+    var g = new THREE.Group();
+    var mat = new THREE.MeshStandardMaterial({ color: 0x7a6636, roughness: 1, flatShading: true });
+    for (var i = 0; i < 4; i++) {
+      var s = new THREE.Mesh(new THREE.IcosahedronGeometry(Utils.randRange(0.2, 0.4), 0), mat);
+      s.position.set(Utils.randRange(-0.4, 0.4), Utils.randRange(0.12, 0.45), Utils.randRange(-0.4, 0.4)); g.add(s);
+    }
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+  }
+
   // ---------- ruined building + chest ----------
   function makeBuilding(x, z, lootId) {
     var g = new THREE.Group();
@@ -739,6 +776,15 @@ var Entities = (function () {
     scatterRect(1, -22, 22,  12,  22, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
     scatterRect(1, -16, 16, -10,  10, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 2)); placed.push(rocks[rocks.length - 1]); });
     scatterRect(1,  -8,  8,  -6,   6, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 3)); placed.push(rocks[rocks.length - 1]); });
+
+    // --- populate the middle: neutral fishing spots + desert scenery ---
+    // shared ponds anyone can fish (not upgradable), spread through the corridor
+    [ { t: 0, x: -15, z: -8 }, { t: 1, x: 15, z: 9 }, { t: 2, x: 17, z: -3 } ].forEach(function (pp) {
+      pools.push(makePond(pp.x, pp.z, pp.t)); placed.push(pools[pools.length - 1]);
+    });
+    scatterRect(8,  -30, 30, -34, 34, placed, 5).forEach(function (p) { makeCactus(p.x, p.z); placed.push(p); });
+    scatterRect(11, -34, 34, -38, 38, placed, 4).forEach(function (p) { makeBoulder(p.x, p.z); placed.push(p); });
+    scatterRect(14, -36, 36, -40, 40, placed, 3).forEach(function (p) { makeBush(p.x, p.z); });
 
     // a brazier at each camp for light
     clusterAround(C.north.x, C.north.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
