@@ -296,9 +296,16 @@ var UI = (function () {
     window.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSmithMenu(); });
     return _smithEl;
   }
-  function closeSmithMenu() { if (_smithEl) _smithEl.style.display = 'none'; }
+  var _sellSession = null;
+  function closeSmithMenu() {
+    if (_smithEl) _smithEl.style.display = 'none';
+    // if this was a merchant visit and something was sold, send the caravan off
+    if (_sellSession && _sellSession.sold && window.Entities) Entities.sendCaravan(_sellSession.ent);
+    _sellSession = null;
+  }
   function openSmithMenu(anvilLevel) {
     if (Game.headless) return;
+    _sellSession = null;
     anvilLevel = anvilLevel || 1;
     var m = ensureSmithMenu();
     m.innerHTML = '';
@@ -329,8 +336,9 @@ var UI = (function () {
   }
 
   // ---------- merchant sell menu ----------
-  function openSellMenu() {
+  function openSellMenu(merchantEnt) {
     if (Game.headless) return;
+    _sellSession = { ent: merchantEnt, sold: false };
     var m = ensureSmithMenu();   // reuse the same modal styling
     function render() {
       m.innerHTML = '';
@@ -353,7 +361,7 @@ var UI = (function () {
             '<span class="si-name">' + item.name + '</span>' +
             '<span class="si-cost">🪙 ' + Skills.sellValue(item.id) + '</span>' +
             '<span class="si-note">Sell</span>';
-          row.addEventListener('click', function () { Skills.sellItem(index); render(); });
+          row.addEventListener('click', function () { if (Skills.sellItem(index)) { if (_sellSession) _sellSession.sold = true; } render(); });
           list.appendChild(row);
         })(it, i);
       }

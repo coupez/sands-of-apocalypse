@@ -203,6 +203,17 @@ var SelfTest = (function () {
       Skills.sellItem(invIndexOf('elderwood'));
       assert('selling an item grants gold', Game.gold > g0, 'gold=' + Game.gold);
       assert('sold item leaves the bag', invIndexOf('elderwood') < 0);
+      // merchant caravan: departs when sent, blocks selling, then returns
+      var merchant = Entities.stations.filter(function (s) { return s.kind === 'merchant'; })[0];
+      assert('merchant stand has a camel', !!(merchant && merchant.camel));
+      if (merchant) {
+        assert('merchant available before the caravan leaves', Entities.merchantBusy(merchant) === false);
+        Entities.sendCaravan(merchant);
+        assert('caravan departs → merchant is busy', Entities.merchantBusy(merchant) === true);
+        invadeInvulnerable();   // survive while enemies roam during the long wait
+        Main.advance(32);       // leave (~8s) + deliver (~8s) + return (~8s)
+        assert('caravan returns → merchant available again', Entities.merchantBusy(merchant) === false);
+      }
       if (anvil) {
         var lvl0 = anvil.level;
         Game.gold = 0;

@@ -315,6 +315,16 @@ var Entities = (function () {
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
+    if (kind === 'merchant') {
+      // camel + rider parked beside the stand; departs off-map when you sell
+      var cx = x - 3, cz = z;
+      var camelG = makeCamel(cx, cz);
+      camelG.rotation.y = Math.atan2(x - cx, z - cz);   // face the stand
+      var nd = Math.hypot(cx, cz) || 1;
+      ent.camel = { group: camelG, home: { x: cx, z: cz },
+        exit: { x: cx + cx / nd * 48, z: cz + cz / nd * 48 },   // radially off the map
+        faceHome: camelG.rotation.y, state: 'present', t: 0 };
+    }
     tag(g, ent);
     return ent;
   }
@@ -378,7 +388,8 @@ var Entities = (function () {
       if (window.UI && UI.openSmithMenu) UI.openSmithMenu(ent.level);   // pass the anvil level
       else msg = 'You need the smithing menu to forge here.';
     } else if (ent.kind === 'merchant') {
-      if (window.UI && UI.openSellMenu) UI.openSellMenu();
+      if (merchantBusy(ent)) msg = 'The caravan is off delivering — come back when it returns.';
+      else if (window.UI && UI.openSellMenu) UI.openSellMenu(ent);
       else msg = 'The merchant eyes your goods.';
     }
     if (window.UI && msg) UI.showActionText(msg);
@@ -406,6 +417,26 @@ var Entities = (function () {
     if (window.UI) UI.showActionText((ent.name || 'Station') + ' upgraded to Lv ' + ent.level + '!');
     Game.log.push('upgrade:' + (ent.kind || 'pond') + ':' + ent.level);
     return true;
+  }
+
+  // merchant caravan: sending it off (after a sale) blocks selling until it returns
+  function merchantBusy(ent) { return !!(ent && ent.camel && ent.camel.state !== 'present'); }
+  function sendCaravan(ent) { if (ent && ent.camel && ent.camel.state === 'present') { ent.camel.state = 'leaving'; Game.log.push('caravan:leave'); } }
+  function updateCamel(ent, dt) {
+    var c = ent.camel;
+    if (!c || c.state === 'present') return;
+    if (c.state === 'gone') { c.t -= dt; if (c.t <= 0) c.state = 'returning'; return; }
+    var target = (c.state === 'leaving') ? c.exit : c.home;
+    var g = c.group, dx = target.x - g.position.x, dz = target.z - g.position.z, dd = Math.hypot(dx, dz);
+    if (dd < 0.5) {
+      if (c.state === 'leaving') { c.state = 'gone'; c.t = 8; }   // ~8s off delivering
+      else { c.state = 'present'; g.rotation.y = c.faceHome; if (window.UI) UI.showActionText('The merchant caravan has returned.'); }
+      return;
+    }
+    var step = Math.min(6 * dt, dd);
+    g.position.x += dx / dd * step; g.position.z += dz / dd * step;
+    g.position.y = terrainY(g.position.x, g.position.z);
+    g.rotation.y = Math.atan2(dx, dz);
   }
 
   // Scatter n points near (cx,cz) within `spread`, honouring min separation.
@@ -493,6 +524,30 @@ var Entities = (function () {
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
+  }
+
+  // ---------- merchant's camel + rider ----------
+  function makeCamel(x, z) {
+    var g = new THREE.Group();
+    var tan = new THREE.MeshStandardMaterial({ color: 0xc9a05c, roughness: 1, flatShading: true });
+    var dark = new THREE.MeshStandardMaterial({ color: 0x6a4a28, roughness: 1, flatShading: true });
+    var body = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.85, 2.2), tan); body.position.y = 1.5; g.add(body);
+    var hump = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), tan); hump.position.set(0, 2.0, 0.05); hump.scale.set(1, 0.8, 1.1); g.add(hump);
+    var neck = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 1.3, 6), tan); neck.position.set(0, 2.15, 1.15); neck.rotation.x = 0.55; g.add(neck);
+    var head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.4, 0.7), tan); head.position.set(0, 2.75, 1.7); g.add(head);
+    for (var i = 0; i < 4; i++) {
+      var lx = (i % 2 ? 1 : -1) * 0.34, lz = (i < 2 ? 1 : -1) * 0.78;
+      var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 1.5, 5), dark); leg.position.set(lx, 0.75, lz); g.add(leg);
+    }
+    // robed rider on the hump
+    var robe = new THREE.MeshStandardMaterial({ color: 0xe0d0a0, roughness: 1, flatShading: true });
+    var rbody = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.5), robe); rbody.position.set(0, 2.55, -0.15); g.add(rbody);
+    var rhead = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), new THREE.MeshStandardMaterial({ color: 0x8a6a44, roughness: 1, flatShading: true })); rhead.position.set(0, 3.05, -0.15); g.add(rhead);
+    var turban = new THREE.Mesh(new THREE.SphereGeometry(0.23, 8, 6), new THREE.MeshStandardMaterial({ color: 0xc23b3b, roughness: 1, flatShading: true })); turban.position.set(0, 3.28, -0.15); turban.scale.set(1, 0.6, 1); g.add(turban);
+    g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    scene.add(g);
+    return g;
   }
 
   // ---------- ruined building + chest ----------
@@ -749,9 +804,9 @@ var Entities = (function () {
       stations.push(makeStation(cp.x - 5, cp.z + 5 * dir, 'furnace'));
       stations.push(makeStation(cp.x + 5, cp.z + 5 * dir, 'campfire'));
       stations.push(makeStation(cp.x + 7, cp.z + 1 * dir, 'anvil'));
-      stations.push(makeStation(cp.x - 2, cp.z + 6 * dir, 'merchant'));
-      // personal oasis pond — upgraded with gold to unlock higher fish tiers
-      var pond = makePond(cp.x - 7, cp.z + 2 * dir, 0);
+      // merchant + fishing spot sit OUTSIDE the canopy, side by side
+      stations.push(makeStation(cp.x + 14, cp.z + 3 * dir, 'merchant'));
+      var pond = makePond(cp.x + 14, cp.z + 8 * dir, 0);
       pond.name = 'Fishing Spot'; pond.level = 1; pond.maxLevel = 3; pond.upgradable = true;
       pools.push(pond);
       placed.push({ x: cp.x, z: cp.z });
@@ -1034,6 +1089,7 @@ var Entities = (function () {
       stn.fireLight.intensity = stn.baseFire * (0.75 + 0.25 * Math.abs(Math.sin(t * 8 + i)));
       if (stn.flame) stn.flame.scale.y = 0.85 + 0.2 * Math.abs(Math.sin(t * 10 + i));
     }
+    for (i = 0; i < stations.length; i++) if (stations[i].camel) updateCamel(stations[i], dt);
     // lift the roof off whichever building the local player is standing inside
     // (kept from the parallel branch; no-op while the town uses camps, not buildings)
     var pl = Game.player;
@@ -1129,6 +1185,7 @@ var Entities = (function () {
     init: init, update: update, reset: reset,
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
+    sendCaravan: sendCaravan, merchantBusy: merchantBusy,
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
     serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,
     enemyAttackAnim: enemyAttackAnim,
