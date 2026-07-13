@@ -30,7 +30,7 @@ var World = (function () {
     }
     geo.computeVertexNormals();
     groundMat = new THREE.MeshStandardMaterial({
-      color: 0x5c5f3e, roughness: 1.0, metalness: 0.0, flatShading: true
+      color: 0xceb27f, roughness: 1.0, metalness: 0.0, flatShading: true   // desert sand
     });
     ground = new THREE.Mesh(geo, groundMat);
     ground.receiveShadow = true;
@@ -48,10 +48,35 @@ var World = (function () {
     };
   }
 
+  // A ring of jagged sandstone cliffs enclosing the arena — you're in a canyon.
+  function buildCanyon() {
+    var group = new THREE.Group();
+    var geo = new THREE.BoxGeometry(1, 1, 1);
+    var tones = [0x9c5a34, 0xb06a3c, 0x86482a, 0xa85f38];  // sandstone reds/browns
+    var mats = tones.map(function (c) { return new THREE.MeshStandardMaterial({ color: c, roughness: 1, flatShading: true, fog: false }); });
+    // two staggered rings for depth
+    for (var ring = 0; ring < 2; ring++) {
+      var N = 34, baseR = 56 + ring * 7;
+      for (var i = 0; i < N; i++) {
+        var a = (i / N) * Math.PI * 2 + ring * 0.09;
+        var h = Utils.randRange(12, 30) + ring * 6;
+        var w = Utils.randRange(7, 13);
+        var r = baseR + Utils.randRange(-3, 3);
+        var m = new THREE.Mesh(geo, mats[i % mats.length]);
+        m.scale.set(w, h, w);
+        m.position.set(Math.cos(a) * r, h / 2 - 3, Math.sin(a) * r);
+        m.rotation.y = Utils.randRange(0, Math.PI);
+        m.castShadow = true; m.receiveShadow = true;
+        group.add(m);
+      }
+    }
+    scene.add(group);
+  }
+
   function init(canvas) {
     scene = new THREE.Scene();
-    // brighter, sunnier hazy sky (no fog)
-    scene.background = new THREE.Color(0xcdd6a0);
+    // warm, hazy desert sky (no fog)
+    scene.background = new THREE.Color(0xe3d3a8);
 
     camera = new THREE.PerspectiveCamera(
       55, window.innerWidth / window.innerHeight, 0.1, 400
@@ -71,10 +96,10 @@ var World = (function () {
       renderer.outputEncoding = THREE.sRGBEncoding;
     }
 
-    // Lighting: bright sunny sky ambient + a warm key light.
-    hemiLight = new THREE.HemisphereLight(0xdce6b0, 0x6b5c3a, 0.95);
+    // Lighting: hot desert sun — warm sky ambient + a strong golden key light.
+    hemiLight = new THREE.HemisphereLight(0xf2e2b0, 0x8a6a40, 1.0);
     scene.add(hemiLight);
-    sunLight = new THREE.DirectionalLight(0xfff2cc, 1.15);
+    sunLight = new THREE.DirectionalLight(0xfff0d0, 1.3);
     sunLight.position.set(-30, 40, -20);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(512, 512);
@@ -87,6 +112,7 @@ var World = (function () {
     scene.add(sunLight);
 
     buildTerrain();
+    buildCanyon();
 
     clock = new THREE.Clock();
 

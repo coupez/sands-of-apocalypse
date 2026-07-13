@@ -15,17 +15,17 @@ var Skills = (function () {
   };
 
   var ITEMS = {
-    log:   { id: 'log',   name: 'Irradiated Log', icon: '🪵' },
-    blog:  { id: 'blog',  name: 'Blightwood Log', icon: '🎍' },
-    ore:   { id: 'ore',   name: 'Uranium Ore',    icon: '☢️' },
-    pore:  { id: 'pore',  name: 'Plutonium Ore',  icon: '🟣' },
-    shrimp:  { id: 'shrimp',  name: 'Raw Shrimp',        icon: '🦐' },
-    lobster: { id: 'lobster', name: 'Raw Lobster',       icon: '🦞' },
-    whale:   { id: 'whale',   name: 'Raw Whale Meat',    icon: '🐋' },
-    cshrimp: { id: 'cshrimp', name: 'Cooked Shrimp',     icon: '🍤' },
-    clobster:{ id: 'clobster',name: 'Cooked Lobster',    icon: '🍲' },
-    cwhale:  { id: 'cwhale',  name: 'Cooked Whale Steak', icon: '🍖' },
-    bar:     { id: 'bar',     name: 'Scrap Metal Bar',   icon: '🔩' }
+    log:   { id: 'log',   name: 'Palm Timber',   icon: '🪵' },
+    blog:  { id: 'blog',  name: 'Ebony Log',     icon: '🟫' },
+    ore:   { id: 'ore',   name: 'Copper Ore',    icon: '🟠' },
+    pore:  { id: 'pore',  name: 'Gold Ore',      icon: '🟡' },
+    shrimp:  { id: 'shrimp',  name: 'Raw Sardine',   icon: '🐟' },
+    lobster: { id: 'lobster', name: 'Raw Crab',      icon: '🦀' },
+    whale:   { id: 'whale',   name: 'Raw Perch',     icon: '🐠' },
+    cshrimp: { id: 'cshrimp', name: 'Grilled Sardine', icon: '🍢' },
+    clobster:{ id: 'clobster',name: 'Grilled Crab',    icon: '🦀' },
+    cwhale:  { id: 'cwhale',  name: 'Grilled Perch',   icon: '🍖' },
+    bar:     { id: 'bar',     name: 'Bronze Bar',    icon: '🟫' }
   };
 
   // Only COOKED seafood is edible; eat raw and you gain nothing. Cook it at a
@@ -43,20 +43,20 @@ var Skills = (function () {
   //   str (added strength), hp (added max HP). The Fanny Pack instakills.
   var GEAR = {
     // right-hand weapons
-    sword:   { id: 'sword',   name: 'Scrap Sword',        icon: '🗡️', slot: 'rhand', bonus: { maxHit: 4,   acc: 0.10 } },
-    gun:     { id: 'gun',     name: 'Rusty Pistol',       icon: '🔫', slot: 'rhand', bonus: { maxHit: 8,   acc: 0.20 } },
-    fanny:   { id: 'fanny',   name: 'Fanny Pack of Doom', icon: '🎒', slot: 'rhand', bonus: { maxHit: 999, acc: 1.00 }, instakill: true },
+    sword:   { id: 'sword',   name: 'Bronze Scimitar',    icon: '⚔️', slot: 'rhand', bonus: { maxHit: 4,   acc: 0.10 } },
+    gun:     { id: 'gun',     name: 'Hunting Bow',        icon: '🏹', slot: 'rhand', bonus: { maxHit: 8,   acc: 0.20 } },
+    fanny:   { id: 'fanny',   name: "Genie's Lamp",       icon: '🪔', slot: 'rhand', bonus: { maxHit: 999, acc: 1.00 }, instakill: true },
     // left-hand off-hand
-    shield:  { id: 'shield',  name: 'Riot Shield',        icon: '🛡️', slot: 'lhand', bonus: { def: 6, hp: 5 } },
-    machete: { id: 'machete', name: 'Rusty Machete',      icon: '🔪', slot: 'lhand', bonus: { maxHit: 3, str: 2 } },
+    shield:  { id: 'shield',  name: 'Round Shield',       icon: '🛡️', slot: 'lhand', bonus: { def: 6, hp: 5 } },
+    machete: { id: 'machete', name: 'Jambiya Dagger',     icon: '🗡️', slot: 'lhand', bonus: { maxHit: 3, str: 2 } },
     // head
-    gasmask: { id: 'gasmask', name: 'Gas Mask',           icon: '🪖', slot: 'head', bonus: { def: 3, hp: 4 } },
-    hazhood: { id: 'hazhood', name: 'Hazmat Hood',        icon: '🧢', slot: 'head', bonus: { def: 2, str: 2 } },
+    gasmask: { id: 'gasmask', name: 'Desert Turban',      icon: '👳', slot: 'head', bonus: { def: 3, hp: 4 } },
+    hazhood: { id: 'hazhood', name: 'Nomad Hood',         icon: '🧣', slot: 'head', bonus: { def: 2, str: 2 } },
     // body
-    hazvest: { id: 'hazvest', name: 'Hazmat Vest',        icon: '🦺', slot: 'body', bonus: { def: 6, hp: 8 } },
-    plate:   { id: 'plate',   name: 'Scrap Plate',        icon: '🧥', slot: 'body', bonus: { def: 9, hp: 10 } },
+    hazvest: { id: 'hazvest', name: 'Padded Tunic',       icon: '🥋', slot: 'body', bonus: { def: 6, hp: 8 } },
+    plate:   { id: 'plate',   name: 'Bronze Cuirass',     icon: '🧥', slot: 'body', bonus: { def: 9, hp: 10 } },
     // legs
-    greaves: { id: 'greaves', name: 'Scrap Greaves',      icon: '👖', slot: 'legs', bonus: { def: 4, hp: 5 } }
+    greaves: { id: 'greaves', name: 'Leather Greaves',    icon: '👖', slot: 'legs', bonus: { def: 4, hp: 5 } }
   };
 
   function isGear(id) { return !!GEAR[id]; }

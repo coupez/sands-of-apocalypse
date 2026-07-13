@@ -44,7 +44,7 @@ var Main = (function () {
       // let a frame settle, then run the scripted test
       setTimeout(function () { SelfTest.run(); }, 60);
     } else {
-      UI.setBootStatus('entering the zone…');
+      UI.setBootStatus('entering the canyon…');
       setTimeout(UI.hideBoot, 500);
       Game.running = true;
       requestAnimationFrame(frame);
