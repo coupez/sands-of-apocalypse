@@ -46,10 +46,13 @@ var Entities = (function () {
 
   var WOOD_IDS = ['log', 'palmwood', 'blog', 'elderwood'];  // any log fuels a fire
   function removeFirstItem(ids) { for (var i = 0; i < ids.length; i++) if (Skills.removeItem(ids[i])) return true; return false; }
-  // smelt the richest ore first; each metal needs a Smithing level
+  // smelt/cook the richest first; each tier needs the station upgraded to that level
   var SMELT_PLAN = [
-    { ore: 'pore',   level: 10 }, { ore: 'silver', level: 7 },
-    { ore: 'iron',   level: 4 },  { ore: 'ore',    level: 1 }
+    { ore: 'pore',   tier: 4 }, { ore: 'silver', tier: 3 },
+    { ore: 'iron',   tier: 2 }, { ore: 'ore',    tier: 1 }
+  ];
+  var COOK_PLAN = [
+    { raw: 'whale', tier: 3 }, { raw: 'lobster', tier: 2 }, { raw: 'shrimp', tier: 1 }
   ];
 
   function terrainY(x, z) {
@@ -256,12 +259,30 @@ var Entities = (function () {
     return camp;
   }
 
-  // ---------- crafting stations: campfire / furnace / anvil ----------
+  // ---------- crafting stations: campfire / furnace / anvil / merchant ----------
   function makeStation(x, z, kind) {
     var g = new THREE.Group();
     var ent = { type: 'station', kind: kind, mesh: g, position: g.position,
-      active: true, interactRange: 2.6, lit: false };
-    if (kind === 'campfire') {
+      active: true, interactRange: 2.6, lit: false, level: 1,
+      maxLevel: (kind === 'campfire') ? 3 : (kind === 'merchant' ? 1 : 4) };
+    if (kind === 'merchant') {
+      ent.name = 'Merchant Stand';
+      var frame = new THREE.MeshStandardMaterial({ color: 0x6a4a24, roughness: 1, flatShading: true });
+      var cloth = new THREE.MeshStandardMaterial({ color: 0xb03b3b, roughness: 1, flatShading: true });
+      // wheelbarrow body (tilted box) + a wheel + handles + goods
+      var bin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.7, 1.0), frame); bin.position.set(0, 0.75, 0); bin.rotation.x = -0.12; g.add(bin);
+      var wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.18, 12), new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1, flatShading: true }));
+      wheel.rotation.z = Math.PI / 2; wheel.position.set(0, 0.45, 0.75); g.add(wheel);
+      for (var hh = -1; hh <= 1; hh += 2) {
+        var handle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.6, 6), frame);
+        handle.rotation.x = Math.PI / 2 - 0.15; handle.position.set(hh * 0.6, 0.7, -0.9); g.add(handle);
+      }
+      var awn = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.1, 1.3), cloth); awn.position.set(0, 2.1, 0); awn.rotation.x = 0.15; g.add(awn);
+      var post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 6), frame); post.position.set(0.85, 1.4, 0.5); g.add(post);
+      var post2 = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 6), frame); post2.position.set(-0.85, 1.4, 0.5); g.add(post2);
+      var coin = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 12), new THREE.MeshStandardMaterial({ color: 0xffd24a, emissive: 0xffb020, emissiveIntensity: 0.4, roughness: 0.4, metalness: 0.7 }));
+      coin.position.set(0, 1.25, 0.05); g.add(coin);
+    } else if (kind === 'campfire') {
       ent.name = 'Campfire';
       var wood = new THREE.MeshStandardMaterial({ color: 0x5a3d1e, roughness: 1, flatShading: true });
       for (var i = 0; i < 4; i++) {
@@ -326,13 +347,13 @@ var Entities = (function () {
           ? (lightStation(ent), 'You fire up the furnace.')
           : 'You need a log to fire up the furnace.';
       } else {
-        // smelt the best ore the player has the Smithing level for
+        // smelt the best ore whose tier the furnace's LEVEL can handle
         var smelted = false, gatedMsg = null;
         for (var si = 0; si < SMELT_PLAN.length; si++) {
           var sp = SMELT_PLAN[si];
           if (!Skills.hasItem(sp.ore)) continue;
-          if (Skills.data.smithing.level < sp.level) { gatedMsg = 'Needs Smithing ' + sp.level + ' to smelt ' + Skills.ITEMS[sp.ore].name + '.'; continue; }
-          Skills.removeItem(sp.ore); Skills.addItem(Skills.SMELT[sp.ore]); Skills.addXp('smithing', 8 + sp.level * 2);
+          if (ent.level < sp.tier) { gatedMsg = 'Upgrade the furnace to Lv ' + sp.tier + ' to smelt ' + Skills.ITEMS[sp.ore].name + '.'; continue; }
+          Skills.removeItem(sp.ore); Skills.addItem(Skills.SMELT[sp.ore]); Skills.addXp('smithing', 6 + sp.tier * 4);
           msg = 'You smelt a ' + Skills.ITEMS[Skills.SMELT[sp.ore]].name + '.'; smelted = true; break;
         }
         if (!smelted) msg = gatedMsg || 'You need ore to smelt (the furnace is lit).';
@@ -343,18 +364,48 @@ var Entities = (function () {
           ? (lightStation(ent), 'You light the campfire.')
           : 'You need a log to light the campfire.';
       } else {
-        var raws = ['shrimp', 'lobster', 'whale'], cooked = null;
-        for (var i = 0; i < raws.length; i++) {
-          if (Skills.removeItem(raws[i])) { cooked = Skills.COOK[raws[i]]; Skills.addItem(cooked); Skills.addXp('cooking', 12); break; }
+        // cook the best fish whose tier the campfire's LEVEL can handle
+        var cooked = null, cgated = null;
+        for (var ci = 0; ci < COOK_PLAN.length; ci++) {
+          var cp = COOK_PLAN[ci];
+          if (!Skills.hasItem(cp.raw)) continue;
+          if (ent.level < cp.tier) { cgated = 'Upgrade the campfire to Lv ' + cp.tier + ' to cook ' + Skills.ITEMS[cp.raw].name + '.'; continue; }
+          Skills.removeItem(cp.raw); Skills.addItem(Skills.COOK[cp.raw]); Skills.addXp('cooking', 6 + cp.tier * 4); cooked = cp.raw; break;
         }
-        msg = cooked ? 'You cook the catch over the fire.' : 'You have no raw catch to cook.';
+        msg = cooked ? 'You cook the catch over the fire.' : (cgated || 'You have no raw catch to cook.');
       }
     } else if (ent.kind === 'anvil') {
-      if (window.UI && UI.openSmithMenu) UI.openSmithMenu();   // pop the "what to smith?" chooser
+      if (window.UI && UI.openSmithMenu) UI.openSmithMenu(ent.level);   // pass the anvil level
       else msg = 'You need the smithing menu to forge here.';
+    } else if (ent.kind === 'merchant') {
+      if (window.UI && UI.openSellMenu) UI.openSellMenu();
+      else msg = 'The merchant eyes your goods.';
     }
     if (window.UI && msg) UI.showActionText(msg);
     Game.log.push('station:' + ent.kind + (ent.lit ? ':lit' : ''));
+  }
+
+  // cost to take a station/pond from its current level to the next (null if maxed)
+  function upgradeCost(ent) {
+    if (!ent || ent.level >= ent.maxLevel) return null;
+    var L = ent.level;
+    if (ent.type === 'fishpool') return { gold: L * 50 };          // pond: 50, 100 gold
+    if (L === 1) return { gold: 50 };
+    if (L === 2) return { gold: 100 };
+    return { gold: 150, items: (ent.kind === 'furnace') ? { ore: 15 } : { log: 15 } };  // L3→L4
+  }
+  function upgradeStation(ent) {
+    var cost = upgradeCost(ent);
+    if (!cost) { if (window.UI) UI.showActionText((ent.name || 'This') + ' is already max level.'); return false; }
+    if ((Game.gold || 0) < (cost.gold || 0)) { if (window.UI) UI.showActionText('Need ' + cost.gold + ' gold to upgrade.'); return false; }
+    if (cost.items) { for (var id in cost.items) if (Skills.countItem(id) < cost.items[id]) { if (window.UI) UI.showActionText('Need ' + cost.items[id] + '× ' + Skills.ITEMS[id].name + '.'); return false; } }
+    if (cost.gold) Skills.spendGold(cost.gold);
+    if (cost.items) { for (var id2 in cost.items) { for (var n = 0; n < cost.items[id2]; n++) Skills.removeItem(id2); } }
+    ent.level++;
+    if (ent.type === 'fishpool') retierPond(ent, Math.min(ent.level - 1, FISH_TIERS.length - 1));
+    if (window.UI) UI.showActionText((ent.name || 'Station') + ' upgraded to Lv ' + ent.level + '!');
+    Game.log.push('upgrade:' + (ent.kind || 'pond') + ':' + ent.level);
+    return true;
   }
 
   // Scatter n points near (cx,cz) within `spread`, honouring min separation.
@@ -661,9 +712,11 @@ var Entities = (function () {
       stations.push(makeStation(cp.x - 5, cp.z + 5 * dir, 'furnace'));
       stations.push(makeStation(cp.x + 5, cp.z + 5 * dir, 'campfire'));
       stations.push(makeStation(cp.x + 7, cp.z + 1 * dir, 'anvil'));
-      // personal oasis pond whose catch scales with your Fishing level
+      stations.push(makeStation(cp.x - 2, cp.z + 6 * dir, 'merchant'));
+      // personal oasis pond — upgraded with gold to unlock higher fish tiers
       var pond = makePond(cp.x - 7, cp.z + 2 * dir, 0);
-      pond.dynamic = true; pools.push(pond);
+      pond.name = 'Fishing Spot'; pond.level = 1; pond.maxLevel = 3; pond.upgradable = true;
+      pools.push(pond);
       placed.push({ x: cp.x, z: cp.z });
     });
     stations.forEach(function (s) { placed.push({ x: s.position.x, z: s.position.z }); });
@@ -919,10 +972,6 @@ var Entities = (function () {
     // animate each fishing pond: rising bubbles + a gently pulsing ring
     for (i = 0; i < pools.length; i++) {
       var sp = pools[i];
-      if (sp.dynamic) {   // camp pond upgrades its catch with your Fishing level
-        var nt = fishTierForLevel(window.Skills ? Skills.data.fishing.level : 1);
-        if (nt !== sp._tier) retierPond(sp, nt);
-      }
       var pp = sp.parts.attributes.position;
       for (var k = 0; k < pp.count; k++) {
         var y = pp.getY(k) + dt * 0.5;
@@ -1033,7 +1082,7 @@ var Entities = (function () {
   return {
     init: init, update: update, reset: reset,
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
-    useStation: useStation,
+    useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     applyServerEnemies: applyServerEnemies, serverEnemyHit: serverEnemyHit,
     serverEnemyDead: serverEnemyDead, serverEnemyRespawn: serverEnemyRespawn,
     enemyAttackAnim: enemyAttackAnim,

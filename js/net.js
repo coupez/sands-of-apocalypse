@@ -115,7 +115,7 @@ var Net = (function () {
     var weapon = new THREE.Group();
     var wh = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.5, 0.09), new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 1, flatShading: true })); wh.position.y = -0.25;
     var wb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.3, 0.05), matWeapon); wb.position.y = -1.2; wb.rotation.z = 0.25;
-    weapon.add(wh); weapon.add(wb); weapon.position.set(0, -0.5, 0); weapon.visible = false; armR.add(weapon);
+    weapon.add(wh); weapon.add(wb); weapon.position.set(0, -0.9, 0); weapon.rotation.x = -Math.PI / 2; weapon.visible = false; armR.add(weapon);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     return { group: g, legL: legL, legR: legR, armL: armL, armR: armR,
       matBody: matBody, matHead: matHead, matLegs: matLegs, matWeapon: matWeapon, weapon: weapon, baseColor: color };

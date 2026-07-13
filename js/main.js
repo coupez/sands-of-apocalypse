@@ -63,6 +63,15 @@ var Main = (function () {
       setNdc(hoverNdc, e.clientX, e.clientY);
       haveHover = true;
     });
+    // right-click a camp station / fishing spot → upgrade menu
+    canvas.addEventListener('contextmenu', function (e) {
+      setNdc(ndc, e.clientX, e.clientY);
+      var ref = pickInteractable(ndc);
+      if (ref && (ref.type === 'station' || (ref.type === 'fishpool' && ref.upgradable))) {
+        e.preventDefault();
+        UI.openStationMenu(e.clientX, e.clientY, ref);
+      }
+    });
     // Shift = Dark Souls-style dodge roll (i-frames)
     window.addEventListener('keydown', function (e) {
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {

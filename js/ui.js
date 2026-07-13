@@ -35,6 +35,7 @@ var UI = (function () {
 
     el.skillsList = $('skills-list');
     el.equipGrid = $('equipment-grid');
+    el.goldNum = $('gold-num');
 
     buildSkills();
     buildInventory();
@@ -44,8 +45,11 @@ var UI = (function () {
     updateSkills();
     updateInventory();
     updateEquipment();
+    updateGold();
     setActiveTab('inventory');   // default open panel
   }
+
+  function updateGold() { if (el.goldNum) el.goldNum.textContent = Game.gold || 0; }
 
   // ---------- right-side tab panels ----------
   var _activeTab = null;
@@ -293,19 +297,20 @@ var UI = (function () {
     return _smithEl;
   }
   function closeSmithMenu() { if (_smithEl) _smithEl.style.display = 'none'; }
-  function openSmithMenu() {
+  function openSmithMenu(anvilLevel) {
     if (Game.headless) return;
+    anvilLevel = anvilLevel || 1;
     var m = ensureSmithMenu();
     m.innerHTML = '';
     var head = document.createElement('div');
     head.className = 'smith-title';
-    head.innerHTML = 'What do you want to smith? <span class="smith-lvl">Smithing ' + Skills.data.smithing.level + '</span>';
+    head.innerHTML = 'What do you want to smith? <span class="smith-lvl">Anvil Lv ' + anvilLevel + '</span>';
     m.appendChild(head);
     var list = document.createElement('div'); list.className = 'smith-list'; m.appendChild(list);
     var recipes = Skills.SMITH_RECIPES;
     for (var i = 0; i < recipes.length; i++) {
       (function (r) {
-        var why = Skills.canSmith(r);               // null = craftable, else reason
+        var why = Skills.canSmith(r, anvilLevel);   // null = craftable, else reason
         var have = Skills.countItem(r.bar);
         var row = document.createElement('div');
         row.className = 'smith-item' + (why ? ' disabled' : '');
@@ -314,13 +319,63 @@ var UI = (function () {
           '<span class="si-cost">' + r.bars + '× ' + r.barName + ' (' + have + ')</span>' +
           '<span class="si-note">' + (why || 'Smith') + '</span>';
         if (!why) row.addEventListener('click', function () {
-          Skills.smith(r.id);
-          openSmithMenu();   // refresh counts/availability so you can keep forging
+          Skills.smith(r.id, anvilLevel);
+          openSmithMenu(anvilLevel);   // refresh counts/availability so you can keep forging
         });
         list.appendChild(row);
       })(recipes[i]);
     }
     m.style.display = 'block';
+  }
+
+  // ---------- merchant sell menu ----------
+  function openSellMenu() {
+    if (Game.headless) return;
+    var m = ensureSmithMenu();   // reuse the same modal styling
+    function render() {
+      m.innerHTML = '';
+      var head = document.createElement('div');
+      head.className = 'smith-title';
+      head.innerHTML = 'Sell to the merchant <span class="smith-lvl">🪙 ' + (Game.gold || 0) + ' gold</span>';
+      m.appendChild(head);
+      var list = document.createElement('div'); list.className = 'smith-list'; m.appendChild(list);
+      var any = false;
+      for (var i = 0; i < Game.inventory.length; i++) {
+        var it = Game.inventory[i];
+        if (!it) continue;
+        var v = Skills.sellValue(it.id);
+        if (v <= 0) continue;
+        any = true;
+        (function (item, index) {
+          var row = document.createElement('div');
+          row.className = 'smith-item';
+          row.innerHTML = '<span class="si-icon">' + iconHtml(item) + '</span>' +
+            '<span class="si-name">' + item.name + '</span>' +
+            '<span class="si-cost">🪙 ' + Skills.sellValue(item.id) + '</span>' +
+            '<span class="si-note">Sell</span>';
+          row.addEventListener('click', function () { Skills.sellItem(index); render(); });
+          list.appendChild(row);
+        })(it, i);
+      }
+      if (!any) { var e = document.createElement('div'); e.className = 'smith-item disabled'; e.innerHTML = '<span class="si-name">Nothing to sell.</span>'; list.appendChild(e); }
+      m.style.display = 'block';
+    }
+    render();
+  }
+
+  // ---------- station upgrade menu (right-click a camp station/pond) ----------
+  function openStationMenu(x, y, ent) {
+    var cost = Entities.upgradeCost(ent);
+    var opts = [];
+    if (ent.type === 'station' && ent.kind !== 'merchant') opts.push({ label: 'Use ' + ent.name, fn: function () { if (window.Player && Game.player) Player.interactWith(ent); } });
+    if (cost) {
+      var costStr = (cost.gold ? cost.gold + ' gold' : '');
+      if (cost.items) for (var id in cost.items) costStr += (costStr ? ' + ' : '') + cost.items[id] + '× ' + Skills.ITEMS[id].name;
+      opts.push({ label: 'Upgrade to Lv ' + (ent.level + 1) + ' (' + costStr + ')', fn: function () { Entities.upgradeStation(ent); } });
+    } else if (ent.maxLevel > 1) {
+      opts.push({ label: ent.name + ' — max level', fn: function () {} });
+    }
+    if (opts.length) showContextMenu(x, y, opts);
   }
 
   // ---------- vitals ----------
@@ -485,7 +540,7 @@ var UI = (function () {
     updateVitals: updateVitals, updateSkills: updateSkills,
     updateInventory: updateInventory,
     updateEquipment: updateEquipment, setActiveTab: setActiveTab, toast: toast,
-    openSmithMenu: openSmithMenu,
+    updateGold: updateGold, openSmithMenu: openSmithMenu, openSellMenu: openSellMenu, openStationMenu: openStationMenu,
     showActionText: showActionText, setTarget: setTarget,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
     updateCampLabels: updateCampLabels,

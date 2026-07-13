@@ -71,11 +71,13 @@ var Skills = (function () {
   // ---- smithing: metals × gear types → generated equippable gear + recipes ----
   // Each metal has a colour; that colour tags its ore, bar, gear icon, and the
   // wearer's character mesh so other players can see your tier at a glance.
+  // `level` here is the STATION level required to work this metal (its tier):
+  // furnace/anvil must be upgraded to that level to smelt/smith it.
   var METALS = [
-    { key: 'bronze', name: 'Bronze', bar: 'bronzebar', level: 1,  color: 0xc87838 },
-    { key: 'iron',   name: 'Iron',   bar: 'ironbar',   level: 4,  color: 0x8a8f96 },
-    { key: 'silver', name: 'Silver', bar: 'silverbar', level: 7,  color: 0xd8dce2 },
-    { key: 'gold',   name: 'Gold',   bar: 'goldbar',   level: 10, color: 0xffd24a }
+    { key: 'bronze', name: 'Bronze', bar: 'bronzebar', level: 1, color: 0xc87838 },
+    { key: 'iron',   name: 'Iron',   bar: 'ironbar',   level: 2, color: 0x8a8f96 },
+    { key: 'silver', name: 'Silver', bar: 'silverbar', level: 3, color: 0xd8dce2 },
+    { key: 'gold',   name: 'Gold',   bar: 'goldbar',   level: 4, color: 0xffd24a }
   ];
   var METAL_COLOR = { bronze: 0xc87838, iron: 0x8a8f96, silver: 0xd8dce2, gold: 0xffd24a };
   var GTYPES = [
@@ -109,26 +111,50 @@ var Skills = (function () {
   function countItem(id) { var n = 0; for (var i = 0; i < Game.inventory.length; i++) if (Game.inventory[i] && Game.inventory[i].id === id) n++; return n; }
 
   function smithRecipe(id) { for (var i = 0; i < SMITH_RECIPES.length; i++) if (SMITH_RECIPES[i].id === id) return SMITH_RECIPES[i]; return null; }
-  // returns null if craftable, else a reason string
-  function canSmith(r) {
+  // returns null if craftable, else a reason string. Gated by the anvil's level.
+  function canSmith(r, stationLevel) {
     if (!r) return 'no recipe';
-    if (data.smithing.level < r.level) return 'Needs Smithing ' + r.level;
+    if ((stationLevel || 1) < r.level) return 'Needs anvil Lv ' + r.level;
     if (countItem(r.bar) < r.bars) return 'Needs ' + r.bars + ' ' + r.barName;
     return null;
   }
-  function smith(id) {
-    var r = smithRecipe(id), why = canSmith(r);
+  function smith(id, stationLevel) {
+    var r = smithRecipe(id), why = canSmith(r, stationLevel);
     if (why) { if (window.UI) UI.showActionText(why); return false; }
     for (var b = 0; b < r.bars; b++) removeItem(r.bar);   // frees slots, so the result always fits
     addItem(r.id);
-    addXp('smithing', 10 * r.bars + r.level * 2);
+    addXp('smithing', 8 + r.level * 4);
     if (window.UI) UI.showActionText('You smith a ' + r.name + '.');
     Game.log.push('smith:' + r.id);
     return true;
   }
 
+  // ---- gold & the merchant stand ----
+  var SELL_VALUE = {
+    log: 2, palmwood: 4, blog: 8, elderwood: 16,
+    ore: 4, iron: 9, silver: 18, pore: 36,
+    shrimp: 3, lobster: 6, whale: 12, cshrimp: 5, clobster: 9, cwhale: 15,
+    bronzebar: 10, ironbar: 22, silverbar: 45, goldbar: 90
+  };
+  function sellValue(id) { return SELL_VALUE[id] || 0; }
+  function addGold(n) { Game.gold = (Game.gold || 0) + n; if (window.UI) UI.updateGold(); }
+  function spendGold(n) { if ((Game.gold || 0) < n) return false; Game.gold -= n; if (window.UI) UI.updateGold(); return true; }
+  function sellItem(index) {
+    var it = Game.inventory[index];
+    if (!it) return false;
+    var v = sellValue(it.id);
+    if (v <= 0) { if (window.UI) UI.showActionText("The merchant won't buy that."); return false; }
+    Game.inventory[index] = null;
+    addGold(v);
+    if (window.UI) { UI.updateInventory(); UI.showActionText('Sold ' + it.name + ' for ' + v + ' gold.'); }
+    Game.log.push('sell:' + it.id);
+    return true;
+  }
+
   function init() {
     for (var k in data) { data[k].xp = 0; data[k].level = 1; }
+    Game.gold = 0;
+    if (window.UI && UI.updateGold) UI.updateGold();
     // fixed-size inventory: 28 slots, each null or an item stack (holes allowed
     // so items can be dragged to any square).
     Game.inventory = [];
@@ -331,7 +357,8 @@ var Skills = (function () {
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
     smith: smith, canSmith: canSmith, smithRecipe: smithRecipe, countItem: countItem,
     appearance: appearance,
-    COOK: COOK, SMELT: SMELT, SMITH_RECIPES: SMITH_RECIPES,
+    sellItem: sellItem, sellValue: sellValue, addGold: addGold, spendGold: spendGold,
+    COOK: COOK, SMELT: SMELT, SMITH_RECIPES: SMITH_RECIPES, METALS: METALS,
     get data() { return data; },
     ITEMS: ITEMS, GEAR: GEAR, EQUIP_SLOTS: EQUIP_SLOTS, SKILL_ORDER: SKILL_ORDER
   };

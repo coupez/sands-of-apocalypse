@@ -79,6 +79,7 @@ var Player = (function () {
     blade.position.y = -1.2; blade.rotation.z = 0.25;   // slight curve
     weapon.add(handle); weapon.add(guard); weapon.add(blade);
     weapon.position.set(0, -0.9, 0);
+    weapon.rotation.x = -Math.PI / 2;   // held pointing forward, not hanging down
     weapon.visible = false;
     rightArm.add(weapon);
     group.add(rightArm);

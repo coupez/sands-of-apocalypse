@@ -177,23 +177,54 @@ var SelfTest = (function () {
         Entities.useStation(furnace);                 // copper ore smelts into a bronze bar
         assert('lit furnace smelts copper into a bronze bar', invCount('bronzebar') === 1, 'bars=' + invCount('bronzebar'));
         assert('smelting trains Smithing', Skills.data.smithing.xp > 0, 'xp=' + Skills.data.smithing.xp);
-        // higher metals are gated by Smithing level
+        // higher metals are gated by the furnace's UPGRADE level
         Skills.addItem('silver');
-        Entities.useStation(furnace);                 // Smithing 1 can't smelt silver (needs 7)
-        assert('silver ore gated by Smithing level at the furnace', invCount('silverbar') === 0 && Skills.hasItem('silver'));
+        Entities.useStation(furnace);                 // Lv1 furnace can't smelt silver (needs Lv3)
+        assert('silver ore gated by furnace level', invCount('silverbar') === 0 && Skills.hasItem('silver'));
       }
-      // -- smithing at the anvil (level + bar gated) --
+      // -- smithing at the anvil (anvil-level + bar gated) --
       var anvil = Entities.stations.filter(function (s) { return s.kind === 'anvil'; })[0];
       assert('anvil exists in town', !!anvil);
       clearBag();
       Skills.addItem('bronzebar');
-      assert('can smith a Bronze Helmet (1 bar, lv1)', Skills.smith('bronze_helmet') === true);
+      assert('can smith a Bronze Helmet (1 bar, Lv1)', Skills.smith('bronze_helmet', 1) === true);
       assert('bronze helmet is in the bag', invCount('bronze_helmet') === 1);
       assert('helmet equips into the head slot', (function () { Skills.equipFromInventory(invIndexOf('bronze_helmet')); return Game.equipment.head === 'bronze_helmet'; })());
-      assert('smithing above your level is blocked', Skills.smith('silver_platebody') === false && invCount('silver_platebody') === 0);
+      assert('smithing above the anvil level is blocked', Skills.smith('silver_platebody', 1) === false && invCount('silver_platebody') === 0);
       Skills.addItem('bronzebar');                    // only 1 bar; platebody needs 3
-      assert('smithing without enough bars is blocked', Skills.smith('bronze_platebody') === false);
-      assert('boots go in the new feet slot', (function () { clearBag(); Skills.addItem('bronzebar'); Skills.smith('bronze_boots'); Skills.equipFromInventory(invIndexOf('bronze_boots')); return Game.equipment.feet === 'bronze_boots'; })());
+      assert('smithing without enough bars is blocked', Skills.smith('bronze_platebody', 1) === false);
+      assert('boots go in the new feet slot', (function () { clearBag(); Skills.addItem('bronzebar'); Skills.smith('bronze_boots', 1); Skills.equipFromInventory(invIndexOf('bronze_boots')); return Game.equipment.feet === 'bronze_boots'; })());
+
+      // -- gold, the merchant, and station upgrades --
+      clearBag();
+      Game.gold = 0;
+      Skills.addItem('elderwood');
+      var g0 = Game.gold;
+      Skills.sellItem(invIndexOf('elderwood'));
+      assert('selling an item grants gold', Game.gold > g0, 'gold=' + Game.gold);
+      assert('sold item leaves the bag', invIndexOf('elderwood') < 0);
+      if (anvil) {
+        var lvl0 = anvil.level;
+        Game.gold = 0;
+        assert('upgrade blocked without gold', Entities.upgradeStation(anvil) === false && anvil.level === lvl0);
+        Game.gold = 500;
+        assert('upgrade works with gold', Entities.upgradeStation(anvil) === true && anvil.level === lvl0 + 1);
+        assert('upgrading spent the gold', Game.gold < 500);
+        // now the Lv2 anvil can smith iron
+        clearBag(); Skills.addItem('ironbar');
+        assert('Lv2 anvil can smith iron gear', Skills.smith('iron_helmet', anvil.level) === true);
+        assert('Lv1 anvil still cannot smith iron', Skills.smith('iron_helmet', 1) === false);
+      }
+      // fishing spot upgrades with gold and raises its catch tier
+      var camppond = Entities.pools.filter(function (p) { return p.upgradable; })[0];
+      assert('camp fishing spot exists', !!camppond, Entities.pools.length + ' ponds');
+      if (camppond) {
+        var pl0 = camppond.level;
+        Game.gold = 500;
+        assert('fishing spot upgrades with gold', Entities.upgradeStation(camppond) === true && camppond.level === pl0 + 1);
+        assert('upgraded pond offers a higher catch', camppond.reqLevel > 1);
+      }
+      clearBag();
       var campfire = Entities.stations.filter(function (s) { return s.kind === 'campfire'; })[0];
       assert('campfire exists in town', !!campfire);
       if (campfire) {
