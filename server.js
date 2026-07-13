@@ -112,9 +112,11 @@ function doRestart() {
 
 // ---- co-op boss (Mahrûk) — server-authoritative HP + slam windows ----
 const BOSS = { maxHp: 600, slamInterval: 7.0, windup: 1.1, vuln: 3.0, reach: 9, slamRadius: 6, slamDmg: 11 };
+function bossPhase(b) { return b.hp > b.maxHp * 0.66 ? 1 : b.hp > b.maxHp * 0.33 ? 2 : 3; }
+function bossSlamInterval(b) { const f = b.hp / b.maxHp; return f > 0.66 ? BOSS.slamInterval : f > 0.33 ? 5.3 : 4.0; }
 function bossFull() {
   const b = coop.boss;
-  return { type: "bossState", active: b.active, phase: b.phase, hp: b.hp, maxHp: b.maxHp, stage: b.stage, hand: b.hand, hx: b.hx, hz: b.hz };
+  return { type: "bossState", active: b.active, phase: bossPhase(b), hp: b.hp, maxHp: b.maxHp, stage: b.stage, hand: b.hand, hx: b.hx, hz: b.hz };
 }
 function startBoss() {
   coop.boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, phase: 1, stage: "idle", hand: "L", hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval };
@@ -143,7 +145,7 @@ function simBoss(dt) {
     }
   } else if (b.stage === "vuln") {
     b.vulnT -= dt;
-    if (b.vulnT <= 0) { b.stage = "idle"; b.hand = null; b.timer = BOSS.slamInterval; server.publish("game", JSON.stringify(bossFull())); }
+    if (b.vulnT <= 0) { b.stage = "idle"; b.hand = null; b.timer = bossSlamInterval(b); server.publish("game", JSON.stringify(bossFull())); }
   }
 }
 function bossHit(part, dmg) {

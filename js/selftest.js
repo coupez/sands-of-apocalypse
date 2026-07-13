@@ -575,6 +575,9 @@ var SelfTest = (function () {
       }
       assert('striking the hands during slams defeats Mahrûk',
         Coop.bossActive() === false && Game.log.indexOf('coop:bossDead') >= 0);
+      assert('Mahrûk enrages at low health and spawns imps',
+        Game.log.some(function (l) { return typeof l === 'string' && l.indexOf('coop:imps') === 0; }));
+      assert('the world can shift toward dusk during the ritual', typeof World.setDusk === 'function');
       // victory is final — the ritual can't be re-run
       assert('co-op victory is final', Coop.state.won === true && Coop.state.ritualReady === false);
       Entities.useObelisk();

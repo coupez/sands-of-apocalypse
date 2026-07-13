@@ -153,6 +153,23 @@ var World = (function () {
     if (renderer) renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  // Shift the world from hot day toward an ominous dusk as the ritual advances
+  // (level 0 = noon, 1 = blood dusk). Warms/darkens sky + light.
+  var DAY_SKY = { r: 0xe3, g: 0xd3, b: 0xa8 }, DUSK_SKY = { r: 0x3a, g: 0x18, b: 0x22 };
+  var _dusk = 0;
+  function setDusk(level) {
+    level = Utils.clamp(level, 0, 1);
+    _dusk = level;
+    if (scene && scene.background) {
+      var r = Math.round(DAY_SKY.r + (DUSK_SKY.r - DAY_SKY.r) * level);
+      var g = Math.round(DAY_SKY.g + (DUSK_SKY.g - DAY_SKY.g) * level);
+      var b = Math.round(DAY_SKY.b + (DUSK_SKY.b - DAY_SKY.b) * level);
+      scene.background.setRGB(r / 255, g / 255, b / 255);
+    }
+    if (sunLight) { sunLight.intensity = 1.3 - level * 0.8; sunLight.color.setRGB(1, 0.94 - level * 0.35, 0.82 - level * 0.5); }
+    if (hemiLight) hemiLight.intensity = 1.0 - level * 0.5;
+  }
+
   function update(dt, t) {
     updateSandDrift(dt, t);
   }
@@ -162,7 +179,7 @@ var World = (function () {
   }
 
   return {
-    init: init, update: update, render: render,
+    init: init, update: update, render: render, setDusk: setDusk,
     get scene() { return scene; },
     get camera() { return camera; },
     get renderer() { return renderer; },

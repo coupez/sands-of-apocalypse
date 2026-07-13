@@ -788,6 +788,17 @@ var Entities = (function () {
     }
     Game.log.push('coop:raid:' + count);
   }
+  // Boss adds: imps claw up around the plaza centre when Mahrûk enrages.
+  function spawnImps(count) {
+    for (var i = 0; i < count; i++) {
+      var a = Utils.randRange(0, Math.PI * 2), r = Utils.randRange(6, 14);
+      var b = makeEnemy(Math.cos(a) * r, Math.sin(a) * r, 1);
+      b.name = 'Imp'; b.reqLevel = 1; b.noRespawn = true; b.local = true; b.isRaid = true;
+      b.home.set(0, 0, 0); b.leashRange = 70; b.wanderRadius = 16; b.aggroRange = 50;
+      bandits.push(b);
+    }
+    Game.log.push('coop:imps:' + count);
+  }
 
   function makeDrop(x, z, itemId, name, bone) {
     var g = new THREE.Group();
@@ -1768,7 +1779,7 @@ var Entities = (function () {
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     sendCaravan: sendCaravan, merchantBusy: merchantBusy, sellToMerchant: sellToMerchant,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
-    pickupDrop: pickupDrop, spawnRaid: spawnRaid, tagExternal: tagExternal, untagExternal: untagExternal,
+    pickupDrop: pickupDrop, spawnRaid: spawnRaid, spawnImps: spawnImps, tagExternal: tagExternal, untagExternal: untagExternal,
     spawnBuild: spawnBuild,
     get bandits() { return bandits; }, get banditCamps() { return banditCamps; }, get builds() { return builds; },
     get drops() { return drops; }, get rats() { return rats; },

@@ -43,6 +43,7 @@ var Coop = (function () {
     buildHud();
     refreshBraziers();
     updateHud();
+    updateAtmosphere();
     Game.log.push('coop:active');
   }
   function teardown() {
@@ -80,6 +81,7 @@ var Coop = (function () {
     state.ritualReady = (ritualReady != null) ? ritualReady : (litCount() >= THRESHOLD);
     if (state.ritualReady && window.UI && UI.showActionText) UI.showActionText('The ritual is ready — approach the Obelisk.');
     updateHud();
+    updateAtmosphere();
   }
 
   // client detected an objective is complete → tell the server (or apply offline)
@@ -216,6 +218,7 @@ var Coop = (function () {
     boss = { active: true, hp: BOSS.maxHp, maxHp: BOSS.maxHp, phase: 1, simLocal: true,
       stage: 'idle', hand: 'L', hx: 0, hz: 0, vulnT: 0, timer: BOSS.slamInterval, rise: 0 };
     buildDemon();
+    updateAtmosphere();
     if (window.UI && UI.showBossBar) UI.showBossBar('Mahrûk, the Buried Demon', boss.hp, boss.maxHp);
     Game.log.push('coop:bossStart');
   }
@@ -257,6 +260,12 @@ var Coop = (function () {
     boss.mesh = g; boss.heart = heart; boss.heartMat = heartMat; boss.heartLight = heartLight;
     boss.armL = armL; boss.armR = armR;
 
+    // slam telegraph decal — a red ground ring at the impact point during windup
+    var decal = new THREE.Mesh(new THREE.RingGeometry(1.2, BOSS.slamRadius, 28),
+      new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
+    decal.rotation.x = -Math.PI / 2; decal.position.y = 0.07; decal.visible = false;
+    scene.add(decal); boss.decal = decal;
+
     // HEART interactable (bow-only, always present; only damages during a window)
     boss.heartEnt = { type: 'boss', part: 'heart', name: "Mahrûk's Heart", ranged: true,
       mesh: heart, position: new THREE.Vector3(0, 8.6, 2.6), active: true, interactRange: 16 };
@@ -283,6 +292,39 @@ var Coop = (function () {
     }
     // keep the heart entity's world position current (it barely moves, but sway shifts it)
     if (b.heartEnt) b.heart.getWorldPosition(b.heartEnt.position);
+    // slam telegraph decal
+    if (b.decal) {
+      if (b.stage === 'windup') { b.decal.visible = true; b.decal.position.set(b.hx, 0.07, b.hz); b.decal.material.opacity = 0.25 + 0.45 * Math.abs(Math.sin(t * 12)); }
+      else if (b.stage === 'vuln') { b.decal.visible = true; b.decal.position.set(b.hx, 0.07, b.hz); b.decal.material.opacity = Math.max(0, b.decal.material.opacity - dt * 0.9); }
+      else b.decal.visible = false;
+    }
+  }
+
+  // day → dusk as the ritual advances; full blood-dusk during the boss
+  function updateAtmosphere() {
+    if (!window.World || !World.setDusk) return;
+    var d = (litCount() / SIGILS.length) * 0.75;
+    if (bossActive()) d = Math.max(d, 0.95);
+    else if (state.won) d = 0.25;
+    World.setDusk(d);
+  }
+  // slam cadence + phase quicken as Mahrûk's health falls
+  function slamIntervalFor(b) {
+    var f = b.hp / b.maxHp;
+    return f > 0.66 ? BOSS.slamInterval : f > 0.33 ? 5.3 : 4.0;
+  }
+  function updateBossPhase() {
+    var b = boss; if (!b) return;
+    var f = b.hp / b.maxHp;
+    var ph = f > 0.66 ? 1 : f > 0.33 ? 2 : 3;
+    if (ph !== b.phase) {
+      b.phase = ph;
+      if (ph === 3 && !b._imped) {
+        b._imped = true;
+        if (window.Entities && Entities.spawnImps) Entities.spawnImps(3);
+        if (window.UI && UI.announce) UI.announce('Mahrûk shrieks — imps claw up from the cracks!', false);
+      }
+    }
   }
 
   // ---- offline sim (mirrors the server; online is server-authoritative) ----
@@ -303,7 +345,7 @@ var Coop = (function () {
       if (b.timer <= 0) { b.stage = 'vuln'; b.vulnT = BOSS.vuln; openWindow(); onBossSlam({ stage: 'impact', hand: b.hand, x: b.hx, z: b.hz, radius: BOSS.slamRadius, dmg: BOSS.slamDmg }); }
     } else if (b.stage === 'vuln') {
       b.vulnT -= dt;
-      if (b.vulnT <= 0) { b.stage = 'idle'; closeWindow(); b.timer = BOSS.slamInterval; }
+      if (b.vulnT <= 0) { b.stage = 'idle'; closeWindow(); b.timer = slamIntervalFor(b); }
     }
   }
 
@@ -347,6 +389,7 @@ var Coop = (function () {
     boss = { active: true, hp: s.hp, maxHp: s.maxHp, phase: s.phase, simLocal: false, timer: 0, vulnT: 0,
       stage: s.stage, hand: s.hand || 'L', hx: s.hx || 0, hz: s.hz || 0, rise: 0 };
     buildDemon();
+    updateAtmosphere();
     if (window.UI && UI.showBossBar) UI.showBossBar('Mahrûk, the Buried Demon', boss.hp, boss.maxHp);
   }
   function onBossSlam(msg) {
@@ -364,6 +407,7 @@ var Coop = (function () {
   function onBossHit(part, dmg, hp) {
     var b = boss; if (!b) return;
     if (typeof hp === 'number') b.hp = hp;
+    updateBossPhase();
     var pos = (part === 'heart') ? b.heartEnt && b.heartEnt.position : b.handEnt && b.handEnt.position;
     if (pos && window.UI && UI.spawnHitsplat) UI.spawnHitsplat(new THREE.Vector3(pos.x, pos.y + 1.5, pos.z), dmg, 'hit');
     if (window.UI && UI.updateBossBar) UI.updateBossBar(b.hp, b.maxHp);
@@ -373,9 +417,11 @@ var Coop = (function () {
     b.active = false;
     closeWindow();
     if (b.mesh && scene) scene.remove(b.mesh);
+    if (b.decal && scene) scene.remove(b.decal);
     if (b.heartEnt && window.Entities && Entities.untagExternal) Entities.untagExternal(b.heartEnt);
     // victory is final — the ritual can't be re-run (no re-summon loop)
     state.ritualReady = false; state.won = true;
+    updateAtmosphere();   // dawn returns
     if (window.UI) { if (UI.hideBossBar) UI.hideBossBar(); if (UI.showVictory) UI.showVictory('The party', true, 'You banished Mahrûk and saved the sands!'); }
     Game.log.push('coop:bossDead');
     boss = null;
@@ -393,11 +439,12 @@ var Coop = (function () {
     var b = boss; if (!b || !b.active || b.stage !== 'vuln') return;   // window closed
     b.hp = Math.max(0, b.hp - Math.max(0, Math.min(80, Math.floor(dmg))));
     onBossHit(part, Math.floor(dmg), b.hp);
+    updateBossPhase();
     if (b.hp <= 0) onBossDead();
   }
 
   function bossActive() { return !!(boss && boss.active); }
-  function onBossHp(hp) { if (boss && typeof hp === 'number') { boss.hp = hp; if (window.UI && UI.updateBossBar) UI.updateBossBar(hp, boss.maxHp); } }
+  function onBossHp(hp) { if (boss && typeof hp === 'number') { boss.hp = hp; updateBossPhase(); if (window.UI && UI.updateBossBar) UI.updateBossBar(hp, boss.maxHp); } }
 
   return {
     onMode: onMode, applyState: applyState, onSigil: onSigil, completeSigil: completeSigil,
