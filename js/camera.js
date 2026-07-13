@@ -19,6 +19,11 @@ var CameraRig = (function () {
   var PITCH_SPEED = 1.2;
   var ZOOM_KEY_SPEED = 14;
 
+  // occlusion: hide any object standing between the camera and the player
+  var occRay = new THREE.Raycaster();
+  var occHidden = [];
+  var _fwd = new THREE.Vector3();
+
   function init(cam) {
     camera = cam;
     window.addEventListener('keydown', function (e) {
@@ -64,6 +69,28 @@ var CameraRig = (function () {
     camera.position.y = Utils.damp(camera.position.y, desired.y, 8, dt);
     camera.position.z = Utils.damp(camera.position.z, desired.z, 8, dt);
     camera.lookAt(fx, fy, fz);
+
+    hideOccluders(fx, fy, fz);
+  }
+
+  // Fade out (hide) whatever the camera is looking through to reach the player.
+  function hideOccluders(fx, fy, fz) {
+    var occ = window.Game && Game.occluders;
+    if (!occ || !occ.length) return;
+    // reveal everything hidden last frame, then re-hide what still blocks
+    for (var r = 0; r < occHidden.length; r++) occHidden[r].visible = true;
+    occHidden.length = 0;
+    _fwd.set(fx - camera.position.x, fy - camera.position.y, fz - camera.position.z);
+    var dist = _fwd.length();
+    if (dist < 0.001) return;
+    _fwd.multiplyScalar(1 / dist);
+    occRay.set(camera.position, _fwd);
+    occRay.far = dist - 1.5;   // leave the player (and anything touching them) visible
+    var hits = occRay.intersectObjects(occ, false);
+    for (var h = 0; h < hits.length; h++) {
+      var grp = hits[h].object.userData.occGroup;
+      if (grp && grp.visible) { grp.visible = false; occHidden.push(grp); }
+    }
   }
 
   return {

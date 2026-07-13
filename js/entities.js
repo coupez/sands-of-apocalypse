@@ -21,12 +21,16 @@ var Entities = (function () {
 
   // ---- tier definitions (desert / Middle-Eastern fantasy) ----
   var TREE_TIERS = [
-    { name: 'Palm Tree',    reqLevel: 1,  itemId: 'log',  xp: 25, bark: 0x8a5a2b, frond: 0x6a9a3a, dates: null,    h: [4.5, 6.5] },
-    { name: 'Ancient Palm', reqLevel: 15, itemId: 'blog', xp: 55, bark: 0x5a3a1c, frond: 0x4a7a2a, dates: 0xc86a2a, h: [6.5, 8.5] }
+    { name: 'Dead Tree',    reqLevel: 1,  itemId: 'log',       xp: 20,  style: 'dead', bark: 0x6b5236, h: [3.0, 4.2] },
+    { name: 'Palm Tree',    reqLevel: 4,  itemId: 'palmwood',  xp: 40,  style: 'palm', bark: 0x8a5a2b, frond: 0x6a9a3a, dates: null,    h: [4.5, 6.0] },
+    { name: 'Ancient Palm', reqLevel: 7,  itemId: 'blog',      xp: 70,  style: 'palm', bark: 0x5a3a1c, frond: 0x4a7a2a, dates: 0xc86a2a, h: [6.0, 7.5] },
+    { name: 'Elder Palm',   reqLevel: 10, itemId: 'elderwood', xp: 120, style: 'palm', bark: 0x4a2f18, frond: 0x2e8f3a, dates: 0xffd24a, h: [8.5, 10.5], scale: 1.15 }
   ];
   var ROCK_TIERS = [
-    { name: 'Copper Vein', reqLevel: 1,  itemId: 'ore',  xp: 35, ore: 0xc87838, rock: 0xb59468 },
-    { name: 'Gold Vein',   reqLevel: 15, itemId: 'pore', xp: 70, ore: 0xffd24a, rock: 0xa8895c }
+    { name: 'Copper Vein', reqLevel: 1,  itemId: 'ore',    xp: 30,  ore: 0xc87838, rock: 0xb59468 },
+    { name: 'Iron Vein',   reqLevel: 4,  itemId: 'iron',   xp: 55,  ore: 0x9a8a7a, rock: 0xa08868 },
+    { name: 'Silver Vein', reqLevel: 7,  itemId: 'silver', xp: 90,  ore: 0xd8d8e0, rock: 0x9890a0 },
+    { name: 'Gold Vein',   reqLevel: 10, itemId: 'pore',   xp: 140, ore: 0xffd24a, rock: 0xa8895c }
   ];
   // Oasis fishing spots, gated by Fishing level (ids kept: shrimp/lobster/whale).
   var FISH_TIERS = [
@@ -40,54 +44,79 @@ var Entities = (function () {
     { name: 'Sand Golem',   reqLevel: 25, hp: 45, def: 8, maxHit: 10, color: 0xc19a6b, eye: 0xffcf5a, scale: 1.6, aggro: 11 }
   ];
 
+  var WOOD_IDS = ['log', 'palmwood', 'blog', 'elderwood'];  // any log fuels a fire
+  var ORE_IDS  = ['ore', 'iron', 'silver', 'pore'];         // any ore can be smelted
+  function removeFirstItem(ids) { for (var i = 0; i < ids.length; i++) if (Skills.removeItem(ids[i])) return true; return false; }
+
   function terrainY(x, z) {
     if (World.ground && World.ground.userData.heightAt) return World.ground.userData.heightAt(x, z);
     return 0;
   }
   function tag(mesh, ref) { mesh.traverse(function (o) { if (o.isMesh) { o.userData.ref = ref; interactMeshes.push(o); } }); }
+  // register a group's meshes as camera occluders (whole group hides together)
+  function markOccluder(group) {
+    if (!Game.occluders) Game.occluders = [];
+    group.traverse(function (o) { if (o.isMesh) { o.userData.occGroup = group; Game.occluders.push(o); } });
+  }
   function untag(ref) { interactMeshes = interactMeshes.filter(function (m) { return m.userData.ref !== ref; }); }
 
-  // ---------- palm tree ----------
+  // ---------- tree (dead / palm styles) ----------
   function makeTree(x, z, tierIdx) {
     var T = TREE_TIERS[tierIdx];
     var g = new THREE.Group();
     var barkMat = new THREE.MeshStandardMaterial({ color: T.bark, roughness: 1, flatShading: true });
-    var frondMat = new THREE.MeshStandardMaterial({ color: T.frond, roughness: 1, flatShading: true, side: THREE.DoubleSide });
     var h = Utils.randRange(T.h[0], T.h[1]);
-    // gently curving palm trunk (stacked tapering segments)
-    var seg = 5, segH = h / seg, topX = 0;
-    for (var s = 0; s < seg; s++) {
-      topX = Math.sin(s * 0.5) * 0.12 * s;
-      var tk = new THREE.Mesh(new THREE.CylinderGeometry(0.32 - s * 0.03, 0.34 - s * 0.03, segH * 1.02, 6), barkMat);
-      tk.position.set(topX, segH * (s + 0.5), 0);
-      g.add(tk);
-    }
-    // drooping frond crown (this is the "branches" group depletion hides)
-    var crown = new THREE.Group();
-    crown.position.set(topX, h, 0);
-    var nf = 8;
-    for (var i = 0; i < nf; i++) {
-      var pivot = new THREE.Group();
-      pivot.rotation.y = (i / nf) * Math.PI * 2 + Utils.randRange(-0.1, 0.1);
-      var frond = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.06, 0.55), frondMat);
-      frond.position.x = 1.15;
-      frond.rotation.z = -0.55;
-      pivot.add(frond);
-      crown.add(pivot);
-    }
-    if (T.dates) { // date clusters hang under the crown on the higher tier
-      var dateMat = new THREE.MeshStandardMaterial({ color: T.dates, roughness: 0.8, flatShading: true });
-      for (var d = 0; d < 3; d++) {
-        var a = (d / 3) * Math.PI * 2;
-        var cl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.26, 0), dateMat);
-        cl.position.set(Math.cos(a) * 0.5, -0.3, Math.sin(a) * 0.5);
-        crown.add(cl);
+    var crown = new THREE.Group();   // the "branches" group depletion hides
+
+    if (T.style === 'dead') {
+      // gnarled bare trunk + a few dead branches, no leaves
+      var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.45, h, 6), barkMat);
+      trunk.position.y = h / 2; g.add(trunk);
+      var nb = Utils.randInt(3, 5);
+      for (var i = 0; i < nb; i++) {
+        var b = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.13, Utils.randRange(1.0, 1.8), 5), barkMat);
+        b.position.y = h * Utils.randRange(0.55, 0.95);
+        b.rotation.z = Utils.randRange(-1.2, 1.2);
+        b.rotation.y = Utils.randRange(0, Math.PI * 2);
+        crown.add(b);
       }
+      g.add(crown);
+    } else {
+      // palm: gently curving trunk + drooping frond crown
+      var frondMat = new THREE.MeshStandardMaterial({ color: T.frond, roughness: 1, flatShading: true, side: THREE.DoubleSide });
+      var seg = 5, segH = h / seg, topX = 0;
+      for (var s = 0; s < seg; s++) {
+        topX = Math.sin(s * 0.5) * 0.12 * s;
+        var tk = new THREE.Mesh(new THREE.CylinderGeometry(0.32 - s * 0.03, 0.34 - s * 0.03, segH * 1.02, 6), barkMat);
+        tk.position.set(topX, segH * (s + 0.5), 0);
+        g.add(tk);
+      }
+      crown.position.set(topX, h, 0);
+      var nf = 9;
+      for (var f = 0; f < nf; f++) {
+        var pivot = new THREE.Group();
+        pivot.rotation.y = (f / nf) * Math.PI * 2 + Utils.randRange(-0.1, 0.1);
+        var frond = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.06, 0.55), frondMat);
+        frond.position.x = 1.2; frond.rotation.z = -0.55;
+        pivot.add(frond);
+        crown.add(pivot);
+      }
+      if (T.dates) {
+        var dateMat = new THREE.MeshStandardMaterial({ color: T.dates, roughness: 0.8, flatShading: true });
+        for (var d = 0; d < 3; d++) {
+          var a = (d / 3) * Math.PI * 2;
+          var cl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.26, 0), dateMat);
+          cl.position.set(Math.cos(a) * 0.5, -0.3, Math.sin(a) * 0.5);
+          crown.add(cl);
+        }
+      }
+      g.add(crown);
     }
-    g.add(crown);
+    if (T.scale) g.scale.setScalar(T.scale);
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
+    markOccluder(g);
     var ent = { type: 'tree', name: T.name, reqLevel: T.reqLevel, itemId: T.itemId, xp: T.xp,
       mesh: g, position: g.position, active: true, interactRange: 2.2,
       branches: crown, amount: Utils.randInt(5, 8), maxAmount: 8, respawn: 0 };
@@ -113,6 +142,7 @@ var Entities = (function () {
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
+    markOccluder(g);
     var ent = { type: 'rock', name: T.name, reqLevel: T.reqLevel, itemId: T.itemId, xp: T.xp,
       mesh: g, position: g.position, active: true, interactRange: 2.2,
       veins: veins, body: body, amount: Utils.randInt(4, 7), maxAmount: 7, respawn: 0 };
@@ -153,20 +183,67 @@ var Entities = (function () {
     scene.add(g);
     var ent = { type: 'fishpool', name: T.name, reqLevel: T.reqLevel, itemId: T.itemId, xp: T.xp,
       mesh: g, position: g.position, active: true, interactRange: rad + 1.6,
-      parts: pgeo, ring: ring, phase: Utils.randRange(0, 6) };
+      parts: pgeo, ring: ring, phase: Utils.randRange(0, 6), _tier: tierIdx };
     tag(g, ent);
     return ent;
   }
 
-  // ---------- player camp (flag banner + nameplate) ----------
+  // the camp pond's catch scales with your Fishing level (lvl1 → tier0, lvl3+ → top tier)
+  function fishTierForLevel(lvl) { return Utils.clamp(lvl - 1, 0, FISH_TIERS.length - 1); }
+  function retierPond(ent, tier) {
+    var T = FISH_TIERS[tier];
+    ent._tier = tier;
+    ent.name = T.name; ent.reqLevel = T.reqLevel; ent.itemId = T.itemId; ent.xp = T.xp;
+    if (ent.ring) ent.ring.material.color.setHex(T.color);
+  }
+
+  // ---------- player camp (Arabian tent + carpet + flag + nameplate) ----------
   function makeCamp(x, z, num, color) {
     var g = new THREE.Group();
-    var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 4.2, 6),
+    var faceZ = (z < 0) ? 1 : -1;   // doorway/carpet face the centre of the map
+
+    // woven carpet in front of the tent (a patterned rug)
+    var rug = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.08, 3.0),
+      new THREE.MeshStandardMaterial({ color: 0x7a2f3a, roughness: 0.9, flatShading: true }));
+    rug.position.set(0, 0.05, faceZ * 2.6); g.add(rug);
+    var rugTrim = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.1, 2.2),
+      new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.15, roughness: 0.9, flatShading: true }));
+    rugTrim.position.set(0, 0.06, faceZ * 2.6); g.add(rugTrim);
+    var rugCore = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0xe0b96a, roughness: 0.9, flatShading: true }));
+    rugCore.rotation.y = Math.PI / 4; rugCore.position.set(0, 0.07, faceZ * 2.6); g.add(rugCore);
+
+    // the tent — cloth wall + peaked roof with a dark doorway, set back-left of camp
+    var tent = new THREE.Group();
+    tent.position.set(-3.2, 0, -faceZ * 1.2);
+    var clothMat = new THREE.MeshStandardMaterial({ color: 0xe4cf9c, roughness: 1, flatShading: true, side: THREE.DoubleSide });
+    var wall = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.8, 1.9, 10), clothMat);
+    wall.position.y = 0.95; tent.add(wall);
+    var roof = new THREE.Mesh(new THREE.ConeGeometry(3.2, 2.6, 10),
+      new THREE.MeshStandardMaterial({ color: 0xc23b3b, roughness: 1, flatShading: true }));
+    roof.position.y = 3.1; tent.add(roof);
+    // striped valance under the roof
+    var valance = new THREE.Mesh(new THREE.CylinderGeometry(2.85, 2.85, 0.4, 10, 1, true),
+      new THREE.MeshStandardMaterial({ color: color, roughness: 1, flatShading: true, side: THREE.DoubleSide }));
+    valance.position.y = 1.85; tent.add(valance);
+    // dark doorway facing the map centre
+    var door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 0.3),
+      new THREE.MeshStandardMaterial({ color: 0x1a1108, roughness: 1 }));
+    door.position.set(0, 0.75, faceZ * 2.6); tent.add(door);
+    // finial on top
+    var finial = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xffd24a, emissive: 0xffb020, emissiveIntensity: 0.5, roughness: 0.4, metalness: 0.6 }));
+    finial.position.y = 4.5; tent.add(finial);
+    g.add(tent);
+
+    // banner flag beside the tent
+    var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4.4, 6),
       new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 1, flatShading: true }));
-    pole.position.y = 2.1; g.add(pole);
-    var flag = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.95, 0.07),
+    pole.position.set(2.9, 2.2, faceZ * 1.5); g.add(pole);
+    var flag = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 0.06),
       new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.35, roughness: 0.6, side: THREE.DoubleSide }));
-    flag.position.set(0.8, 3.5, 0); g.add(flag);
+    flag.position.set(3.6, 3.7, faceZ * 1.5); g.add(flag);
+
     g.position.set(x, terrainY(x, z), z);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
@@ -243,15 +320,15 @@ var Entities = (function () {
     var msg;
     if (ent.kind === 'furnace') {
       if (!ent.lit) {
-        msg = (Skills.removeItem('log') || Skills.removeItem('blog'))
+        msg = removeFirstItem(WOOD_IDS)
           ? (lightStation(ent), 'You fire up the furnace.')
           : 'You need a log to fire up the furnace.';
-      } else if (Skills.removeItem('ore') || Skills.removeItem('pore')) {
+      } else if (removeFirstItem(ORE_IDS)) {
         Skills.addItem('bar'); Skills.addXp('smithing', 15); msg = 'You smelt a bronze bar.';
       } else { msg = 'You need ore to smelt (the furnace is lit).'; }
     } else if (ent.kind === 'campfire') {
       if (!ent.lit) {
-        msg = (Skills.removeItem('log') || Skills.removeItem('blog'))
+        msg = removeFirstItem(WOOD_IDS)
           ? (lightStation(ent), 'You light the campfire.')
           : 'You need a log to light the campfire.';
       } else {
@@ -562,48 +639,47 @@ var Entities = (function () {
   function init(sc) {
     scene = sc;
     enemiesLive = ENEMIES_ENABLED || Game.selftest;
+    Game.occluders = [];
     var placed = [];
     var C = World.CAMPS;   // north = player 1, south = player 2
 
-    // --- CAMPS: a flag + crafting stations at each pole ---
+    // --- CAMPS: tent + carpet + flag + crafting stations + a personal fishing pond ---
     makeCamp(C.north.x, C.north.z, 1, 0x3ad1ff);   // Player 1 — cyan
     makeCamp(C.south.x, C.south.z, 2, 0xff6a4a);   // Player 2 — red
     [C.north, C.south].forEach(function (cp) {
-      var dir = cp.z < 0 ? 1 : -1;   // stations sit on the map-centre side of the flag
-      stations.push(makeStation(cp.x - 4, cp.z + 4 * dir, 'furnace'));
-      stations.push(makeStation(cp.x + 4, cp.z + 4 * dir, 'campfire'));
-      stations.push(makeStation(cp.x,     cp.z + 7 * dir, 'anvil'));
+      var dir = cp.z < 0 ? 1 : -1;   // stations sit on the map-centre side of the tent
+      stations.push(makeStation(cp.x - 5, cp.z + 5 * dir, 'furnace'));
+      stations.push(makeStation(cp.x + 5, cp.z + 5 * dir, 'campfire'));
+      stations.push(makeStation(cp.x + 7, cp.z + 1 * dir, 'anvil'));
+      // personal oasis pond whose catch scales with your Fishing level
+      var pond = makePond(cp.x - 7, cp.z + 2 * dir, 0);
+      pond.dynamic = true; pools.push(pond);
       placed.push({ x: cp.x, z: cp.z });
     });
     stations.forEach(function (s) { placed.push({ x: s.position.x, z: s.position.z }); });
+    pools.forEach(function (p) { placed.push({ x: p.position.x, z: p.position.z }); });
 
-    // Resources scattered between the camps, tiered by distance to the nearest
-    // camp: easy near the poles, higher tier toward the middle of the map.
-    // NOTE: tree/rock counts (11 / 8) are mirrored in server.js RES — keep aligned.
-    // Trees (11): 8 easy near the camps, 3 blightwood toward the centre.
-    scatterRect(4, -26, 26, -40, -24, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
-    scatterRect(4, -26, 26,  24,  40, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
-    scatterRect(3, -22, 22, -15,  15, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
-    // Rocks (8): 6 easy near the camps, 2 plutonium toward the centre.
-    scatterRect(3, -26, 26, -40, -24, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(3, -26, 26,  24,  40, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(2, -22, 22, -15,  15, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
+    // Resources scattered between the camps, tiered by distance from the centre:
+    // easy tiers near the poles, rarer/higher tiers toward the middle.
+    // NOTE: tree/rock totals (11 / 8) are mirrored in server.js RES — keep aligned.
+    // Trees (11): 5 Dead (lv1) near camps, 3 Palm (lv4) mid, 2 Ancient (lv7) inner, 1 Elder (lv10) centre.
+    scatterRect(3, -24, 24, -40, -26, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
+    scatterRect(2, -24, 24,  26,  40, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
+    scatterRect(2, -22, 22, -22, -12, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
+    scatterRect(1, -22, 22,  12,  22, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
+    scatterRect(2, -18, 18, -11,  11, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 2)); placed.push(trees[trees.length - 1]); });
+    scatterRect(1,  -8,  8,  -6,   6, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 3)); placed.push(trees[trees.length - 1]); });
+    // Rocks (8): 4 Copper (lv1) near camps, 2 Iron (lv4) mid, 1 Silver (lv7) inner, 1 Gold (lv10) centre.
+    scatterRect(2, -24, 24, -40, -26, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(2, -24, 24,  26,  40, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(1, -22, 22, -22, -12, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(1, -22, 22,  12,  22, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(1, -16, 16, -10,  10, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 2)); placed.push(rocks[rocks.length - 1]); });
+    scatterRect(1,  -8,  8,  -6,   6, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 3)); placed.push(rocks[rocks.length - 1]); });
 
-    // Fishing ponds (little pools): shrimp near the camps, lobster mid,
-    // a whale pond in the very middle.
-    var pondPlan = [
-      { z: -34, t: 0 }, { z: -28, t: 0 }, { z: 28, t: 0 }, { z: 34, t: 0 },  // shrimp near camps
-      { z: -16, t: 1 }, { z: 16, t: 1 },                                     // lobster mid
-      { z: 0, t: 2 }                                                          // whale centre
-    ];
-    pondPlan.forEach(function (pp) {
-      var px = Utils.randRange(-18, 18);
-      pools.push(makePond(px, pp.z, pp.t)); placed.push(pools[pools.length - 1]);
-    });
-
-    // a couple of hazard barrels at each camp for light
-    clusterAround(C.north.x, C.north.z, 1, 8, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
-    clusterAround(C.south.x, C.south.z, 1, 8, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
+    // a brazier at each camp for light
+    clusterAround(C.north.x, C.north.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
+    clusterAround(C.south.x, C.south.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
 
     // enemies still spawn (for the self-test + server alignment) but are hidden
     // in the live game unless ENEMIES_ENABLED. Placed in an outer ring.
@@ -833,6 +909,10 @@ var Entities = (function () {
     // animate each fishing pond: rising bubbles + a gently pulsing ring
     for (i = 0; i < pools.length; i++) {
       var sp = pools[i];
+      if (sp.dynamic) {   // camp pond upgrades its catch with your Fishing level
+        var nt = fishTierForLevel(window.Skills ? Skills.data.fishing.level : 1);
+        if (nt !== sp._tier) retierPond(sp, nt);
+      }
       var pp = sp.parts.attributes.position;
       for (var k = 0; k < pp.count; k++) {
         var y = pp.getY(k) + dt * 0.5;

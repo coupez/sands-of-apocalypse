@@ -17,10 +17,14 @@ var Skills = (function () {
   };
 
   var ITEMS = {
-    log:   { id: 'log',   name: 'Palm Timber',   icon: '🪵' },
-    blog:  { id: 'blog',  name: 'Ebony Log',     icon: '🟫' },
-    ore:   { id: 'ore',   name: 'Copper Ore',    icon: '🟠' },
-    pore:  { id: 'pore',  name: 'Gold Ore',      icon: '🟡' },
+    log:      { id: 'log',      name: 'Dead Log',    icon: '🪵' },
+    palmwood: { id: 'palmwood', name: 'Palm Wood',   icon: '🪵' },
+    blog:     { id: 'blog',     name: 'Ebony Log',   icon: '🟫' },
+    elderwood:{ id: 'elderwood',name: 'Elderwood',   icon: '🟤' },
+    ore:      { id: 'ore',      name: 'Copper Ore',  icon: '🟠' },
+    iron:     { id: 'iron',     name: 'Iron Ore',    icon: '⬜' },
+    silver:   { id: 'silver',   name: 'Silver Ore',  icon: '⚪' },
+    pore:     { id: 'pore',     name: 'Gold Ore',    icon: '🟡' },
     shrimp:  { id: 'shrimp',  name: 'Raw Sardine',   icon: '🐟' },
     lobster: { id: 'lobster', name: 'Raw Crab',      icon: '🦀' },
     whale:   { id: 'whale',   name: 'Raw Perch',     icon: '🐠' },
