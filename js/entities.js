@@ -69,6 +69,39 @@ var Entities = (function () {
   }
   function untag(ref) { interactMeshes = interactMeshes.filter(function (m) { return m.userData.ref !== ref; }); }
 
+  // ---------- hover outline: one reusable back-side silhouette of the hovered object ----------
+  var _highlight = null, _highlightSrc = null;
+  var _hlV = new THREE.Vector3(), _hlQ = new THREE.Quaternion(), _hlS = new THREE.Vector3();
+  function disposeHighlight() {
+    if (!_highlight) return;
+    scene.remove(_highlight);
+    _highlight.traverse(function (o) { if (o.isMesh && o.material) o.material.dispose(); });
+    _highlight = null;
+  }
+  function setHighlight(mesh) {
+    if (mesh === _highlightSrc) return;            // hovered thing didn't change
+    _highlightSrc = mesh || null;
+    disposeHighlight();
+    if (!mesh) return;
+    var outline = mesh.clone(true);
+    outline.traverse(function (o) {
+      // invisible hitboxes / lights / point-clouds must not become solid outline shells
+      if (o.userData && o.userData.hitbox) { o.visible = false; return; }
+      if (o.isLight || o.isPoints) { o.visible = false; return; }
+      if (o.isMesh) {
+        o.material = new THREE.MeshBasicMaterial({ color: 0xffe6a0, side: THREE.BackSide });
+        o.castShadow = false; o.receiveShadow = false;
+      }
+    });
+    mesh.updateWorldMatrix(true, false);
+    outline.position.copy(mesh.getWorldPosition(_hlV));
+    outline.quaternion.copy(mesh.getWorldQuaternion(_hlQ));
+    mesh.getWorldScale(_hlS);
+    outline.scale.set(_hlS.x * 1.06, _hlS.y * 1.06, _hlS.z * 1.06);
+    scene.add(outline);
+    _highlight = outline;
+  }
+
   // ---------- tree (dead / palm styles) ----------
   function makeTree(x, z, tierIdx) {
     var T = TREE_TIERS[tierIdx];
@@ -495,6 +528,61 @@ var Entities = (function () {
     return obelisk;
   }
 
+  // ---------- ceremony plaza: an Egyptian-ruins clearing around the Obelisk ----------
+  // A big flat sandstone floor ringed with broken columns + weathered statues, so
+  // the centre reads as an ancient ceremony ground (no resources spawn here).
+  function makeCeremonyPlaza() {
+    var PLAZA_R = 20;
+    var g = new THREE.Group();
+    var sand = new THREE.MeshStandardMaterial({ color: 0xcdb082, roughness: 1, flatShading: true });
+    var sandDark = new THREE.MeshStandardMaterial({ color: 0xb59468, roughness: 1, flatShading: true });
+    // flat inlaid stone floor (kept low so the player walks over it, no clipping)
+    var floor = new THREE.Mesh(new THREE.CylinderGeometry(PLAZA_R, PLAZA_R, 0.12, 40), sandDark);
+    floor.position.y = 0.06; floor.receiveShadow = true; g.add(floor);
+    var inner = new THREE.Mesh(new THREE.CylinderGeometry(PLAZA_R - 5, PLAZA_R - 5, 0.14, 40), sand);
+    inner.position.y = 0.08; inner.receiveShadow = true; g.add(inner);
+    var core = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.16, 32), sandDark);
+    core.position.y = 0.10; core.receiveShadow = true; g.add(core);
+    // ring of columns — some standing (drum-stacked + capital), some toppled
+    var cols = 14;
+    for (var i = 0; i < cols; i++) {
+      var a = (i / cols) * Math.PI * 2, cr = PLAZA_R - 1.5;
+      var cx = Math.cos(a) * cr, cz = Math.sin(a) * cr;
+      var toppled = (i % 4 === 0);
+      var colG = new THREE.Group();
+      var h = toppled ? Utils.randRange(2.4, 3.4) : Utils.randRange(4.5, 7.5);
+      var drums = Math.max(2, Math.round(h / 1.5));
+      for (var d = 0; d < drums; d++) {
+        var drum = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, (h / drums) * 0.98, 12), sand);
+        drum.position.y = (d + 0.5) * (h / drums); drum.castShadow = true; colG.add(drum);
+      }
+      if (!toppled) { var cap2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 1.5), sandDark); cap2.position.y = h + 0.2; cap2.castShadow = true; colG.add(cap2); }
+      colG.position.set(cx, 0.12, cz);
+      if (toppled) { colG.rotation.z = (Utils.rand() > 0.5 ? 1 : -1) * Math.PI / 2; colG.rotation.y = a; colG.position.y = 0.6; }
+      g.add(colG);
+      if (!toppled) markOccluder(colG);
+    }
+    // two weathered seated statues flanking a N/S gateway
+    [{ z: PLAZA_R - 2, ry: Math.PI }, { z: -(PLAZA_R - 2), ry: 0 }].forEach(function (p) {
+      var st = new THREE.Group();
+      var base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 2.6), sandDark); base.position.y = 0.82; st.add(base);
+      var body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.2, 1.4), sand); body.position.set(0, 2.3, -0.2); st.add(body);
+      var head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), sand); head.position.set(0, 3.8, -0.2); st.add(head);
+      var nemes = new THREE.Mesh(new THREE.ConeGeometry(0.78, 0.8, 4), sandDark); nemes.rotation.y = Math.PI / 4; nemes.position.set(0, 4.25, -0.2); st.add(nemes);
+      st.position.set(0, 0.12, p.z); st.rotation.y = p.ry;
+      st.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+      g.add(st); markOccluder(st);
+    });
+    // flat hieroglyph slabs on the floor
+    for (var s2 = 0; s2 < 6; s2++) {
+      var a2 = Utils.randRange(0, Math.PI * 2), r2 = Utils.randRange(6, PLAZA_R - 5);
+      var slab = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.16, 2.0), sandDark);
+      slab.position.set(Math.cos(a2) * r2, 0.15, Math.sin(a2) * r2); slab.rotation.y = Utils.randRange(0, Math.PI); g.add(slab);
+    }
+    scene.add(g);
+    return PLAZA_R;
+  }
+
   function triggerWin(byMe, winnerName) {
     if (!obelisk || obelisk.done) return;
     obelisk.done = true; obelisk.t = 0;
@@ -584,6 +672,10 @@ var Entities = (function () {
       gem.position.y = 0.7; g.add(gem);
       var light = new THREE.PointLight(0xff4a5a, 2, 9, 2); light.position.y = 0.7; g.add(light);
     }
+    // an invisible, oversized hitbox so small drops (esp. bones) are easy to click
+    var hit = new THREE.Mesh(new THREE.SphereGeometry(1.3, 8, 6),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.position.y = 0.6; hit.userData.hitbox = true; g.add(hit);
     g.position.set(x, terrainY(x, z), z);
     scene.add(g);
     var ent = { type: 'drop', name: name, itemId: itemId, mesh: g, gem: gem, bone: !!bone,
@@ -1088,46 +1180,42 @@ var Entities = (function () {
     stations.forEach(function (s) { placed.push({ x: s.position.x, z: s.position.z }); });
     pools.forEach(function (p) { placed.push({ x: p.position.x, z: p.position.z }); });
 
-    // --- ENDGAME: the Obelisk at dead centre + the altar that forges the Orb ---
+    // --- ENDGAME: the ceremony plaza (Egyptian ruins) with the Obelisk + Altar ---
+    var PLAZA_R = makeCeremonyPlaza();
     makeObelisk(0, 0); placed.push({ x: 0, z: 0 });
     stations.push(makeStation(7, 5, 'altar')); placed.push({ x: 7, z: 5 });
+    var clearR = PLAZA_R + 6;   // resources / scenery stay out of the plaza
 
     // --- BANDIT CAMPS: east and west, with wave combat + a boss ---
     var BC = World.BANDIT_CAMPS;
     makeBanditCamp(BC.east.x, BC.east.z, 'east'); placed.push({ x: BC.east.x, z: BC.east.z });
     makeBanditCamp(BC.west.x, BC.west.z, 'west'); placed.push({ x: BC.west.x, z: BC.west.z });
 
-    // Resources scattered in the N/S corridor, tiered by distance from the centre.
-    // NOTE: tree/rock totals (11 / 8) are mirrored in server.js RES — keep aligned.
-    // Trees (11): 5 Dead near camps, 3 Palm mid, 2 Ancient inner, 1 Elder centre.
-    scatterRect(3, -30, 30, -78, -50, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
-    scatterRect(2, -30, 30,  50,  78, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
-    scatterRect(2, -28, 28, -44, -24, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
-    scatterRect(1, -28, 28,  24,  44, placed, 5).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
-    scatterRect(2, -22, 22, -20,  20, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 2)); placed.push(trees[trees.length - 1]); });
-    scatterRect(1, -11, 11,  -9,   9, placed, 6).forEach(function (p) { trees.push(makeTree(p.x, p.z, 3)); placed.push(trees[trees.length - 1]); });
-    // Rocks (8): 4 Copper near camps, 2 Iron mid, 1 Silver inner, 1 Gold centre.
-    scatterRect(2, -30, 30, -78, -50, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(2, -30, 30,  50,  78, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(1, -28, 28, -44, -24, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(1, -28, 28,  24,  44, placed, 5).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(1, -22, 22, -20,  20, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 2)); placed.push(rocks[rocks.length - 1]); });
-    scatterRect(1, -11, 11,  -9,   9, placed, 6).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 3)); placed.push(rocks[rocks.length - 1]); });
+    // Resources spread evenly around the whole field in concentric rings, richest
+    // nearest the plaza. Totals 11 trees / 8 rocks — mirrored in server.js RES.
+    scatter(5, 52, 80, placed, 8).forEach(function (p) { trees.push(makeTree(p.x, p.z, 0)); placed.push(trees[trees.length - 1]); });
+    scatter(3, 40, 56, placed, 8).forEach(function (p) { trees.push(makeTree(p.x, p.z, 1)); placed.push(trees[trees.length - 1]); });
+    scatter(2, 30, 42, placed, 8).forEach(function (p) { trees.push(makeTree(p.x, p.z, 2)); placed.push(trees[trees.length - 1]); });
+    scatter(1, clearR, clearR + 8, placed, 8).forEach(function (p) { trees.push(makeTree(p.x, p.z, 3)); placed.push(trees[trees.length - 1]); });
+    scatter(4, 52, 80, placed, 8).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 0)); placed.push(rocks[rocks.length - 1]); });
+    scatter(2, 40, 56, placed, 8).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 1)); placed.push(rocks[rocks.length - 1]); });
+    scatter(1, 30, 42, placed, 8).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 2)); placed.push(rocks[rocks.length - 1]); });
+    scatter(1, clearR, clearR + 8, placed, 8).forEach(function (p) { rocks.push(makeRock(p.x, p.z, 3)); placed.push(rocks[rocks.length - 1]); });
 
-    // --- populate the field: neutral fishing spots + desert scenery (all directions) ---
-    [ { t: 0, x: -28, z: -30 }, { t: 1, x: 30, z: 28 }, { t: 2, x: 22, z: -6 }, { t: 1, x: -30, z: 34 } ].forEach(function (pp) {
+    // --- neutral fishing spots + desert scenery, spread around the ring ---
+    [ { t: 0, x: -38, z: -30 }, { t: 1, x: 40, z: 28 }, { t: 2, x: 30, z: -34 }, { t: 1, x: -34, z: 40 } ].forEach(function (pp) {
       pools.push(makePond(pp.x, pp.z, pp.t)); placed.push(pools[pools.length - 1]);
     });
-    scatter(14, 14, 72, placed, 6).forEach(function (p) { makeCactus(p.x, p.z); placed.push(p); });
-    scatter(18, 18, 78, placed, 5).forEach(function (p) { makeBoulder(p.x, p.z); placed.push(p); });
-    scatter(22, 14, 80, placed, 3).forEach(function (p) { makeBush(p.x, p.z); });
+    scatter(16, clearR, 84, placed, 6).forEach(function (p) { makeCactus(p.x, p.z); placed.push(p); });
+    scatter(20, clearR, 88, placed, 5).forEach(function (p) { makeBoulder(p.x, p.z); placed.push(p); });
+    scatter(24, clearR, 90, placed, 3).forEach(function (p) { makeBush(p.x, p.z); });
 
     // a brazier at each camp for light
     clusterAround(C.north.x, C.north.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
     clusterAround(C.south.x, C.south.z, 1, 6, placed, 5).forEach(function (p) { makeBarrel(p.x, p.z); });
 
     // --- ambient life: skittering rats (attackable, tiny XP) + birds circling overhead ---
-    scatter(9, 12, 78, placed, 8).forEach(function (p) { makeRat(p.x, p.z); });
+    scatter(9, clearR, 84, placed, 8).forEach(function (p) { makeRat(p.x, p.z); });
     makeBird(0, 0, 55, 30, 1); makeBird(20, -15, 40, 26, -1); makeBird(-30, 10, 48, 34, 1);
     makeBird(10, 40, 36, 24, 1); makeBird(-20, -35, 44, 32, -1);
 
@@ -1477,8 +1565,68 @@ var Entities = (function () {
     if (enemiesLive) for (var k = 0; k < enemies.length; k++) { if (enemies[k].state !== 'wander') respawnEnemy(enemies[k]); }
   }
 
+  // ---------- full round restart (win countdown / new player joined) ----------
+  // A fresh competitive round: reset the world state, then wipe skills+inventory
+  // and respawn everyone at their camp. Runs even while online (server-driven).
+  function newRound() {
+    // obelisk win-state
+    if (obelisk) {
+      obelisk.done = false; obelisk.t = 0;
+      obelisk.socket.material.emissive.setHex(0x000000);
+      obelisk.socket.material.emissiveIntensity = 0;
+      obelisk.light.intensity = 0;
+    }
+    // tear down every bandit, then re-open each camp at wave 0
+    for (var bi = 0; bi < bandits.length; bi++) { untag(bandits[bi]); removePortal(bandits[bi]); scene.remove(bandits[bi].mesh); }
+    bandits.length = 0;
+    for (var ci = 0; ci < banditCamps.length; ci++) {
+      var camp = banditCamps[ci];
+      camp.wave = 0; camp.cleared = false; camp.between = 0; camp.alive = [];
+      spawnWave(camp);
+    }
+    // clear ground drops
+    for (var di = 0; di < drops.length; di++) { untag(drops[di]); scene.remove(drops[di].mesh); }
+    drops.length = 0;
+    // revive rats
+    for (var ri = 0; ri < rats.length; ri++) {
+      var rt = rats[ri];
+      rt.state = 'wander'; rt.active = true; rt.hp = rt.maxHp; rt.dying = 0;
+      rt.mesh.visible = true; rt.mesh.scale.setScalar(0.9); rt.mesh.rotation.set(0, 0, 0);
+      rt.mesh.position.set(rt.home.x, terrainY(rt.home.x, rt.home.z), rt.home.z);
+      rt._wt = null; rt._idle = 0;
+      untag(rt); tag(rt.mesh, rt);
+    }
+    // restore resources
+    for (var ti = 0; ti < trees.length; ti++) restoreResource(trees[ti]);
+    for (var rki = 0; rki < rocks.length; rki++) restoreResource(rocks[rki]);
+    // stations back to Lv1 / unlit; merchant caravan present
+    for (var si = 0; si < stations.length; si++) {
+      var st = stations[si];
+      st.level = 1;
+      if (st.lit) {
+        st.lit = false;
+        if (st.flame) { st.mesh.remove(st.flame); st.flame = null; }
+        if (st.fireLight) { st.mesh.remove(st.fireLight); st.fireLight = null; }
+        if (st.opening) { st.opening.material.emissive.setHex(0x000000); st.opening.material.emissiveIntensity = 0; }
+      }
+      if (st.camel) {
+        st.camel.state = 'present';
+        st.camel.group.position.set(st.camel.home.x, terrainY(st.camel.home.x, st.camel.home.z), st.camel.home.z);
+        st.camel.group.rotation.y = st.camel.faceHome;
+      }
+    }
+    // camp fishing ponds back to level 1 / lowest tier
+    for (var pi = 0; pi < pools.length; pi++) { if (pools[pi].upgradable) { pools[pi].level = 1; retierPond(pools[pi], 0); } }
+    // wipe skills/inventory/gold, respawn the player, clear overlays
+    if (window.Skills && Skills.init) Skills.init();
+    if (window.Player && Player.reset) Player.reset();
+    if (window.UI && UI.clearOverlays) UI.clearOverlays();
+    setHighlight(null);
+    Game.log.push('newRound');
+  }
+
   return {
-    init: init, update: update, reset: reset,
+    init: init, update: update, reset: reset, newRound: newRound, setHighlight: setHighlight,
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
     sendCaravan: sendCaravan, merchantBusy: merchantBusy,

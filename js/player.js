@@ -219,6 +219,14 @@ var Player = (function () {
     CameraRig.setTarget(group.position);
   }
 
+  // A target stops being valid once it's gone — enemies flip active=false, but
+  // remote players stay "active" through death/respawn, so check their state too.
+  function targetValid(e) {
+    if (!e || !e.active) return false;
+    if (e.type === 'player' && (e.hp <= 0 || e.state === 'dead')) return false;
+    return true;
+  }
+
   function update(dt, t) {
     if (!group) return;
 
@@ -231,14 +239,14 @@ var Player = (function () {
 
     // Determine where to walk. For interactions, chase the entity's live pos.
     var dest = null, stopDist = 0.15, ent = null;
-    if (interaction && interaction.entity && interaction.entity.active) {
+    if (interaction && targetValid(interaction.entity)) {
       ent = interaction.entity;
       var ep = ent.position;
       dest = new THREE.Vector3(ep.x, 0, ep.z);
       stopDist = ent.interactRange || 2.0;
-      // a bow lets you loose arrows from range — stop short and fire
-      if (ent.type === 'enemy' && window.Skills && Skills.isRanged && Skills.isRanged()) stopDist = 8;
-    } else if (interaction && interaction.entity && !interaction.entity.active) {
+      // a bow lets you loose arrows from range — stop well short and fire
+      if (ent.type === 'enemy' && window.Skills && Skills.isRanged && Skills.isRanged()) stopDist = 14;
+    } else if (interaction && !targetValid(interaction.entity)) {
       interaction = null; state = 'idle'; actionKind = null;
     } else if (moveTarget) {
       dest = moveTarget;

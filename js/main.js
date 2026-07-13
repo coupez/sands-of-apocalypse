@@ -7,8 +7,44 @@ var Main = (function () {
   var ndc = new THREE.Vector2();
   var hoverNdc = new THREE.Vector2();
   var haveHover = false;
+  var hoverClientX = 0, hoverClientY = 0;
   var canvas, ground, clock;
   var hoverAccum = 0;
+  var _lastCursor = '', CURSORS = {};
+
+  // per-interaction mouse cursors (emoji rasterised into an SVG cursor image)
+  function emojiCursor(glyph, hx, hy) {
+    var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36'><text y='28' font-size='28'>" + glyph + "</text></svg>";
+    return "url(\"data:image/svg+xml;utf8," + encodeURIComponent(svg) + "\") " + hx + " " + hy + ", pointer";
+  }
+  function cursorFor(type) {
+    if (!CURSORS.tree) {
+      CURSORS.tree = emojiCursor('🪓', 4, 4);
+      CURSORS.rock = emojiCursor('⛏️', 4, 4);
+      CURSORS.fishpool = emojiCursor('🎣', 4, 4);
+      CURSORS.enemy = emojiCursor('⚔️', 4, 4);
+      CURSORS.drop = emojiCursor('🫳', 4, 4);
+      CURSORS.use = emojiCursor('👆', 4, 4);
+    }
+    if (type === 'player') return CURSORS.enemy;
+    if (type === 'station' || type === 'obelisk' || type === 'chest') return CURSORS.use;
+    return CURSORS[type] || 'pointer';
+  }
+  function setCursor(c) { if (c !== _lastCursor) { document.body.style.cursor = c; _lastCursor = c; } }
+  function verbFor(ref) {
+    switch (ref.type) {
+      case 'tree': return 'Chop ' + ref.name;
+      case 'rock': return 'Mine ' + ref.name;
+      case 'fishpool': return 'Fish ' + ref.name;
+      case 'chest': return 'Open ' + (ref.name || 'chest');
+      case 'station': return 'Use ' + ref.name + (ref.lit === false && (ref.kind === 'furnace' || ref.kind === 'campfire') ? ' (unlit)' : '');
+      case 'obelisk': return 'Place the Heart in the Obelisk';
+      case 'drop': return 'Pick up ' + ref.name;
+      case 'enemy': return 'Attack ' + ref.name + ' (Lv ' + ref.reqLevel + ')';
+      case 'player': return 'Attack ' + ref.name;
+    }
+    return ref.name || '';
+  }
 
   // frame-rate cap + FPS meter — locked to a steady 30 for consistent pacing
   var FPS_CAP = 30;
@@ -62,6 +98,7 @@ var Main = (function () {
     });
     window.addEventListener('mousemove', function (e) {
       setNdc(hoverNdc, e.clientX, e.clientY);
+      hoverClientX = e.clientX; hoverClientY = e.clientY;
       haveHover = true;
     });
     // right-click a camp station / fishing spot → upgrade menu
@@ -143,17 +180,18 @@ var Main = (function () {
     if (hoverAccum < 0.08 || !haveHover) return;
     hoverAccum = 0;
     var ref = pickInteractable(hoverNdc);
+    // outline the hovered object (works for entity .mesh or a remote player's .group)
+    Entities.setHighlight(ref ? (ref.mesh || ref.group) : null);
     if (ref) {
-      document.body.style.cursor = 'pointer';
+      setCursor(cursorFor(ref.type));
+      if (window.UI && UI.showTip) UI.showTip(verbFor(ref), hoverClientX, hoverClientY);
+      // the top readout keeps the richer combat info; everything else is on the cursor tip
       if (ref.type === 'enemy') UI.setTarget(ref.name + ' (Lv ' + ref.reqLevel + ')  ' + Math.ceil(ref.hp) + '/' + ref.maxHp + ' hp');
-      else if (ref.type === 'tree' || ref.type === 'rock' || ref.type === 'fishpool') UI.setTarget(ref.name + (ref.reqLevel > 1 ? ' (Lv ' + ref.reqLevel + ')' : ''));
-      else if (ref.type === 'chest') UI.setTarget('🎁 Supply Chest');
-      else if (ref.type === 'station') UI.setTarget(ref.name + (ref.lit === false && (ref.kind === 'furnace' || ref.kind === 'campfire') ? ' (unlit)' : '') + ' — click to use');
-      else if (ref.type === 'obelisk') UI.setTarget('🔺 The Obelisk — place the Heart to win');
-      else if (ref.type === 'drop') UI.setTarget((ref.bone ? '🦴 ' : '✦ ') + ref.name + ' — click to pick up');
       else if (ref.type === 'player') UI.setTarget('⚔ ' + ref.name + '  (' + Math.ceil(ref.hp) + ' hp)');
+      else UI.setTarget(null);
     } else {
-      document.body.style.cursor = 'crosshair';
+      setCursor('crosshair');
+      if (window.UI && UI.hideTip) UI.hideTip();
       UI.setTarget(null);
     }
   }

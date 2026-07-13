@@ -104,6 +104,11 @@ var UI = (function () {
         slot.className = 'equip-slot empty slot-' + def.slot;
         slot.title = def.label;
         slot.addEventListener('click', function () { Skills.unequip(def.slot); });
+        slot.addEventListener('mousemove', function (e) {
+          var g = Game.equipment ? Skills.GEAR[Game.equipment[def.slot]] : null;
+          if (g) showTip(g.name + bonusText(g), e.clientX, e.clientY); else showTip(def.label + ' (empty)', e.clientX, e.clientY);
+        });
+        slot.addEventListener('mouseleave', hideTip);
         el.equipGrid.appendChild(slot);
         el.equipSlots[def.slot] = slot;
       })(EQUIP_UI[i]);
@@ -194,6 +199,14 @@ var UI = (function () {
       slot.classList.add('drag-over');
     });
     slot.addEventListener('dragleave', function () { slot.classList.remove('drag-over'); });
+    // custom hover tooltip naming the item (+ bonuses for gear)
+    slot.addEventListener('mousemove', function (e) {
+      var it = Game.inventory[index];
+      if (!it) { hideTip(); return; }
+      var tip = it.name + (Skills.isGear(it.id) ? bonusText(Skills.GEAR[it.id]) : '');
+      showTip(tip, e.clientX, e.clientY);
+    });
+    slot.addEventListener('mouseleave', hideTip);
     // left-click runs the item's primary action (equip gear / eat food)
     slot.addEventListener('click', function () {
       var it = Game.inventory[index];
@@ -481,6 +494,56 @@ var UI = (function () {
     _actionTimer = setTimeout(function () { el.actionText.classList.remove('show'); }, 1600);
   }
 
+  // ---------- shared cursor tooltip (3D hover + inventory/equipment) ----------
+  var _tipEl = null;
+  function tipEl() {
+    if (_tipEl) return _tipEl;
+    _tipEl = document.getElementById('cursor-tooltip');
+    if (!_tipEl) { _tipEl = document.createElement('div'); _tipEl.id = 'cursor-tooltip'; document.body.appendChild(_tipEl); }
+    return _tipEl;
+  }
+  function showTip(text, x, y) {
+    if (Game.headless || !text) { hideTip(); return; }
+    var t = tipEl();
+    t.textContent = text;
+    t.style.display = 'block';
+    var w = t.offsetWidth || 120, h = t.offsetHeight || 24;
+    var lx = Math.min(x + 16, window.innerWidth - w - 6);
+    var ly = Math.min(y + 18, window.innerHeight - h - 6);
+    t.style.left = lx + 'px'; t.style.top = ly + 'px';
+  }
+  function hideTip() { if (_tipEl) _tipEl.style.display = 'none'; }
+
+  // ---------- round-restart countdown + overlay cleanup ----------
+  var _cdEl = null, _cdTimer = null;
+  function clearCountdown() {
+    if (_cdTimer) { clearInterval(_cdTimer); _cdTimer = null; }
+    if (_cdEl && _cdEl.parentNode) _cdEl.parentNode.removeChild(_cdEl);
+    _cdEl = null;
+  }
+  function showCountdown(sec) {
+    if (Game.headless) return;
+    clearCountdown();
+    var remaining = Math.max(1, sec || 10);
+    _cdEl = document.createElement('div');
+    _cdEl.id = 'countdown';
+    document.body.appendChild(_cdEl);
+    function render() { _cdEl.innerHTML = 'New round in <b>' + remaining + '</b>…'; }
+    render();
+    _cdTimer = setInterval(function () {
+      remaining--;
+      if (remaining <= 0) { clearCountdown(); return; }
+      render();
+    }, 1000);
+  }
+  // remove the victory overlay + death screen + countdown (called on a new round)
+  function clearOverlays() {
+    var v = document.getElementById('victory');
+    if (v && v.parentNode) v.parentNode.removeChild(v);
+    hideDeathScreen();
+    clearCountdown();
+  }
+
   // ---------- global level-up announcements (top-center banner) ----------
   function announce(text, ominous) {
     if (Game.headless) return;
@@ -593,12 +656,8 @@ var UI = (function () {
   }
 
   // ---------- flashes / screens ----------
-  function flashDamage() {
-    if (!el.gameRoot) return;
-    el.gameRoot.classList.remove('damage-flash');
-    void el.gameRoot.offsetWidth; // reflow to restart animation
-    el.gameRoot.classList.add('damage-flash');
-  }
+  // No red hurt overlay (Lucas's request) — damage feedback is the hitsplat + SFX.
+  function flashDamage() {}
 
   function hideBoot() { if (el.boot) el.boot.classList.add('hidden'); }
   function setBootStatus(t) { if (el.bootStatus) el.bootStatus.textContent = t; }
@@ -624,6 +683,7 @@ var UI = (function () {
     updateEquipment: updateEquipment, setActiveTab: setActiveTab, toast: toast,
     updateGold: updateGold, openSmithMenu: openSmithMenu, openSellMenu: openSellMenu, openStationMenu: openStationMenu,
     showActionText: showActionText, setTarget: setTarget, announce: announce,
+    showTip: showTip, hideTip: hideTip, showCountdown: showCountdown, clearOverlays: clearOverlays,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
     updateCampLabels: updateCampLabels,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,

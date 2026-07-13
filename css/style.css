@@ -638,8 +638,8 @@ html, body {
   display: none;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(ellipse at center, rgba(60,0,0,0.4), rgba(0,0,0,0.85) 80%);
-  backdrop-filter: grayscale(0.6) blur(1px);
+  background: radial-gradient(ellipse at center, rgba(12,12,14,0.55), rgba(0,0,0,0.9) 80%);
+  backdrop-filter: grayscale(0.7) blur(1px);
 }
 #death-screen.show { display: flex; animation: fadeIn 1s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -648,10 +648,10 @@ html, body {
   font-size: 64px;
   font-weight: 900;
   letter-spacing: 8px;
-  color: var(--danger);
-  text-shadow: 0 0 24px rgba(255,40,20,0.7), 0 4px 8px #000;
+  color: #ccc4b0;
+  text-shadow: 0 0 24px rgba(0,0,0,0.7), 0 4px 8px #000;
 }
-.death-sub { color: #b98; letter-spacing: 3px; margin-top: 8px; font-size: 14px; }
+.death-sub { color: #9a927e; letter-spacing: 3px; margin-top: 8px; font-size: 14px; }
 #respawn-btn {
   margin-top: 30px;
   padding: 12px 34px;
@@ -669,17 +669,42 @@ html, body {
 #respawn-btn:hover { transform: scale(1.06); box-shadow: 0 0 32px var(--toxic-glow); }
 #respawn-btn:active { transform: scale(0.98); }
 
-/* damage flash when player is hit */
-#game-root.damage-flash::after {
-  content: "";
+/* (red hurt-flash removed per request — damage reads via hitsplats + SFX) */
+
+/* Cursor tooltip — follows the mouse, names the hovered interaction / item */
+#cursor-tooltip {
   position: fixed;
-  inset: 0;
-  background: rgba(255,0,0,0.28);
+  z-index: 70;
+  display: none;
   pointer-events: none;
-  z-index: 6;
-  animation: dmgflash 0.35s ease-out;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(20, 13, 6, 0.94);
+  border: 1px solid var(--panel-border);
+  color: #f3e7c8;
+  font-size: 13px; font-weight: 600;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+  box-shadow: 0 3px 12px rgba(0,0,0,0.6);
 }
-@keyframes dmgflash { from { opacity: 1; } to { opacity: 0; } }
+
+/* Round-restart countdown (centered) */
+#countdown {
+  position: fixed;
+  z-index: 62;
+  left: 50%; top: 38%;
+  transform: translate(-50%, -50%);
+  padding: 14px 30px;
+  border-radius: 12px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: #ffe9b8;
+  font-size: 22px; font-weight: 800; letter-spacing: 1px;
+  text-shadow: 0 2px 4px #000;
+  box-shadow: 0 6px 26px rgba(0,0,0,0.6);
+  animation: panel-in 0.2s ease;
+}
+#countdown b { color: var(--toxic); font-size: 26px; }
 
 /* Music mute button (in the tab bar) */
 .music-btn.muted { opacity: 0.6; border-color: rgba(214,168,92,0.25); }

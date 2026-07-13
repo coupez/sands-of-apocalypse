@@ -42,11 +42,14 @@ var SelfTest = (function () {
 
       // -- woodcutting --
       var wcXp0 = Skills.data.woodcutting.xp;
-      var tree = Entities.trees.filter(function (t) { return t.active; })[0];
+      // pick the nearest reqLevel-1 tree the level-1 player can actually chop
+      var wtrees = Entities.trees.filter(function (t) { return t.active && t.reqLevel === 1; });
+      wtrees.sort(function (a, b) { return dist(Player.position, a.position.x, a.position.z) - dist(Player.position, b.position.x, b.position.z); });
+      var tree = wtrees[0];
       assert('found active tree', !!tree);
       if (tree) {
         Player.interactWith(tree);
-        Main.advance(16);
+        Main.advance(24);
         assert('woodcutting xp gained', Skills.data.woodcutting.xp > wcXp0,
           'xp ' + wcXp0 + ' -> ' + Skills.data.woodcutting.xp);
         assert('log in inventory',
@@ -56,11 +59,13 @@ var SelfTest = (function () {
 
       // -- mining --
       var mnXp0 = Skills.data.mining.xp;
-      var rock = Entities.rocks.filter(function (r) { return r.active; })[0];
+      var mrocks = Entities.rocks.filter(function (r) { return r.active && r.reqLevel === 1; });
+      mrocks.sort(function (a, b) { return dist(Player.position, a.position.x, a.position.z) - dist(Player.position, b.position.x, b.position.z); });
+      var rock = mrocks[0];
       assert('found active rock', !!rock);
       if (rock) {
         Player.interactWith(rock);
-        Main.advance(16);
+        Main.advance(24);
         assert('mining xp gained', Skills.data.mining.xp > mnXp0,
           'xp ' + mnXp0 + ' -> ' + Skills.data.mining.xp);
         assert('ore in inventory',
@@ -387,6 +392,13 @@ var SelfTest = (function () {
       assert('entity counts match server indices',
         Entities.trees.length === 11 && Entities.rocks.length === 8 && Entities.enemies.length === 9,
         't' + Entities.trees.length + ' r' + Entities.rocks.length + ' e' + Entities.enemies.length);
+      // resources spread across the field but stay OUT of the centre ceremony plaza
+      assert('centre plaza is kept clear of resources',
+        Entities.trees.concat(Entities.rocks).every(function (e) { return Math.hypot(e.position.x, e.position.z) >= 24; }),
+        'min r=' + Math.round(Math.min.apply(null, Entities.trees.concat(Entities.rocks).map(function (e) { return Math.hypot(e.position.x, e.position.z); }))));
+      // smithed gear uses distinct per-type icons (not a single '■')
+      assert('smithed gear has distinct type icons',
+        (function () { var h = Skills.SMITH_RECIPES.filter(function (r) { return r.id === 'bronze_helmet'; })[0]; return !!h && h.icon === '⛑️'; })());
 
       // -- enemy visuals keep the animatable skeleton the anim system drives --
       var e0 = Entities.enemies[0];
@@ -463,6 +475,23 @@ var SelfTest = (function () {
       assert('respawn returns the player to their camp',
         dist(Player.position, World.CAMPS.north.x, World.CAMPS.north.z) < 1.5,
         'pos=' + Player.position.x.toFixed(1) + ',' + Player.position.z.toFixed(1));
+
+      // -- clearing a target that dies (don't chase a respawned PvP victim) --
+      Player.stop();
+      Player.interactWith({ type: 'player', active: true, hp: 0, state: 'dead', name: 'Ghost', position: { x: 8, y: 0, z: 8 } });
+      Main.advance(0.3);
+      assert('a target that dies is cleared', Player.interaction === null, 'interaction=' + (Player.interaction ? 'set' : 'null'));
+
+      // -- full round restart: wipes progress + resets the world --
+      Skills.addItem('log'); Skills.addGold(40); Skills.data.mining.xp = 0; Skills.addXp('mining', 400);
+      Entities.newRound();
+      assert('newRound clears the obelisk win-state', Entities.obelisk.done === false);
+      assert('newRound clears ground drops', Entities.drops.length === 0);
+      assert('newRound re-opens bandit camps at wave 0',
+        Entities.banditCamps[0].wave === 0 && Entities.banditCamps[0].alive.length === 5,
+        'wave=' + Entities.banditCamps[0].wave + ' alive=' + Entities.banditCamps[0].alive.length);
+      assert('newRound wipes inventory + gold', Game.inventory.filter(Boolean).length === 0 && (Game.gold || 0) === 0);
+      assert('newRound resets skills to level 1', Skills.data.mining.level === 1 && Skills.data.attack.level === 1);
 
     } catch (err) {
       assert('NO EXCEPTIONS', false, (err && err.stack) ? err.stack : String(err));

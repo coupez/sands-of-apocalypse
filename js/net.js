@@ -75,7 +75,11 @@ var Net = (function () {
       else if (msg.type === 'enemyDead') { Entities.serverEnemyDead(msg.i, msg.x, msg.z, msg.by === myId); }
       else if (msg.type === 'enemyRespawn') { Entities.serverEnemyRespawn(msg.i, msg.x, msg.z); }
       else if (msg.type === 'resource') { Entities.setResourceState(msg.kind, msg.i, msg.active); }
-      else if (msg.type === 'win') { if (window.Entities) Entities.remoteWin(msg.name || 'A rival'); }
+      else if (msg.type === 'win') {
+        if (window.Entities) Entities.remoteWin(msg.name || 'A rival');
+        if (window.UI && UI.showCountdown && msg.restartIn) UI.showCountdown(msg.restartIn);
+      }
+      else if (msg.type === 'restart') { if (window.Entities) Entities.newRound(); }
       else if (msg.type === 'level') {
         // a level-up announcement from any player; our own is already shown locally
         if (msg.id !== myId && window.UI && UI.announce) {

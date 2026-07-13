@@ -105,9 +105,10 @@ var Skills = (function () {
         var T = GTYPES[ti], bonus = {};
         for (var k in T.per) bonus[k] = (k === 'acc') ? +(T.per[k] * mult).toFixed(2) : T.per[k] * mult;
         var id = M.key + '_' + T.key;
-        // one simple recoloured icon for all gear — the colour is the tier
-        GEAR[id] = { id: id, name: M.name + ' ' + T.name, icon: '■', tint: M.color, slot: T.slot, bonus: bonus };
-        SMITH_RECIPES.push({ id: id, name: M.name + ' ' + T.name, icon: '■', tint: M.color,
+        // each gear TYPE has its own icon (helmet/sword/…) so pieces are
+        // distinguishable at a glance; the metal tint still marks the tier.
+        GEAR[id] = { id: id, name: M.name + ' ' + T.name, icon: T.icon, tint: M.color, slot: T.slot, bonus: bonus };
+        SMITH_RECIPES.push({ id: id, name: M.name + ' ' + T.name, icon: T.icon, tint: M.color,
           bar: M.bar, barName: M.name + ' Bar', bars: T.bars, level: M.level });
       }
     }

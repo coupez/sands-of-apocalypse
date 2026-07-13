@@ -44,6 +44,8 @@ function newestMtime(dir) {
 // ---- multiplayer state ----
 /** id -> { id, name, color, x, z, ry, state, hp, ready } */
 const players = new Map();
+let roundOver = false;      // a player has won; a restart is scheduled
+let restartTimer = null;    // pending win-countdown timeout
 
 // ============================================================
 // Authoritative shared world: enemies + resource depletion.
@@ -86,6 +88,24 @@ const RES = {
   tree: Array.from({ length: 11 }, () => ({ active: true, amount: 8, respawnT: 0 })),
   rock: Array.from({ length: 8 }, () => ({ active: true, amount: 7, respawnT: 0 })),
 };
+
+// Reset the server-authoritative world (resources + enemies) for a new round.
+function resetServerWorld() {
+  for (const kind of ["tree", "rock"]) {
+    RES[kind].forEach((r) => { r.active = true; r.amount = kind === "tree" ? 8 : 7; r.respawnT = 0; });
+  }
+  for (const e of enemies) {
+    e.state = "wander"; e.hp = e.maxHp; e.x = e.home.x; e.z = e.home.z;
+    e.wander = null; e.idle = 0; e.atkT = 0; e.respawnT = 0;
+  }
+}
+// Broadcast a full round restart to every client (clients own obelisk/bandits/drops).
+function doRestart() {
+  if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+  roundOver = false;
+  resetServerWorld();
+  server.publish("game", JSON.stringify({ type: "restart" }));
+}
 
 function nearestPlayer(x, z) {
   let best = null, bd = Infinity;
@@ -234,6 +254,9 @@ const server = Bun.serve({
         resources: { tree: RES.tree.map((r) => r.active), rock: RES.rock.map((r) => r.active) },
       }));
       console.log(`[ws] join ${id}  (online: ${players.size})`);
+      // a new player joining restarts the whole game for everyone (fresh race).
+      // Skip the very first lone connect — only an ADDITIONAL player restarts.
+      if (players.size > 1) doRestart();
     },
     message(ws, raw) {
       let msg;
@@ -277,9 +300,12 @@ const server = Bun.serve({
         const p = players.get(ws.data.id);
         server.publish("game", JSON.stringify({ type: "chat", id: ws.data.id, name: p ? p.name : "?", text: msg.text.slice(0, 120) }));
       } else if (msg.type === "win") {
-        // first player to place the Orb wins — relay to everyone
+        // first player to place the Heart wins — relay to everyone + start the
+        // 10s countdown, then restart the whole game for a fresh round
         const p = players.get(ws.data.id);
-        server.publish("game", JSON.stringify({ type: "win", name: (p && p.name) ? p.name : (typeof msg.name === "string" ? msg.name.slice(0, 24) : "A rival") }));
+        const name = (p && p.name) ? p.name : (typeof msg.name === "string" ? msg.name.slice(0, 24) : "A rival");
+        server.publish("game", JSON.stringify({ type: "win", name, restartIn: 10 }));
+        if (!roundOver) { roundOver = true; restartTimer = setTimeout(doRestart, 10000); }
       } else if (msg.type === "level" && typeof msg.skill === "string" && Number.isFinite(msg.level)) {
         // broadcast a level-up so everyone hears it (id lets the sender skip its echo)
         const p = players.get(ws.data.id);
