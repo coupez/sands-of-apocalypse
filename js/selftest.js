@@ -83,11 +83,10 @@ var SelfTest = (function () {
       assert('combat skills cap at 20', Skills.data.attack.max === 20 && Skills.data.strength.max === 20);
       assert('other skills cap at 12', Skills.data.mining.max === 12 && Skills.data.cooking.max === 12);
 
-      // -- skill categories (Combat / Gathering / Skills / Spirit Hunting), each with a total level --
-      assert('four skill categories exist', !!Skills.CATEGORIES && Skills.CATEGORIES.length === 4);
-      assert('categories are Combat / Gathering / Skills / Spirit Hunting',
-        Skills.CATEGORIES[0].name === 'Combat' && Skills.CATEGORIES[1].name === 'Gathering' &&
-        Skills.CATEGORIES[2].name === 'Skills' && Skills.CATEGORIES[3].name === 'Spirit Hunting');
+      // -- skill categories (Combat / Gathering / Skills), each with a total level --
+      assert('three skill categories exist', !!Skills.CATEGORIES && Skills.CATEGORIES.length === 3);
+      assert('categories are Combat / Gathering / Skills',
+        Skills.CATEGORIES[0].name === 'Combat' && Skills.CATEGORIES[1].name === 'Gathering' && Skills.CATEGORIES[2].name === 'Skills');
       // renamed skills keep their internal keys (so training code is untouched)
       assert('prayer renamed to Faith', Skills.data.prayer.name === 'Faith');
       assert('ranged renamed to Range', Skills.data.ranged.name === 'Range');
@@ -98,7 +97,7 @@ var SelfTest = (function () {
       assert('new placeholder skills exist', !!Skills.data.defense && !!Skills.data.hitpoints &&
         !!Skills.data.spirit && !!Skills.data.hunting && !!Skills.data.casting);
       assert('placeholder skills are flagged soon', Skills.data.defense.soon === true && Skills.data.casting.soon === true);
-      assert('Spirit Hunting skills exist', !!Skills.data.banishing && !!Skills.data.warding);
+      assert('Spirit Hunting is a single skill in Gathering', !!Skills.data.spirithunting && Skills.CATEGORIES[1].skills.indexOf('spirithunting') >= 0);
       // Electric Paper enchants the equipped weapon with lightning
       assert('Electric Paper is an enchant item', Skills.isEnchant('electricpaper') === true);
       clearBag(); Skills.addItem('bronze_scimitar'); Skills.equipFromInventory(invIndexOf('bronze_scimitar'));

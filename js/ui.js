@@ -949,8 +949,8 @@ var UI = (function () {
         e._labelEl = lab;
         e._hpFill = lab.querySelector('i');
       }
-      // only show while you're actually fighting it: damaged, or recently traded blows
-      var inCombat = (e.hp < e.maxHp) || (e._combatUntil && e._combatUntil > now);
+      // only show while actively fighting — hidden ~4s after the last blow, even if hurt
+      var inCombat = e._combatUntil && e._combatUntil > now;
       var visible = e.active && e.state !== 'dead' && e.state !== 'respawning' && inCombat;
       if (!visible) { e._labelEl.style.display = 'none'; continue; }
       var s = toScreen(new THREE.Vector3(e.position.x, e.position.y + 3.0, e.position.z));
@@ -973,7 +973,7 @@ var UI = (function () {
       labelLayer.appendChild(_playerBar);
       _playerBarFill = _playerBar.querySelector('i');
     }
-    var inCombat = (p.stats.hp < p.stats.maxHp) || (Game.playerCombatUntil && Game.playerCombatUntil > now);
+    var inCombat = Game.playerCombatUntil && Game.playerCombatUntil > now;
     var s = (!p.isDead && inCombat) ? toScreen(new THREE.Vector3(p.position.x, p.position.y + 3.4, p.position.z)) : null;
     if (!s) { _playerBar.style.display = 'none'; return; }
     _playerBar.style.display = 'block';

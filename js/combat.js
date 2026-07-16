@@ -10,7 +10,7 @@ var Combat = (function () {
 
   // combat state: overhead HP bars (enemy + player) only show for a few seconds
   // after a blow is exchanged. markCombat(enemy) refreshes both timers.
-  var COMBAT_MS = 6000;
+  var COMBAT_MS = 4000;
   function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
   function markCombat(enemy) {
     var t = nowMs() + COMBAT_MS;

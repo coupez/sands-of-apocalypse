@@ -9,10 +9,9 @@ var Skills = (function () {
   // a skill that exists in the tree but isn't trainable yet (placeholder Lv 1).
   var CATEGORIES = [
     { key: 'combat',     name: 'Combat',         skills: ['hitpoints', 'attack', 'defense', 'strength', 'ranged', 'spirit', 'prayer'] },
-    { key: 'gathering',  name: 'Gathering',      skills: ['mining', 'woodcutting', 'fishing', 'hunting'] },
+    { key: 'gathering',  name: 'Gathering',      skills: ['mining', 'woodcutting', 'fishing', 'hunting', 'spirithunting'] },
     // casting sits first so it lands right beside Mining; it's metal-casting (anvil work), a sibling of Crafting
-    { key: 'skills',     name: 'Skills',         skills: ['casting', 'smithing', 'cooking'] },
-    { key: 'spirithunt', name: 'Spirit Hunting', skills: ['banishing', 'warding'] }
+    { key: 'skills',     name: 'Skills',         skills: ['casting', 'smithing', 'cooking'] }
   ];
   // combat skills cap at 20; gathering/production/faith skills cap at 12
   var data = {
@@ -30,8 +29,7 @@ var Skills = (function () {
     smithing:     { name: 'Crafting',      icon: '🔨', xp: 0, level: 1, max: 12 },
     casting:      { name: 'Casting',       icon: '🫗', xp: 0, level: 1, max: 12, soon: true },   // metal casting (anvil work), not magic
     cooking:      { name: 'Herbalism',     icon: '🌿', xp: 0, level: 1, max: 12 },               // nature → food + medicine
-    banishing:    { name: 'Banishing',     icon: '👻', xp: 0, level: 1, max: 12, soon: true },   // hunt evil spirits / folklore monsters
-    warding:      { name: 'Warding',       icon: '🧿', xp: 0, level: 1, max: 12, soon: true }
+    spirithunting:{ name: 'Spirit Hunting', icon: '👻', xp: 0, level: 1, max: 12, soon: true }   // hunt evil spirits / folklore monsters
   };
   // flat order (all categories concatenated) for any consumer that wants a list
   var SKILL_ORDER = CATEGORIES.reduce(function (a, c) { return a.concat(c.skills); }, []);
