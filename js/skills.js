@@ -372,7 +372,7 @@ var Skills = (function () {
     Game.inventory[index] = null;
     var now = (window.performance && performance.now) ? performance.now() : Date.now();
     Game.weaponEnchant = { element: e.element, until: now + e.seconds * 1000 };
-    if (window.SFX && SFX.pickup) SFX.pickup();
+    if (window.SFX) { if (e.element === 'lightning' && SFX.electric) SFX.electric(); else if (SFX.pickup) SFX.pickup(); }
     if (window.UI) { UI.updateInventory(); UI.showActionText('Your weapon crackles with ' + e.element + '! (' + e.seconds + 's)'); }
     Game.log.push('enchant:' + e.element);
     return true;

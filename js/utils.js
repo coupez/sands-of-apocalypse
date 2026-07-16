@@ -120,6 +120,25 @@ var SFX = (function () {
     dodge: function () { tone(420, 0.22, 'sine', 0.09, 140); },
     level:function () { tone(520, 0.15, 'square', 0.10); setTimeout(function(){tone(780,0.25,'square',0.10);}, 120); },
     pickup: function () { tone(660, 0.07, 'triangle', 0.06, 880); },
+    // satisfying electric zap — used when a weapon is charged with lightning
+    electric: function () {
+      if (!enabled || Game.headless) return;
+      var c = ensure(); if (!c) return;
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(1500, c.currentTime);
+      o.frequency.exponentialRampToValueAtTime(300, c.currentTime + 0.3);
+      var lfo = c.createOscillator(), lfoG = c.createGain();   // fast tremolo = crackle
+      lfo.type = 'square'; lfo.frequency.value = 58; lfoG.gain.value = 0.07;
+      lfo.connect(lfoG); lfoG.connect(g.gain);
+      g.gain.setValueAtTime(0.13, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.34);
+      o.connect(g); g.connect(c.destination);
+      o.start(); o.stop(c.currentTime + 0.34);
+      lfo.start(); lfo.stop(c.currentTime + 0.34);
+      tone(2300, 0.05, 'square', 0.05, 1500);
+      setTimeout(function () { tone(1900, 0.06, 'square', 0.05, 800); }, 55);
+    },
     // gritty layer under the voice line so it reads as a scream
     screamFx: function () {
       if (!enabled || Game.headless) return;

@@ -151,9 +151,9 @@ var UI = (function () {
         slot.addEventListener('click', function () { Skills.unequip(def.slot); });
         slot.addEventListener('mousemove', function (e) {
           var g = Game.equipment ? Skills.GEAR[Game.equipment[def.slot]] : null;
-          if (g) showTip(g.name + bonusText(g), e.clientX, e.clientY); else showTip(def.label + ' (empty)', e.clientX, e.clientY);
+          if (g) showSkillTip(g.name + bonusText(g), e.clientX, e.clientY); else showSkillTip(def.label + ' (empty)', e.clientX, e.clientY);
         });
-        slot.addEventListener('mouseleave', hideTip);
+        slot.addEventListener('mouseleave', hideSkillTip);
         el.equipGrid.appendChild(slot);
         el.equipSlots[def.slot] = slot;
       })(EQUIP_UI[i]);
@@ -421,11 +421,11 @@ var UI = (function () {
     // custom hover tooltip naming the item (+ bonuses for gear)
     slot.addEventListener('mousemove', function (e) {
       var it = Game.inventory[index];
-      if (!it) { hideTip(); return; }
+      if (!it) { hideSkillTip(); return; }
       var tip = it.name + (Skills.isGear(it.id) ? bonusText(Skills.GEAR[it.id]) : '');
-      showTip(tip, e.clientX, e.clientY);
+      showSkillTip(tip, e.clientX, e.clientY);
     });
-    slot.addEventListener('mouseleave', hideTip);
+    slot.addEventListener('mouseleave', hideSkillTip);
     // left-click runs the item's primary action (equip gear / eat food)
     slot.addEventListener('click', function () {
       var it = Game.inventory[index];
@@ -869,7 +869,7 @@ var UI = (function () {
     var amt = Math.round(_xpAccum); _xpAccum = 0;
     var p = Game.player;
     if (amt <= 0 || !hitLayer || !p || !p.group) return;
-    var s = toScreen(new THREE.Vector3(p.position.x, p.position.y + 3.6, p.position.z));
+    var s = toScreen(new THREE.Vector3(p.position.x, p.position.y + 2.4, p.position.z));
     if (!s) return;
     var d = document.createElement('div');
     d.className = 'xp-pop';
