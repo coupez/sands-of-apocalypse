@@ -415,6 +415,7 @@ var UI = (function () {
       if (Skills.isGear(it.id)) Skills.equipFromInventory(index);
       else if (Skills.isFood(it.id)) Skills.eat(index);
       else if (Skills.isBones(it.id)) Skills.bury(index);
+      else if (Skills.isEnchant(it.id)) Skills.useEnchant(index);
     });
     // right-click opens the item's action menu (Use/Equip/Eat + Drop)
     slot.addEventListener('contextmenu', function (e) {
@@ -483,6 +484,7 @@ var UI = (function () {
     if (Skills.isGear(item.id)) opts.push({ label: 'Wield ' + item.name, fn: function () { Skills.equipFromInventory(index); } });
     else if (Skills.isFood(item.id)) opts.push({ label: 'Eat ' + item.name, fn: function () { Skills.eat(index); } });
     else if (Skills.isBones(item.id)) opts.push({ label: 'Bury ' + item.name + ' (Prayer)', fn: function () { Skills.bury(index); } });
+    else if (Skills.isEnchant(item.id)) opts.push({ label: 'Use ' + item.name, fn: function () { Skills.useEnchant(index); } });
     opts.push({ label: 'Drop ' + item.name, fn: function () { Skills.dropItem(index); } });
     showContextMenu(x, y, opts);
   }

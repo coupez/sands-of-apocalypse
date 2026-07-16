@@ -134,6 +134,11 @@ var Main = (function () {
         if (window.Entities && Entities.debugMaxStations) Entities.debugMaxStations();
         if (window.UI) UI.showActionText('[debug] MAX — all skills & stations maxed, gold + endgame materials granted.');
       }
+      // debug: press "3" for a Copper Scimitar
+      if (e.key === '3' && window.Skills && Skills.addItem) {
+        Skills.addItem('bronze_scimitar');
+        if (window.UI) UI.showActionText('[debug] A Copper Scimitar appears in your bag.');
+      }
       // "B" opens the co-op build menu
       if ((e.key === 'b' || e.key === 'B') && Game.mode === 'coop' && window.UI && UI.openBuildMenu) UI.openBuildMenu();
     });

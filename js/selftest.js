@@ -83,20 +83,30 @@ var SelfTest = (function () {
       assert('combat skills cap at 20', Skills.data.attack.max === 20 && Skills.data.strength.max === 20);
       assert('other skills cap at 12', Skills.data.mining.max === 12 && Skills.data.cooking.max === 12);
 
-      // -- skill categories (Combat / Resource Gathering / Skills), each with a total level --
-      assert('three skill categories exist', !!Skills.CATEGORIES && Skills.CATEGORIES.length === 3);
-      assert('categories are Combat / Gathering / Skills',
-        Skills.CATEGORIES[0].name === 'Combat' && Skills.CATEGORIES[1].name === 'Gathering' && Skills.CATEGORIES[2].name === 'Skills');
+      // -- skill categories (Combat / Gathering / Skills / Spirit Hunting), each with a total level --
+      assert('four skill categories exist', !!Skills.CATEGORIES && Skills.CATEGORIES.length === 4);
+      assert('categories are Combat / Gathering / Skills / Spirit Hunting',
+        Skills.CATEGORIES[0].name === 'Combat' && Skills.CATEGORIES[1].name === 'Gathering' &&
+        Skills.CATEGORIES[2].name === 'Skills' && Skills.CATEGORIES[3].name === 'Spirit Hunting');
       // renamed skills keep their internal keys (so training code is untouched)
       assert('prayer renamed to Faith', Skills.data.prayer.name === 'Faith');
       assert('ranged renamed to Range', Skills.data.ranged.name === 'Range');
       assert('woodcutting renamed to Lumbering', Skills.data.woodcutting.name === 'Lumbering');
       assert('smithing renamed to Crafting', Skills.data.smithing.name === 'Crafting');
-      assert('cooking renamed to Medical', Skills.data.cooking.name === 'Medical');
+      assert('cooking renamed to Herbalism', Skills.data.cooking.name === 'Herbalism');
       // new placeholder skills present (not trainable yet)
       assert('new placeholder skills exist', !!Skills.data.defense && !!Skills.data.hitpoints &&
         !!Skills.data.spirit && !!Skills.data.hunting && !!Skills.data.casting);
       assert('placeholder skills are flagged soon', Skills.data.defense.soon === true && Skills.data.casting.soon === true);
+      assert('Spirit Hunting skills exist', !!Skills.data.banishing && !!Skills.data.warding);
+      // Electric Paper enchants the equipped weapon with lightning
+      assert('Electric Paper is an enchant item', Skills.isEnchant('electricpaper') === true);
+      clearBag(); Skills.addItem('bronze_scimitar'); Skills.equipFromInventory(invIndexOf('bronze_scimitar'));
+      Skills.addItem('electricpaper'); Game.weaponEnchant = null;
+      Skills.useEnchant(invIndexOf('electricpaper'));
+      assert('using Electric Paper gives a lightning enchant', !!Game.weaponEnchant && Game.weaponEnchant.element === 'lightning');
+      if (Game.equipment.rhand) Skills.unequip('rhand');
+      Game.weaponEnchant = null; clearBag();
       // Gathering / Skills totals = the absolute sum of member levels
       assert('Gathering total = sum of member levels', Skills.categoryLevel('gathering') === Skills.categorySum('gathering'));
       // Combat total is a WEIGHTED formula (damage skills count most), not a raw sum:

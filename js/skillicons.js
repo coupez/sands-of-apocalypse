@@ -23,7 +23,7 @@ var SkillIcons = (function () {
     defence: 'defense',
     hp: 'hitpoints', hitpoint: 'hitpoints', life: 'hitpoints', constitution: 'hitpoints',
     soul: 'spirit', mythical: 'spirit', mythicalfate: 'spirit', fate: 'spirit',
-    magic: 'casting', spells: 'casting',
+    foundry: 'casting', smelting: 'casting',
     woodcut: 'woodcutting', wc: 'woodcutting',
     fish: 'fishing', gather: 'fishing',
     smith: 'smithing', craft: 'smithing',

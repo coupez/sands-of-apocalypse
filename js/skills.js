@@ -8,9 +8,11 @@ var Skills = (function () {
   // (the sum of its member skills' levels) in the panel header. `soon:true` marks
   // a skill that exists in the tree but isn't trainable yet (placeholder Lv 1).
   var CATEGORIES = [
-    { key: 'combat',    name: 'Combat',             skills: ['hitpoints', 'attack', 'defense', 'strength', 'ranged', 'spirit', 'prayer'] },
-    { key: 'gathering', name: 'Gathering',          skills: ['mining', 'woodcutting', 'fishing', 'hunting'] },
-    { key: 'skills',    name: 'Skills',             skills: ['smithing', 'casting', 'cooking'] }
+    { key: 'combat',     name: 'Combat',         skills: ['hitpoints', 'attack', 'defense', 'strength', 'ranged', 'spirit', 'prayer'] },
+    { key: 'gathering',  name: 'Gathering',      skills: ['mining', 'woodcutting', 'fishing', 'hunting'] },
+    // casting sits first so it lands right beside Mining; it's metal-casting (anvil work), a sibling of Crafting
+    { key: 'skills',     name: 'Skills',         skills: ['casting', 'smithing', 'cooking'] },
+    { key: 'spirithunt', name: 'Spirit Hunting', skills: ['banishing', 'warding'] }
   ];
   // combat skills cap at 20; gathering/production/faith skills cap at 12
   var data = {
@@ -26,8 +28,10 @@ var Skills = (function () {
     fishing:      { name: 'Harvesting',    icon: '🌴', xp: 0, level: 1, max: 12 },
     hunting:      { name: 'Hunting',       icon: '🥩', xp: 0, level: 1, max: 12, soon: true },
     smithing:     { name: 'Crafting',      icon: '🔨', xp: 0, level: 1, max: 12 },
-    casting:      { name: 'Casting',       icon: '🪄', xp: 0, level: 1, max: 12, soon: true },   // magic (not wired yet)
-    cooking:      { name: 'Medical',       icon: '⚕️', xp: 0, level: 1, max: 12 }
+    casting:      { name: 'Casting',       icon: '🫗', xp: 0, level: 1, max: 12, soon: true },   // metal casting (anvil work), not magic
+    cooking:      { name: 'Herbalism',     icon: '🌿', xp: 0, level: 1, max: 12 },               // nature → food + medicine
+    banishing:    { name: 'Banishing',     icon: '👻', xp: 0, level: 1, max: 12, soon: true },   // hunt evil spirits / folklore monsters
+    warding:      { name: 'Warding',       icon: '🧿', xp: 0, level: 1, max: 12, soon: true }
   };
   // flat order (all categories concatenated) for any consumer that wants a list
   var SKILL_ORDER = CATEGORIES.reduce(function (a, c) { return a.concat(c.skills); }, []);
@@ -90,8 +94,12 @@ var Skills = (function () {
     bones:     { id: 'bones',     name: 'Pile of Bones',    icon: '🦴' },
     messence:  { id: 'messence',  name: 'Essence of the Merchant', icon: '💰' },
     rockessence:{ id: 'rockessence', name: 'Essence of the Rock', icon: '🔮' },
+    electricpaper: { id: 'electricpaper', name: 'Electric Paper', icon: '⚡' },   // enchants your weapon with lightning for 20s
     orb:       { id: 'orb',       name: 'Heart of the Obelisk', icon: '❤️' }
   };
+  // consumable weapon enchants: id -> { element, seconds }
+  var ENCHANTS = { electricpaper: { element: 'lightning', seconds: 20 } };
+  function isEnchant(id) { return !!ENCHANTS[id]; }
 
   // Only COOKED seafood is edible; eat raw and you gain nothing. Cook it at a
   // campfire first. id -> HP healed when eaten.
@@ -355,6 +363,22 @@ var Skills = (function () {
     return true;
   }
 
+  // Use an enchant scroll (e.g. Electric Paper) to imbue your right-hand weapon
+  // with an element for a while — attacks then deal bonus elemental damage.
+  function useEnchant(index) {
+    var it = Game.inventory[index];
+    if (!it || !isEnchant(it.id)) return false;
+    if (!(Game.equipment && Game.equipment.rhand)) { if (window.UI) UI.showActionText('Equip a weapon first to enchant it.'); return false; }
+    var e = ENCHANTS[it.id];
+    Game.inventory[index] = null;
+    var now = (window.performance && performance.now) ? performance.now() : Date.now();
+    Game.weaponEnchant = { element: e.element, until: now + e.seconds * 1000 };
+    if (window.SFX && SFX.pickup) SFX.pickup();
+    if (window.UI) { UI.updateInventory(); UI.showActionText('Your weapon crackles with ' + e.element + '! (' + e.seconds + 's)'); }
+    Game.log.push('enchant:' + e.element);
+    return true;
+  }
+
   // Fletch a Desert Longbow from any 2 logs (worked at the anvil).
   function craftBow() {
     var woods = [];
@@ -510,7 +534,7 @@ var Skills = (function () {
     Game.gold = (Game.gold || 0) + 100000;
     Game.merchantEssence = true;
     var give = ['elderwood', 'elderwood', 'tinakal', 'tinakalbar', 'tinakalbar',
-      'bronzebar', 'ironbar', 'silverbar', 'goldbar', 'essence', 'messence', 'rockessence', 'orb'];
+      'bronzebar', 'ironbar', 'silverbar', 'goldbar', 'essence', 'messence', 'rockessence', 'electricpaper', 'electricpaper', 'orb'];
     for (var i = 0; i < give.length; i++) addItem(give[i]);
     if (window.UI) { UI.updateSkills(); if (UI.updateGold) UI.updateGold(); UI.updateInventory(); }
   }
@@ -521,6 +545,7 @@ var Skills = (function () {
     equipFromInventory: equipFromInventory, unequip: unequip,
     eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
     bury: bury, isBones: isBones, craftBow: craftBow, isRanged: isRanged, weaponSpeed: weaponSpeed,
+    useEnchant: useEnchant, isEnchant: isEnchant,
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
     smith: smith, canSmith: canSmith, smithRecipe: smithRecipe, countItem: countItem,
     equipReq: equipReq, canEquip: canEquip,

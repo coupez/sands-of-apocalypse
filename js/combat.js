@@ -18,6 +18,16 @@ var Combat = (function () {
     if (enemy) enemy._combatUntil = t;
   }
 
+  // active weapon enchant (e.g. Electric Paper) → bonus elemental damage per hit.
+  // Returns the bonus amount (0 if none/expired). Clears the enchant when it lapses.
+  function enchantBonus() {
+    var we = Game.weaponEnchant;
+    if (!we) return 0;
+    if (nowMs() > we.until) { Game.weaponEnchant = null; return 0; }
+    if (!(Game.equipment && Game.equipment.rhand)) return 0;   // needs a weapon in hand
+    return Utils.randInt(1, 6);
+  }
+
   function isRangedAttack() { return !!(Skills.isRanged && Skills.isRanged()); }
   function playerMaxHit() {
     var b = Skills.equipBonus();
@@ -71,6 +81,15 @@ var Combat = (function () {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     _v.set(enemy.position.x, enemy.position.y + 1.4, enemy.position.z);
     if (window.UI) UI.spawnHitsplat(_v, eq.instakill ? '☠' : dmg, type);
+    // elemental enchant: extra lightning damage on top of a connecting hit
+    if (!eq.instakill && type !== 'miss' && enemy.hp > 0) {
+      var ed = enchantBonus();
+      if (ed > 0) {
+        enemy.hp = Math.max(0, enemy.hp - ed);
+        _v.set(enemy.position.x + 0.55, enemy.position.y + 2.0, enemy.position.z);
+        if (window.UI) UI.spawnHitsplat(_v, '⚡' + ed, 'lightning');
+      }
+    }
     if (enemy.hp <= 0) {
       Entities.killEnemy(enemy);
       awardKillXp(enemy);
