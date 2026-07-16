@@ -11,11 +11,13 @@ var Coop = (function () {
   var SIGILS = [
     { key: 'forge',    name: 'Forge',    icon: '⚒️', color: 0xff7a2a, desc: 'Smith a greatsword' },
     { key: 'hunt',     name: 'Hunt',     icon: '⚔️', color: 0xd23a3a, desc: 'Clear both bandit camps' },
-    { key: 'plenty',   name: 'Plenty',   icon: '🍲', color: 0x6ac06a, desc: 'Cook three fish' },
+    { key: 'plenty',   name: 'Plenty',   icon: '🍲', color: 0x6ac06a, desc: 'Cook three dishes' },
     { key: 'deep',     name: 'Deep',     icon: '💎', color: 0x3aa6ff, desc: 'Mine the deep gold' },
     { key: 'devotion', name: 'Devotion', icon: '🙏', color: 0xb98aff, desc: 'Reach the height of Prayer' }
   ];
   var THRESHOLD = 3;
+  // pixel-art sprite per sigil (falls back to the emoji if unavailable)
+  var SIGIL_SPRITE = { forge: 'smithing', hunt: 'attack', plenty: 'cooking', deep: 'gem', devotion: 'prayer' };
   var state = { sigils: {}, ritualReady: false };
   var braziers = {};    // key -> { group, flame, light }
   var active = false;
@@ -183,8 +185,9 @@ var Coop = (function () {
     var html = '<div class="ch-head">RITUAL OF SIGILS <span class="ch-count">' + n + '/' + THRESHOLD + '</span></div>';
     for (var i = 0; i < SIGILS.length; i++) {
       var s = SIGILS[i], lit = !!state.sigils[s.key];
+      var pu = (window.PixelIcons && PixelIcons.get(SIGIL_SPRITE[s.key]));
       html += '<div class="ch-row' + (lit ? ' lit' : '') + '">' +
-        '<span class="ch-ic">' + s.icon + '</span>' +
+        '<span class="ch-ic">' + (pu ? '<img class="pixel-icon" src="' + pu + '" alt="">' : s.icon) + '</span>' +
         '<span class="ch-nm">' + s.name + '</span>' +
         '<span class="ch-st">' + (lit ? 'lit' : s.desc) + '</span></div>';
     }

@@ -8,6 +8,16 @@
 var Combat = (function () {
   var _v = new THREE.Vector3();
 
+  // combat state: overhead HP bars (enemy + player) only show for a few seconds
+  // after a blow is exchanged. markCombat(enemy) refreshes both timers.
+  var COMBAT_MS = 6000;
+  function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function markCombat(enemy) {
+    var t = nowMs() + COMBAT_MS;
+    Game.playerCombatUntil = t;
+    if (enemy) enemy._combatUntil = t;
+  }
+
   function isRangedAttack() { return !!(Skills.isRanged && Skills.isRanged()); }
   function playerMaxHit() {
     var b = Skills.equipBonus();
@@ -24,6 +34,7 @@ var Combat = (function () {
   function awardHitXp(dmg) {
     if (isRangedAttack()) Skills.addXp('ranged', 5 + Math.floor(dmg * 2.5));
     else { Skills.addXp('attack', 4 + Math.floor(dmg * 2)); Skills.addXp('strength', 2 + Math.floor(dmg * 2)); }
+    Skills.addXp('hitpoints', 2 + Math.floor(dmg * 1.2));   // dealing damage also trains Hit Points (raises max HP)
   }
   function awardKillXp(enemy) {
     var ranged = isRangedAttack();
@@ -46,6 +57,7 @@ var Combat = (function () {
     }
 
     awardHitXp(dmg);
+    markCombat(enemy);                 // show HP bars (enemy + player) briefly
     Game.log.push('playerAttack:' + dmg);
 
     // Server-owned enemies are resolved authoritatively; client-side entities
@@ -57,7 +69,7 @@ var Combat = (function () {
 
     // offline / single-player OR a local client-side entity
     enemy.hp = Math.max(0, enemy.hp - dmg);
-    _v.set(enemy.position.x, enemy.position.y + 2.6, enemy.position.z);
+    _v.set(enemy.position.x, enemy.position.y + 1.4, enemy.position.z);
     if (window.UI) UI.spawnHitsplat(_v, eq.instakill ? '☠' : dmg, type);
     if (enemy.hp <= 0) {
       Entities.killEnemy(enemy);
@@ -71,7 +83,7 @@ var Combat = (function () {
     if (!player || player.isDead) return;
     if (player.isInvulnerable && player.isInvulnerable()) {
       var pp0 = player.position;
-      _v.set(pp0.x, pp0.y + 2.6, pp0.z);
+      _v.set(pp0.x, pp0.y + 1.4, pp0.z);
       if (window.UI) UI.spawnHitsplat(_v, 'DODGE', 'miss');
       Game.log.push('dodgeAvoided');
       return;
@@ -82,8 +94,9 @@ var Combat = (function () {
     var dmg = 0, type = 'miss';
     if (Utils.rand() < hitChance) { dmg = Utils.randInt(1, enemy.maxHit); type = 'hit'; }
     var p = player.position;
-    _v.set(p.x, p.y + 2.6, p.z);
+    _v.set(p.x, p.y + 1.4, p.z);
     if (window.UI) UI.spawnHitsplat(_v, dmg, type);
+    markCombat(enemy);
     Game.log.push('enemyAttack:' + dmg);
     if (dmg > 0) player.takeDamage(dmg);
   }
@@ -151,13 +164,14 @@ var Combat = (function () {
     var player = Game.player;
     if (!player || player.isDead) return;
     var p = player.position;
-    _v.set(p.x, p.y + 2.6, p.z);
+    _v.set(p.x, p.y + 1.4, p.z);
     if (player.isInvulnerable && player.isInvulnerable()) {
       if (window.UI) UI.spawnHitsplat(_v, 'DODGE', 'miss');
       Game.log.push('pvpDodged');
       return;
     }
     if (window.UI) UI.spawnHitsplat(_v, dmg, dmg > 0 ? 'hit' : 'miss');
+    markCombat(null);
     Game.log.push('pvpHit:' + dmg);
     if (dmg > 0) player.takeDamage(dmg);
   }

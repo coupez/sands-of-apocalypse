@@ -17,6 +17,7 @@ var Entities = (function () {
   var builds = [];             // co-op constructables (ballista, …)
   var essAltars = [];          // versus: essence altars on the central platform
   var crystals = [];           // resonant crystal pillars (Lv12 mining → rock essence)
+  var meteorites = [];         // corner meteorite: mine at max Mining+Woodcutting → Tin Akal
 
   // No roaming enemies in the open field — combat lives at the E/W bandit camps
   // (and rats). Enemies still spawn hidden so the self-test + server indices align.
@@ -33,16 +34,17 @@ var Entities = (function () {
   ];
   // Each vein: a rock tinted to its ore, studded with ore-coloured diamond crystals.
   var ROCK_TIERS = [
-    { name: 'Copper Vein', reqLevel: 1,  itemId: 'ore',    xp: 30,  ore: 0xe08a3a, rock: 0x7a4a26 },  // orange
-    { name: 'Iron Vein',   reqLevel: 4,  itemId: 'iron',   xp: 55,  ore: 0x8a9098, rock: 0x4a4c52 },  // steel grey
-    { name: 'Silver Vein', reqLevel: 7,  itemId: 'silver', xp: 90,  ore: 0xeaeef6, rock: 0x8a94a6 },  // white-blue
-    { name: 'Gold Vein',   reqLevel: 10, itemId: 'pore',   xp: 140, ore: 0xffd24a, rock: 0x8a6a3c }   // gold
+    { name: 'Copper Vein', reqLevel: 1,  itemId: 'ore',    xp: 12, ore: 0xe08a3a, rock: 0x7a4a26 },  // orange
+    { name: 'Iron Vein',   reqLevel: 4,  itemId: 'iron',   xp: 16, ore: 0x8a9098, rock: 0x4a4c52 },  // steel grey
+    { name: 'Silver Vein', reqLevel: 7,  itemId: 'silver', xp: 21, ore: 0xeaeef6, rock: 0x8a94a6 },  // white-blue
+    { name: 'Gold Vein',   reqLevel: 10, itemId: 'pore',   xp: 30, ore: 0xffd24a, rock: 0x8a6a3c }   // gold
   ];
-  // Oasis fishing spots, gated by Fishing level (ids kept: shrimp/lobster/whale).
+  // Desert harvest plants, gated by Harvesting level (item ids kept: shrimp=Dates,
+  // lobster=Prickly Pear, whale=Figs — display-only rename, code key stays 'fishing').
   var FISH_TIERS = [
-    { name: 'Sardine Shallows', reqLevel: 1,  itemId: 'shrimp',  xp: 15, color: 0x9fd0e0, ring: 0.9 },
-    { name: 'Crab Pool',        reqLevel: 5,  itemId: 'lobster', xp: 35, color: 0xff8a4a, ring: 1.4 },
-    { name: 'Perch Depths',     reqLevel: 12, itemId: 'whale',   xp: 90, color: 0x4ab6ff, ring: 2.1 }
+    { name: 'Date Bush',           reqLevel: 1,  itemId: 'shrimp',  xp: 15, color: 0x8a5a2a, ring: 0.9 },
+    { name: 'Prickly Pear Cactus', reqLevel: 5,  itemId: 'lobster', xp: 35, color: 0xc0347a, ring: 1.4 },
+    { name: 'Fig Tree',            reqLevel: 12, itemId: 'whale',   xp: 90, color: 0x6a3d8a, ring: 2.1 }
   ];
   var ENEMY_TIERS = [
     { name: 'Sand Bandit',  reqLevel: 1,  hp: 10, def: 1, maxHit: 3,  color: 0xb8895a, eye: 0xffe08a, scale: 1.0, aggro: 8.5 },
@@ -54,8 +56,8 @@ var Entities = (function () {
   function removeFirstItem(ids) { for (var i = 0; i < ids.length; i++) if (Skills.removeItem(ids[i])) return true; return false; }
   // smelt/cook the richest first; each tier needs the station upgraded to that level
   var SMELT_PLAN = [
-    { ore: 'pore',   tier: 4 }, { ore: 'silver', tier: 3 },
-    { ore: 'iron',   tier: 2 }, { ore: 'ore',    tier: 1 }
+    { ore: 'tinakal', tier: 4 }, { ore: 'pore',   tier: 4 }, { ore: 'silver', tier: 3 },
+    { ore: 'iron',    tier: 2 }, { ore: 'ore',    tier: 1 }
   ];
   var COOK_PLAN = [
     { raw: 'whale', tier: 3 }, { raw: 'lobster', tier: 2 }, { raw: 'shrimp', tier: 1 }
@@ -206,57 +208,115 @@ var Entities = (function () {
     scene.add(g);
     markOccluder(g);
     var ent = { type: 'rock', name: T.name, reqLevel: T.reqLevel, itemId: T.itemId, xp: T.xp,
-      mesh: g, position: g.position, active: true, interactRange: 2.2,
+      mesh: g, position: g.position, active: true, interactRange: 2.2, tier: tierIdx,
       veins: veins, body: body, amount: Utils.randInt(4, 7), maxAmount: 7, respawn: 0 };
-    tag(g, ent); return ent;
+    tag(g, ent);
+    applyRockModel(ent);   // use the custom rock model if it's already loaded
+    return ent;
   }
 
-  // ---------- fishing ponds (static, tiered) ----------
-  // A little pond you fish from the edge: water disc + colored tier ring +
-  // rising bubbles. Higher tiers are bigger and gated by Fishing level.
+  // Swap a rock's procedural mesh for the custom .glb model of its tier (if loaded).
+  // One shared scale for ALL rock tiers (derived from copper), so the relative
+  // sizes you modelled are preserved — a bigger gold rock stays bigger.
+  var _rockScale = null;
+  function rockScaleFactor() {
+    if (_rockScale != null) return _rockScale;
+    if (!window.Models || !Models.getRock) return null;
+    var ref = Models.getRock(0);   // copper = the reference tier
+    if (!ref) return null;
+    var sz = new THREE.Box3().setFromObject(ref).getSize(new THREE.Vector3());
+    var foot = Math.max(sz.x, sz.z) || 1;
+    _rockScale = 1.6 / foot;       // copper → ~1.6u footprint; same factor for every tier
+    return _rockScale;
+  }
+  function fitRockModel(m, s) {
+    m.position.set(0, 0, 0);
+    m.rotation.set(0, 0, 0);   // rocks export already Y-up (correctly oriented) — no conversion
+    m.scale.setScalar(s);
+    m.updateMatrixWorld(true);
+    var b = new THREE.Box3().setFromObject(m);
+    m.position.set(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);   // centre on xz, base on the ground
+  }
+  function applyRockModel(ent) {
+    if (!ent || ent._modeled || ent.type !== 'rock' || !window.Models || !Models.getRock) return;
+    var s = rockScaleFactor();
+    if (s == null) return;   // wait until the reference (copper) rock has loaded
+    var m = Models.getRock(ent.tier || 0);
+    if (!m) return;
+    var kids = ent.mesh.children.slice();               // drop the procedural rock meshes
+    for (var i = 0; i < kids.length; i++) ent.mesh.remove(kids[i]);
+    fitRockModel(m, s);
+    ent.mesh.add(m);
+    ent.mesh.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    tag(ent.mesh, ent);                                 // retag so the model is mineable
+    ent._modeled = true;
+  }
+  function applyRockModels() { for (var i = 0; i < rocks.length; i++) applyRockModel(rocks[i]); }
+
+  // ---------- harvest plants (static, tiered) ----------
+  // You harvest desert fruit from the edge. Three tiers scale with Harvesting
+  // level: a Date Bush → a Prickly Pear Cactus → a Fig Tree.
+  function addFruit(g, n, y, spread, color, sx, sy) {
+    var mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6, flatShading: true });
+    for (var i = 0; i < n; i++) {
+      var a = (i / n) * Math.PI * 2 + Utils.rand();
+      var f = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), mat);
+      f.position.set(Math.cos(a) * spread, y + Utils.randRange(-0.12, 0.12), Math.sin(a) * spread);
+      f.scale.set(sx || 1, sy || 1.4, sx || 1);
+      g.add(f);
+    }
+  }
+  function buildPlantInto(g, tierIdx) {
+    for (var i = g.children.length - 1; i >= 0; i--) {
+      var c = g.children[i]; g.remove(c);
+      if (c.geometry) c.geometry.dispose();
+    }
+    var green = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 1, flatShading: true });
+    var green2 = new THREE.MeshStandardMaterial({ color: 0x3f8a4a, roughness: 1, flatShading: true });
+    var bark = new THREE.MeshStandardMaterial({ color: 0x6e4a28, roughness: 1, flatShading: true });
+    if (tierIdx === 0) {                       // Date Bush
+      var t0 = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 0.7, 7), bark); t0.position.y = 0.35; g.add(t0);
+      var can0 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.95, 0), green); can0.position.y = 1.05; can0.scale.set(1.15, 0.8, 1.15); g.add(can0);
+      addFruit(g, 5, 1.0, 0.7, 0x7a4a22, 0.85, 1.5);   // hanging dates
+    } else if (tierIdx === 1) {                // Prickly Pear Cactus (stacked pads)
+      var padGeo = new THREE.IcosahedronGeometry(0.6, 0);
+      var pads = [[0, 0.55, 0], [0.35, 1.15, 0.1], [-0.3, 1.15, -0.05]];
+      pads.forEach(function (p, idx) {
+        var pad = new THREE.Mesh(padGeo, green2);
+        pad.position.set(p[0], p[1], p[2]); pad.scale.set(1.0, 1.35, 0.4);
+        pad.rotation.z = idx ? (idx === 1 ? 0.5 : -0.5) : 0; g.add(pad);
+      });
+      addFruit(g, 4, 1.7, 0.45, 0xc0347a, 0.9, 1.2);   // magenta prickly pears on top
+    } else {                                   // Fig Tree
+      var t2 = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 1.7, 8), bark); t2.position.y = 0.85; g.add(t2);
+      var can2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.35, 1), green); can2.position.y = 2.1; can2.scale.set(1.15, 0.9, 1.15); g.add(can2);
+      var can2b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 0), green2); can2b.position.set(0.6, 1.8, 0.3); g.add(can2b);
+      addFruit(g, 7, 1.9, 1.05, 0x6a2f7a, 0.85, 1.3);  // purple figs
+    }
+  }
   function makePond(x, z, tierIdx) {
     var T = FISH_TIERS[tierIdx];
     var g = new THREE.Group();
-    var rad = 1.4 + tierIdx * 0.6;
-    var disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(rad, rad * 0.85, 0.25, 20),
-      new THREE.MeshStandardMaterial({ color: 0x35a6cf, emissive: 0x1f6f92, emissiveIntensity: 0.4, roughness: 0.1, metalness: 0.25, transparent: true, opacity: 0.9 })
-    );
-    disc.position.y = 0.1; g.add(disc);
-    var rim = new THREE.Mesh(
-      new THREE.TorusGeometry(rad + 0.05, 0.18, 6, 20),
-      new THREE.MeshStandardMaterial({ color: 0xd8bd85, roughness: 1, flatShading: true })   // sandy oasis rim
-    );
-    rim.rotation.x = Math.PI / 2; rim.position.y = 0.14; g.add(rim);
-    var ring = new THREE.Mesh(
-      new THREE.TorusGeometry(rad * 0.55, 0.09, 8, 20),
-      new THREE.MeshBasicMaterial({ color: T.color, transparent: true, opacity: 0.6 })
-    );
-    ring.rotation.x = Math.PI / 2; ring.position.y = 0.3; g.add(ring);
-    var pcount = 12, pgeo = new THREE.BufferGeometry(), arr = new Float32Array(pcount * 3);
-    for (var i = 0; i < pcount; i++) {
-      arr[i * 3] = Utils.randRange(-rad * 0.55, rad * 0.55);
-      arr[i * 3 + 1] = Utils.randRange(0.2, 1.2);
-      arr[i * 3 + 2] = Utils.randRange(-rad * 0.55, rad * 0.55);
-    }
-    pgeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
-    g.add(new THREE.Points(pgeo, new THREE.PointsMaterial({ color: T.color, size: 0.14, transparent: true, opacity: 0.85, depthWrite: false })));
+    buildPlantInto(g, tierIdx);
     g.position.set(x, terrainY(x, z), z);
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
+    markOccluder(g);
     var ent = { type: 'fishpool', name: T.name, reqLevel: T.reqLevel, itemId: T.itemId, xp: T.xp,
-      mesh: g, position: g.position, active: true, interactRange: rad + 1.6,
-      parts: pgeo, ring: ring, phase: Utils.randRange(0, 6), _tier: tierIdx };
+      mesh: g, position: g.position, active: true, interactRange: 2.4 + tierIdx * 0.5,
+      sway: Utils.randRange(0, 6), _tier: tierIdx };
     tag(g, ent);
     return ent;
   }
 
-  // the camp pond's catch scales with your Fishing level (lvl1 → tier0, lvl3+ → top tier)
+  // the camp plant's yield scales with your Harvesting level (lvl1 → tier0, lvl3+ → top tier)
   function fishTierForLevel(lvl) { return Utils.clamp(lvl - 1, 0, FISH_TIERS.length - 1); }
   function retierPond(ent, tier) {
     var T = FISH_TIERS[tier];
     ent._tier = tier;
     ent.name = T.name; ent.reqLevel = T.reqLevel; ent.itemId = T.itemId; ent.xp = T.xp;
-    if (ent.ring) ent.ring.material.color.setHex(T.color);
+    ent.interactRange = 2.4 + tier * 0.5;
+    if (ent.mesh) { buildPlantInto(ent.mesh, tier); ent.mesh.traverse(function (o) { if (o.isMesh) o.castShadow = true; }); }
   }
 
   // ---------- player camp: big open canopy (poles + sheet) over the whole base ----------
@@ -425,16 +485,21 @@ var Entities = (function () {
           ? (lightStation(ent), 'You fire up the furnace.')
           : 'You need a log to fire up the furnace.';
       } else {
-        // smelt the best ore whose tier the furnace's LEVEL can handle
-        var smelted = false, gatedMsg = null;
+        // smelt EVERY ore in the pack that the furnace's level can handle, in one go
+        var count = 0, gatedMsg = null;
         for (var si = 0; si < SMELT_PLAN.length; si++) {
           var sp = SMELT_PLAN[si];
-          if (!Skills.hasItem(sp.ore)) continue;
-          if (ent.level < sp.tier) { gatedMsg = 'Upgrade the furnace to Lv ' + sp.tier + ' to smelt ' + Skills.ITEMS[sp.ore].name + '.'; continue; }
-          Skills.removeItem(sp.ore); Skills.addItem(Skills.SMELT[sp.ore]); Skills.addXp('smithing', 6 + sp.tier * 4);
-          msg = 'You smelt a ' + Skills.ITEMS[Skills.SMELT[sp.ore]].name + '.'; smelted = true; break;
+          if (ent.level < sp.tier) {
+            if (Skills.hasItem(sp.ore)) gatedMsg = 'Upgrade the furnace to Lv ' + sp.tier + ' to smelt ' + Skills.ITEMS[sp.ore].name + '.';
+            continue;
+          }
+          while (Skills.hasItem(sp.ore)) {   // each ore frees a slot then fills it with a bar → no overflow
+            Skills.removeItem(sp.ore); Skills.addItem(Skills.SMELT[sp.ore]); Skills.addXp('smithing', 6 + sp.tier * 4);
+            count++;
+          }
         }
-        if (!smelted) msg = gatedMsg || 'You need ore to smelt (the furnace is lit).';
+        msg = count > 0 ? ('You smelt ' + count + ' bar' + (count === 1 ? '' : 's') + ' from your ores.')
+                        : (gatedMsg || 'You need ore to smelt (the furnace is lit).');
       }
     } else if (ent.kind === 'campfire') {
       if (!ent.lit) {
@@ -450,7 +515,7 @@ var Entities = (function () {
           if (ent.level < cp.tier) { cgated = 'Upgrade the campfire to Lv ' + cp.tier + ' to cook ' + Skills.ITEMS[cp.raw].name + '.'; continue; }
           Skills.removeItem(cp.raw); Skills.addItem(Skills.COOK[cp.raw]); Skills.addXp('cooking', 6 + cp.tier * 4); cooked = cp.raw; Game.cooked = (Game.cooked || 0) + 1; break;
         }
-        msg = cooked ? 'You cook the catch over the fire.' : (cgated || 'You have no raw catch to cook.');
+        msg = cooked ? 'You roast the harvest over the fire.' : (cgated || 'You have no raw harvest to prepare.');
       }
     } else if (ent.kind === 'anvil') {
       if (window.UI && UI.openSmithMenu) UI.openSmithMenu(ent.level);   // pass the anvil level
@@ -470,7 +535,7 @@ var Entities = (function () {
       if (Skills.hasItem('orb')) { msg = 'You already carry the Heart of the Obelisk.'; }
       else if (!prayerMax) { msg = 'You must reach max Prayer (Lv ' + (pr.max || 12) + ') to forge the Heart.'; }
       else if (!fish || !ore || !haveWood || !haveEss) {
-        msg = 'The altar needs a raw fish, an ore, Elderwood and a Bandit Essence.';
+        msg = 'The altar needs a raw desert fruit, an ore, Elderwood and a Bandit Essence.';
       } else {
         Skills.removeItem(fish); Skills.removeItem(ore); Skills.removeItem('elderwood'); Skills.removeItem('essence');
         Skills.addItem('orb');
@@ -505,7 +570,7 @@ var Entities = (function () {
   }
 
   // Sell an item TO the merchant: it's loaded onto the caravan (payment comes
-  // when the caravan returns), and it trains the Merchant skill.
+  // when the caravan returns). Merchant is no longer a skill — just a gold trade.
   function sellToMerchant(ent, index) {
     var it = Game.inventory[index];
     if (!it) return false;
@@ -514,20 +579,9 @@ var Entities = (function () {
     Game.inventory[index] = null;
     if (window.UI) UI.updateInventory();
     if (ent.camel) ent.camel.pending = (ent.camel.pending || 0) + v;
-    Skills.addXp('merchant', Math.max(2, Math.round(v * 0.6)));
-    grantMerchantEssence();
     if (window.UI) UI.showActionText('The merchant loads your ' + it.name + ' onto the caravan.');
     Game.log.push('sell:' + it.id);
     return true;
-  }
-  // At max Merchant level, the merchant gifts the Essence of the Merchant (once).
-  function grantMerchantEssence() {
-    var m = Skills.data.merchant;
-    if (m && m.level >= (m.max || 12) && !Game.merchantEssence) {
-      Game.merchantEssence = true;
-      Skills.addItem('messence');
-      if (window.UI && UI.announce) UI.announce('A master trader! The merchant gifts you the Essence of the Merchant.', true);
-    }
   }
 
   // merchant caravan: sending it off (after a sale) blocks selling until it returns
@@ -552,7 +606,7 @@ var Entities = (function () {
       if (d < 24) {
         var line = MERCHANT_SAYINGS[Math.floor(Math.random() * MERCHANT_SAYINGS.length)];
         UI.spawnSpeech(new THREE.Vector3(c.group.position.x, c.group.position.y + 4.0, c.group.position.z), line);
-        if (window.Voice && Voice.speak) Voice.speak(line, { lang: 'ar-EG', rate: 0.98, pitch: 1.0, volume: 0.9 });
+        // voice line (TTS) disabled — the merchant departs silently, bubble only
       }
     }
     Game.log.push('caravan:leave');
@@ -600,7 +654,7 @@ var Entities = (function () {
       new THREE.MeshStandardMaterial({ color: 0x2a2036, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.4 }));
     socket.position.y = 2.36; g.add(socket);
     var light = new THREE.PointLight(0x8a5ad0, 0, 26, 2); light.position.set(0, 4, 0); g.add(light);
-    g.position.set(x, terrainY(x, z), z);
+    g.position.set(x, terrainY(x, z) + 0.03, z);   // +0.03 lifts the base slab off the coplanar plaza top (z-fight)
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
     scene.add(g);
     markOccluder(g);
@@ -705,15 +759,65 @@ var Entities = (function () {
     Game.log.push('crystal:mine:' + ent.breaks);
   }
 
+  // ---------- fallen meteorite (corner of the map; master-gated Tin Akal) ----------
+  function makeMeteorite(x, z) {
+    var g = new THREE.Group();
+    var crater = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 5.2, 0.3, 20),
+      new THREE.MeshStandardMaterial({ color: 0x2c2622, roughness: 1, flatShading: true }));
+    crater.position.y = 0.15; crater.receiveShadow = true; g.add(crater);
+    var rim = new THREE.Mesh(new THREE.TorusGeometry(4.7, 0.5, 6, 20),
+      new THREE.MeshStandardMaterial({ color: 0x4a3f38, roughness: 1, flatShading: true }));
+    rim.rotation.x = Math.PI / 2; rim.position.y = 0.3; g.add(rim);
+    // the meteorite: a jagged dark rock studded with glowing teal Tin-Akal veins
+    var rockGeo = new THREE.DodecahedronGeometry(2.2, 0), p = rockGeo.attributes.position;
+    for (var i = 0; i < p.count; i++) { var f = 0.8 + Utils.rand() * 0.4; p.setXYZ(i, p.getX(i) * f, p.getY(i) * f, p.getZ(i) * f); }
+    rockGeo.computeVertexNormals();
+    var rock = new THREE.Mesh(rockGeo, new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 0.9, flatShading: true }));
+    rock.position.y = 1.9; rock.castShadow = true; g.add(rock);
+    var veinMat = new THREE.MeshStandardMaterial({ color: 0x5fe0d0, emissive: 0x2fd0c0, emissiveIntensity: 0.7, roughness: 0.4, flatShading: true });
+    var veins = new THREE.Group();
+    for (var k = 0; k < 6; k++) {
+      var d = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), veinMat);
+      var a = k / 6 * Math.PI * 2;
+      d.position.set(Math.cos(a) * 1.5, 1.9 + (k % 2 ? 0.7 : -0.6), Math.sin(a) * 1.5);
+      d.scale.setScalar(0.6 + Utils.rand() * 0.7); veins.add(d);
+    }
+    g.add(veins);
+    var light = new THREE.PointLight(0x4fe0d0, 1.4, 20, 2); light.position.set(0, 2.4, 0); g.add(light);
+    g.position.set(x, terrainY(x, z), z);
+    scene.add(g); markOccluder(g);
+    var ent = { type: 'meteorite', name: 'Fallen Meteorite', mesh: g, position: g.position,
+      active: true, interactRange: 3.6, reqMining: 12, reqWood: 12, veins: veins, light: light };
+    tag(g, ent);
+    meteorites.push(ent);
+    return ent;
+  }
+  // Only a master of BOTH Mining and Woodcutting can break the meteorite for Tin Akal.
+  function mineMeteorite(ent) {
+    if (!ent || !ent.active) return;
+    if (Skills.data.mining.level < (ent.reqMining || 12) || Skills.data.woodcutting.level < (ent.reqWood || 12)) {
+      if (window.UI) UI.showActionText('Only a master of Mining and Woodcutting can break the meteorite.');
+      return;
+    }
+    if (Utils.rand() < 0.45) return;   // dense meteoric rock — the pick often glances off
+    if (Skills.addItem('tinakal')) {
+      Skills.addXp('mining', 50);
+      if (window.UI) UI.showActionText('You chip a shard of Tin Akal from the meteorite.');
+      Game.log.push('meteorite:mine');
+    } else if (window.UI) UI.showActionText('Your inventory is full!');
+  }
+
   // ---------- raised ceremony platform (Egyptian altar-ruin with 4 stairs) ----------
   function makeCeremonyPlaza() {
     var P = World.PLAZA, half = P.half, H = P.height;
     var g = new THREE.Group();
     var sand = new THREE.MeshStandardMaterial({ color: 0xcdb082, roughness: 1, flatShading: true });
     var sandDark = new THREE.MeshStandardMaterial({ color: 0xb59468, roughness: 1, flatShading: true });
-    // raised platform (solid block up to y=H) + a top course
-    var base = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 1.6, H, half * 2 + 1.6), sandDark);
-    base.position.y = H / 2; base.receiveShadow = true; g.add(base);
+    // raised platform (solid block) + a top course. The base is kept 0.1 short
+    // of the platform top so its upward face is buried inside the top course —
+    // otherwise the two coplanar faces at y=H z-fight (flicker).
+    var base = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 1.6, H - 0.1, half * 2 + 1.6), sandDark);
+    base.position.y = (H - 0.1) / 2; base.receiveShadow = true; g.add(base);
     var top = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 0.16, half * 2), sand);
     top.position.y = H - 0.08; top.receiveShadow = true; g.add(top);
     // 4 staircases (N/E/S/W)
@@ -738,7 +842,7 @@ var Entities = (function () {
       var cbase = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.3, 1.05), sandDark); cbase.position.y = 0.15; colG.add(cbase);
       var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.52, colH, 12), sand); shaft.position.y = 0.3 + colH / 2; colG.add(shaft);
       var capB = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.4, 1.15), sandDark); capB.position.y = 0.3 + colH + 0.2; colG.add(capB);
-      colG.position.set(cx, H, cz);
+      colG.position.set(cx, H + 0.02, cz);   // +0.02 so column base isn't coplanar with plaza top
       colG.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
       g.add(colG); markOccluder(colG);
     }
@@ -1026,9 +1130,9 @@ var Entities = (function () {
         if (!r._wt || r._idle > 0) { r._idle -= dt; if (!r._wt) { var a = Utils.randRange(0, Math.PI * 2), rr = Utils.randRange(1, r.wanderRadius); r._wt = { x: r.home.x + Math.cos(a) * rr, z: r.home.z + Math.sin(a) * rr }; r._idle = 0; } }
         tx = r._wt.x; tz = r._wt.z; speed = 1.9;
       }
-      var dx = tx - pos.x, dz = tz - pos.z, d = Math.hypot(dx, dz);
-      if (d > 0.2) { var step = Math.min(speed * dt, d); pos.x += dx / d * step; pos.z += dz / d * step; r.mesh.rotation.y = Math.atan2(dx, dz); }
-      else if (!flee) { r._wt = null; r._idle = Utils.randRange(0.5, 2.5); }
+      var d = Math.hypot(tx - pos.x, tz - pos.z);
+      if (d > 0.2) { gridMove(r, pos, tx, tz, speed, dt); }   // hop tile-to-tile like everything else
+      else if (!flee) { r._wt = null; r._idle = Utils.randRange(0.5, 2.5); r._step = null; }
       pos.y = terrainY(pos.x, pos.z) + Math.abs(Math.sin(t * 12 + r._phase)) * 0.05;   // scurry bob
     }
   }
@@ -1110,6 +1214,7 @@ var Entities = (function () {
 
   // ---------- desert decor (non-interactive scenery) ----------
   function makeCactus(x, z) {
+    var gc = gridCenter(x, z); x = gc.x; z = gc.z;   // sit in the middle of a grid tile
     var g = new THREE.Group();
     var mat = new THREE.MeshStandardMaterial({ color: 0x4a7a3a, roughness: 1, flatShading: true });
     var h = Utils.randRange(1.6, 2.8);
@@ -1126,6 +1231,7 @@ var Entities = (function () {
     scene.add(g); markOccluder(g);
   }
   function makeBoulder(x, z) {
+    var gc = gridCenter(x, z); x = gc.x; z = gc.z;   // align to the grid
     var mat = new THREE.MeshStandardMaterial({ color: Utils.pick([0xb08050, 0x9c6a3c, 0xc0955f]), roughness: 1, flatShading: true });
     var m = new THREE.Mesh(new THREE.DodecahedronGeometry(Utils.randRange(0.8, 1.9), 0), mat);
     m.position.set(x, terrainY(x, z) + 0.3, z);
@@ -1134,6 +1240,7 @@ var Entities = (function () {
     scene.add(m); markOccluder(m);
   }
   function makeBush(x, z) {
+    var gc = gridCenter(x, z); x = gc.x; z = gc.z;   // align to the grid
     var g = new THREE.Group();
     var mat = new THREE.MeshStandardMaterial({ color: 0x7a6636, roughness: 1, flatShading: true });
     for (var i = 0; i < 4; i++) {
@@ -1428,7 +1535,7 @@ var Entities = (function () {
       // merchant + fishing spot sit OUTSIDE the canopy, side by side
       stations.push(makeStation(cp.x + 14, cp.z + 3 * dir, 'merchant'));
       var pond = makePond(cp.x + 14, cp.z + 8 * dir, 0);
-      pond.name = 'Fishing Spot'; pond.level = 1; pond.maxLevel = 3; pond.upgradable = true;
+      pond.name = 'Harvest Patch'; pond.level = 1; pond.maxLevel = 3; pond.upgradable = true;
       pools.push(pond);
       placed.push({ x: cp.x, z: cp.z });
     });
@@ -1451,6 +1558,8 @@ var Entities = (function () {
     makeBanditCamp(BC.west.x, BC.west.z, 'west'); placed.push({ x: BC.west.x, z: BC.west.z });
     // a resonant crystal pillar rises behind the east bandit camp (Lv12 mining)
     makeCrystalPillar(BC.east.x + 11, BC.east.z + 6); placed.push({ x: BC.east.x + 11, z: BC.east.z + 6 });
+    // a fallen meteorite in the NE corner — mine at max Mining+Woodcutting for Tin Akal
+    makeMeteorite(52, 52); placed.push({ x: 52, z: 52 });
 
     // Resources spread evenly around the whole field in concentric rings, richest
     // nearest the plaza. Totals 11 trees / 8 rocks — mirrored in server.js RES.
@@ -1497,19 +1606,180 @@ var Entities = (function () {
     trees.forEach(function (e, i) { e.index = i; });
     rocks.forEach(function (e, i) { e.index = i; });
     enemies.forEach(function (e, i) { e.index = i; });
+
+    snapToGrid();
+    stampObstacles();
+  }
+
+  // nearest tile-centre for a world position (used to place things on the grid)
+  function gridCenter(x, z) {
+    if (window.Grid && Grid.tileCenter) { var t = Grid.worldToTile(x, z); return Grid.tileCenter(t.tx, t.tz); }
+    return { x: x, z: z };
+  }
+
+  // Snap interactable objects to tile centres so the world reads as grid-based
+  // and you approach them cleanly from N/E/S/W. Only x/z move (keeps ground y).
+  function snapToGrid() {
+    if (!window.Grid || !Grid.tileCenter) return;
+    function snap(arr) {
+      for (var i = 0; i < arr.length; i++) {
+        var e = arr[i], p = e.mesh && e.mesh.position;
+        if (!p) continue;
+        var t = Grid.worldToTile(p.x, p.z), c = Grid.tileCenter(t.tx, t.tz);
+        e.mesh.position.x = c.x; e.mesh.position.z = c.z;
+        if (e.position && e.position !== p) { e.position.x = c.x; e.position.z = c.z; }
+      }
+    }
+    snap(trees); snap(rocks); snap(pools); snap(crystals); snap(meteorites); snap(chests); snap(stations); snap(barrels);
+  }
+
+  // debug: max out every crafting station + harvest patch (called by the "2" cheat)
+  function debugMaxStations() {
+    for (var i = 0; i < stations.length; i++) stations[i].level = stations[i].maxLevel || 4;
+    for (var p = 0; p < pools.length; p++) {
+      if (pools[p].upgradable) {
+        pools[p].level = pools[p].maxLevel || 3;
+        retierPond(pools[p], Math.min((pools[p].maxLevel || 3) - 1, FISH_TIERS.length - 1));
+      }
+    }
+  }
+
+  // ---------- Story Mode: build the world from a hand-placed layout ----------
+  function clearResources() {
+    function wipe(arr) { for (var i = 0; i < arr.length; i++) { untag(arr[i]); if (arr[i].mesh) scene.remove(arr[i].mesh); } arr.length = 0; }
+    wipe(trees); wipe(rocks); wipe(pools); wipe(crystals); wipe(meteorites);
+  }
+  // spawn one game object from a named layout marker (name is case/spacing-insensitive)
+  function spawnByName(name, x, z) {
+    var n = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    function has() { for (var i = 0; i < arguments.length; i++) if (n.indexOf(arguments[i]) >= 0) return true; return false; }
+    if (has('copper_ore', 'bronze_ore')) rocks.push(makeRock(x, z, 0));
+    else if (has('iron_ore')) rocks.push(makeRock(x, z, 1));
+    else if (has('silver_ore')) rocks.push(makeRock(x, z, 2));
+    else if (has('gold_ore')) rocks.push(makeRock(x, z, 3));
+    else if (has('date_bush')) pools.push(makePond(x, z, 0));
+    else if (has('prickly', 'pear')) pools.push(makePond(x, z, 1));
+    else if (has('fig')) pools.push(makePond(x, z, 2));
+    else if (has('meteor')) makeMeteorite(x, z);
+    else if (has('crystal')) makeCrystalPillar(x, z);
+    else if (has('furnace')) stations.push(makeStation(x, z, 'furnace'));
+    else if (has('anvil')) stations.push(makeStation(x, z, 'anvil'));
+    else if (has('campfire')) stations.push(makeStation(x, z, 'campfire'));
+    else if (has('merchant')) stations.push(makeStation(x, z, 'merchant'));
+    else if (has('bandit') && has('east')) makeBanditCamp(x, z, 'east');
+    else if (has('bandit') && has('west')) makeBanditCamp(x, z, 'west');
+    else if (has('cactus')) makeCactus(x, z);
+    else if (has('boulder')) makeBoulder(x, z);
+    else if (has('palm')) trees.push(makeTree(x, z, 1));
+    else if (has('ebony')) trees.push(makeTree(x, z, 2));
+    else if (has('elder')) trees.push(makeTree(x, z, 3));
+    else if (has('dead_tree', 'tree')) trees.push(makeTree(x, z, 0));
+    else if (has('bush')) makeBush(x, z);
+    else if (has('spawn')) { Game.storySpawn = { x: x, z: z }; }
+    else return false;
+    return true;
+  }
+  // Replace the procedural resources with the hand-placed layout, keep camps/plaza.
+  function applyStoryMap(nodes) {
+    clearResources();
+    var count = 0;
+    for (var i = 0; i < (nodes ? nodes.length : 0); i++) {
+      try { if (spawnByName(nodes[i].name, nodes[i].x, nodes[i].z)) count++; } catch (e) {}
+    }
+    trees.forEach(function (e, i) { e.index = i; });
+    rocks.forEach(function (e, i) { e.index = i; });
+    snapToGrid();
+    stampObstacles();
+    return count;
+  }
+
+  // Mark the tiles that solid, harvestable/interactable objects sit on as blocked,
+  // so the player paths AROUND them and stops on an adjacent tile to interact.
+  function stampObstacles() {
+    if (!window.Grid || !Grid.clearBlocks) return;
+    Grid.clearBlocks();
+    function stamp(arr, r) {
+      for (var i = 0; i < arr.length; i++) {
+        var e = arr[i], p = e.position || (e.mesh && e.mesh.position);
+        if (p) Grid.blockCircle(p.x, p.z, r);
+      }
+    }
+    stamp(trees, 0.9);
+    stamp(rocks, 1.0);
+    stamp(pools, 1.0);      // harvest plants
+    stamp(chests, 0.9);
+    stamp(crystals, 1.2);
+    stamp(meteorites, 2.0);
+    stamp(essAltars, 1.2);
+    stamp(stations, 1.3);   // kept < 1.4 so the orthogonally-adjacent tile stays walkable to interact from
+    if (obelisk && obelisk.position) Grid.blockCircle(obelisk.position.x, obelisk.position.z, 1.6);
+  }
+
+  // Keep enemies from stacking: push overlapping pairs apart (the player is never
+  // pushed, so you can still run straight through them).
+  function separateEnemies() {
+    var list = [], i;
+    for (i = 0; i < enemies.length; i++) {
+      var e = enemies[i];
+      if (e.active && e.state !== 'dead' && e.state !== 'off' && e.mesh && e.mesh.visible !== false && (e.local || !Game.online)) list.push(e);
+    }
+    for (i = 0; i < bandits.length; i++) {
+      var b = bandits[i];
+      if (b.state !== 'dead' && b.state !== 'gone' && b.mesh && b.mesh.visible !== false) list.push(b);
+    }
+    var MIN = 1.7, MIN2 = MIN * MIN;
+    for (i = 0; i < list.length; i++) for (var j = i + 1; j < list.length; j++) {
+      var a = list[i].mesh.position, c = list[j].mesh.position;
+      var dx = c.x - a.x, dz = c.z - a.z, d2 = dx * dx + dz * dz;
+      if (d2 > 0.0001 && d2 < MIN2) {
+        var d = Math.sqrt(d2), push = (MIN - d) * 0.5, ux = dx / d, uz = dz / d;
+        a.x -= ux * push; a.z -= uz * push; c.x += ux * push; c.z += uz * push;
+      }
+    }
   }
 
   // ---------- resource depletion ----------
+  // a low pile of broken stones left behind where a mined-out rock was
+  function makeRubble(tierIdx) {
+    var T = ROCK_TIERS[tierIdx || 0];
+    var g = new THREE.Group();
+    var mat = new THREE.MeshStandardMaterial({ color: T.rock, roughness: 1, flatShading: true });
+    for (var i = 0; i < 7; i++) {
+      var sz = Utils.randRange(0.18, 0.42);
+      var chunk = new THREE.Mesh(new THREE.DodecahedronGeometry(sz, 0), mat);
+      var a = Utils.randRange(0, Math.PI * 2), r = Utils.randRange(0, 0.95);
+      chunk.position.set(Math.cos(a) * r, sz * 0.4, Math.sin(a) * r);
+      chunk.rotation.set(Utils.rand(), Utils.rand(), Utils.rand());
+      chunk.scale.y = 0.5;                 // flatten into rubble
+      chunk.castShadow = true;
+      g.add(chunk);
+    }
+    return g;
+  }
+  // show/hide everything on the rock mesh EXCEPT its rubble group
+  function setRockBodyVisible(ent, vis) {
+    var kids = ent.mesh.children;
+    for (var i = 0; i < kids.length; i++) if (kids[i] !== ent._rubble) kids[i].visible = vis;
+  }
   function depleteResource(ent) {
     if (ent.type === 'tree') { ent.branches.visible = false; ent.mesh.scale.y = 0.4; }
-    else if (ent.type === 'rock') { ent.veins.visible = false; ent.mesh.scale.set(0.6, 0.5, 0.6); }
+    else if (ent.type === 'rock') {
+      // leave a pile of rubble instead of a shrunken ore rock
+      if (!ent._rubble) { ent._rubble = makeRubble(ent.tier); ent.mesh.add(ent._rubble); }
+      ent._rubble.visible = true;
+      setRockBodyVisible(ent, false);
+    }
     ent.active = false;
     ent.respawn = ent.type === 'tree' ? 8 : 6;
   }
   function restoreResource(ent) {
     ent.active = true; ent.amount = ent.maxAmount; ent.respawn = 0;
     if (ent.type === 'tree') { ent.branches.visible = true; ent.mesh.scale.set(1, 1, 1); }
-    else if (ent.type === 'rock') { ent.veins.visible = true; ent.mesh.scale.set(1, 1, 1); }
+    else if (ent.type === 'rock') {
+      if (ent._rubble) ent._rubble.visible = false;
+      setRockBodyVisible(ent, true);
+      if (ent.veins) ent.veins.visible = true;
+    }
   }
 
   // ---------- enemy death (hell portal) + respawn ----------
@@ -1592,6 +1862,22 @@ var Entities = (function () {
   }
 
   // ---------- AI + animation ----------
+  // Move an entity tile-to-tile toward (tx,tz) so bandits/rats travel on the
+  // grid like the player. Returns true if it moved. Falls back to straight-line.
+  function gridMove(ent, pos, tx, tz, speed, dt) {
+    if (window.Grid && Grid.stepToward) {
+      if (!ent._step || Math.hypot(ent._step.x - pos.x, ent._step.z - pos.z) < 0.12) {
+        ent._step = Grid.stepToward(pos.x, pos.z, tx, tz);
+      }
+      var sx = ent._step.x - pos.x, sz = ent._step.z - pos.z, sd = Math.hypot(sx, sz);
+      if (sd > 0.02) { var st = Math.min(speed * dt, sd); pos.x += sx / sd * st; pos.z += sz / sd * st; faceMesh(ent, ent._step.x, ent._step.z, dt); return true; }
+      return false;
+    }
+    var dx = tx - pos.x, dz = tz - pos.z, d = Math.hypot(dx, dz);
+    if (d > 0.05) { var s = Math.min(speed * dt, d); pos.x += dx / d * s; pos.z += dz / d * s; faceMesh(ent, tx, tz, dt); return true; }
+    return false;
+  }
+
   function updateEnemy(ent, dt, t) {
     if (ent.state === 'dead') {
       if (runDeath(ent, dt, t)) {
@@ -1644,11 +1930,10 @@ var Entities = (function () {
     }
 
     if (tx !== null && ent.state !== 'attack') {
-      var dx = tx - pos.x, dz = tz - pos.z, d = Math.hypot(dx, dz);
-      if (d > 0.05) {
-        var stopStop = ent.state === 'chase' ? ent.attackRange * 0.9 : 0.1;
-        if (d > stopStop) { var step = Math.min(speed * dt, d - stopStop * 0.5); pos.x += (dx / d) * step; pos.z += (dz / d) * step; faceMesh(ent, tx, tz, dt); moving = true; }
-      }
+      var dd = Math.hypot(tx - pos.x, tz - pos.z);
+      var stopStop = ent.state === 'chase' ? ent.attackRange * 0.9 : 0.1;
+      if (dd > stopStop) { moving = gridMove(ent, pos, tx, tz, speed, dt); }
+      else { ent._step = null; }
     }
     pos.y = terrainY(pos.x, pos.z);
     animateEnemy(ent, dt, t, moving);
@@ -1707,17 +1992,10 @@ var Entities = (function () {
       for (i = 0; i < rocks.length; i++) if (!rocks[i].active && rocks[i].respawn > 0) { rocks[i].respawn -= dt; if (rocks[i].respawn <= 0) restoreResource(rocks[i]); }
     }
     for (i = 0; i < barrels.length; i++) { var b = barrels[i]; b.light.intensity = b.baseIntensity * (0.7 + 0.5 * Math.abs(Math.sin(t * 3 + i)) + Utils.rand() * 0.1); if (b.flame) b.flame.scale.y = 0.85 + 0.2 * Math.abs(Math.sin(t * 9 + i)); }
-    // animate each fishing pond: rising bubbles + a gently pulsing ring
+    // animate each harvest plant: a gentle wind sway
     for (i = 0; i < pools.length; i++) {
       var sp = pools[i];
-      var pp = sp.parts.attributes.position;
-      for (var k = 0; k < pp.count; k++) {
-        var y = pp.getY(k) + dt * 0.5;
-        if (y > 1.4) y -= 1.4;
-        pp.setY(k, y);
-      }
-      pp.needsUpdate = true;
-      sp.ring.material.opacity = 0.35 + 0.25 * Math.abs(Math.sin(t * 2 + sp.phase));
+      if (sp.mesh) sp.mesh.rotation.z = Math.sin(t * 1.3 + (sp.sway || 0)) * 0.03;
     }
     // flicker lit station fires
     for (i = 0; i < stations.length; i++) {
@@ -1738,6 +2016,7 @@ var Entities = (function () {
     updateBuilds(dt);
     for (i = 0; i < essAltars.length; i++) { var alt = essAltars[i]; if (alt.token && alt.token.visible) { alt.token.rotation.y += dt * 1.6; alt.token.position.y = 2.0 + Math.sin(t * 3 + i) * 0.1; } }
     for (i = 0; i < crystals.length; i++) { var cr = crystals[i]; if (cr.active && cr.light) cr.light.intensity = (2.6 * Math.max(0.18, 1 - cr.breaks / cr.maxBreaks)) * (0.8 + 0.2 * Math.abs(Math.sin(t * 4 + i))); }
+    for (i = 0; i < meteorites.length; i++) { var mt = meteorites[i]; if (mt.light) mt.light.intensity = 1.4 * (0.75 + 0.25 * Math.abs(Math.sin(t * 3 + i))); if (mt.veins) mt.veins.rotation.y += dt * 0.3; }
     // lift the roof off whichever building the local player is standing inside
     // (kept from the parallel branch; no-op while the town uses camps, not buildings)
     var pl = Game.player;
@@ -1753,6 +2032,7 @@ var Entities = (function () {
       }
     }
     if (enemiesLive) for (i = 0; i < enemies.length; i++) updateEnemy(enemies[i], dt, t);
+    separateEnemies();
   }
 
   // ---------- applied from server (net.js) ----------
@@ -1770,7 +2050,7 @@ var Entities = (function () {
     if (!enemiesLive) return;
     var e = enemies[i];
     if (!e || !window.UI) return;
-    var head = new THREE.Vector3(e.mesh.position.x, e.mesh.position.y + 2.6, e.mesh.position.z);
+    var head = new THREE.Vector3(e.mesh.position.x, e.mesh.position.y + 1.4, e.mesh.position.z);
     UI.spawnHitsplat(head, dmg, dmg > 0 ? 'hit' : 'miss');
   }
   function serverEnemyDead(i, x, z, byMe) {
@@ -1879,8 +2159,10 @@ var Entities = (function () {
         st.camel.group.rotation.y = st.camel.faceHome;
       }
     }
-    // camp fishing ponds back to level 1 / lowest tier
+    // camp harvest patches back to level 1 / lowest tier
     for (var pi = 0; pi < pools.length; pi++) { if (pools[pi].upgradable) { pools[pi].level = 1; retierPond(pools[pi], 0); } }
+    snapToGrid();
+    stampObstacles();   // rebuild the walkability grid for the fresh round
     // versus: un-claim the essence altars for a fresh race
     for (var ea = 0; ea < essAltars.length; ea++) {
       var alt = essAltars[ea];
@@ -1899,6 +2181,7 @@ var Entities = (function () {
   }
 
   return {
+    TREE_TIERS: TREE_TIERS, ROCK_TIERS: ROCK_TIERS, FISH_TIERS: FISH_TIERS,
     init: init, update: update, reset: reset, newRound: newRound, setHighlight: setHighlight,
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
@@ -1906,6 +2189,8 @@ var Entities = (function () {
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
     useEssenceAltar: useEssenceAltar, onAltarClaimed: onAltarClaimed, get essAltars() { return essAltars; },
     mineCrystal: mineCrystal, get crystals() { return crystals; },
+    mineMeteorite: mineMeteorite, get meteorites() { return meteorites; },
+    debugMaxStations: debugMaxStations, applyStoryMap: applyStoryMap, applyRockModels: applyRockModels,
     pickupDrop: pickupDrop, spawnRaid: spawnRaid, spawnImps: spawnImps, clearRaiders: clearRaiders, tagExternal: tagExternal, untagExternal: untagExternal,
     spawnBuild: spawnBuild,
     get bandits() { return bandits; }, get banditCamps() { return banditCamps; }, get builds() { return builds; },

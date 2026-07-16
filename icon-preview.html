@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Icon Preview</title>
+  <style>
+    body { margin: 0; background: #241a10; color: #e8d5a8; font-family: system-ui, sans-serif; }
+    h1 { text-align: center; font-weight: 600; padding: 14px; margin: 0; letter-spacing: 1px; }
+    #grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; padding: 18px; max-width: 900px; margin: 0 auto; }
+    .cell { background: rgba(80,56,22,0.5); border: 1px solid rgba(214,168,92,0.4); border-radius: 6px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 6px; }
+    .cell img { width: 72px; height: 72px; object-fit: contain; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5)); }
+    .cell .name { font-size: 11px; margin-top: 8px; text-align: center; opacity: 0.85; }
+    .cell.miss { opacity: 0.4; }
+    .cell.miss .name::after { content: " (emoji)"; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <h1>SANDS OF APOCALYPSE — LOW-POLY ITEM ICONS</h1>
+  <div id="grid"></div>
+  <script src="lib/three.min.js"></script>
+  <script src="js/icons.js"></script>
+  <script>
+    var ITEMS = [
+      { id: 'log', name: 'Dead Log' }, { id: 'palmwood', name: 'Palm Wood' },
+      { id: 'blog', name: 'Ebony Log' }, { id: 'elderwood', name: 'Elderwood' },
+      { id: 'ore', name: 'Copper Ore', tint: 0xc87838 }, { id: 'iron', name: 'Iron Ore', tint: 0x8a8f96 },
+      { id: 'silver', name: 'Silver Ore', tint: 0xd8dce2 }, { id: 'pore', name: 'Gold Ore', tint: 0xffd24a },
+      { id: 'bronzebar', name: 'Bronze Bar', tint: 0xc87838 }, { id: 'ironbar', name: 'Iron Bar', tint: 0x8a8f96 },
+      { id: 'silverbar', name: 'Silver Bar', tint: 0xd8dce2 }, { id: 'goldbar', name: 'Gold Bar', tint: 0xffd24a },
+      { id: 'tinakal', name: 'Tin Akal Ore', tint: 0x5fe0d0 }, { id: 'tinakalbar', name: 'Tin Akal Bar', tint: 0x5fe0d0 },
+      { id: 'shrimp', name: 'Dates' }, { id: 'lobster', name: 'Prickly Pear' }, { id: 'whale', name: 'Figs' },
+      { id: 'cshrimp', name: 'Honeyed Dates' }, { id: 'clobster', name: 'Cactus Jam' }, { id: 'cwhale', name: 'Dried Figs' },
+      { id: 'essence', name: 'Bandit Essence' }, { id: 'bones', name: 'Pile of Bones' },
+      { id: 'messence', name: 'Merchant Essence' }, { id: 'rockessence', name: 'Rock Essence' },
+      { id: 'orb', name: 'Heart of Obelisk' }
+    ];
+    var grid = document.getElementById('grid');
+    ITEMS.forEach(function (it) {
+      var cell = document.createElement('div');
+      cell.className = 'cell';
+      var url = Icons.get(it);
+      if (url) { var img = new Image(); img.src = url; cell.appendChild(img); }
+      else { cell.className += ' miss'; }
+      var n = document.createElement('div'); n.className = 'name'; n.textContent = it.name; cell.appendChild(n);
+      grid.appendChild(cell);
+    });
+    document.title = 'Icon Preview READY';
+  </script>
+</body>
+</html>

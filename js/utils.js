@@ -43,13 +43,17 @@ var Utils = (function () {
     return lerp(current, target, 1 - Math.exp(-lambda * dt));
   }
 
-  // ---- RuneScape XP curve ----
+  // ---- XP curve ----
+  // RuneScape-shaped (gentle early, steeper near the top) but tuned to be our own:
+  // a flatter exponent (÷8 instead of ÷7) makes the endgame less brutal, and the
+  // whole table is scaled down (÷5 instead of ÷4 ≈ 20% less xp), so the numbers no
+  // longer match RuneScape's. e.g. L15 ~1.7k, L30 ~8k, L50 ~55k.
   var _xpTable = (function () {
     var table = [0, 0]; // index by level; level 1 -> 0 xp
     var points = 0;
     for (var lvl = 1; lvl < 99; lvl++) {
-      points += Math.floor(lvl + 300 * Math.pow(2, lvl / 7));
-      table[lvl + 1] = Math.floor(points / 4);
+      points += Math.floor(lvl + 300 * Math.pow(2, lvl / 8));
+      table[lvl + 1] = Math.floor(points / 5);
     }
     return table;
   })();

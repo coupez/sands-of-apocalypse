@@ -26,13 +26,45 @@ var World = (function () {
     return 0;
   }
 
+  // A chunky, low-res sand texture with a subtle grid line on two edges, tiled
+  // once per movement tile so the whole floor shows the walkable grid.
+  function makeSandTexture() {
+    var S = 64;
+    var cv = document.createElement('canvas'); cv.width = cv.height = S;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#ceb27f'; ctx.fillRect(0, 0, S, S);
+    var pal = ['#c7a771', '#d8bd8a', '#bfa066', '#d0b47f', '#b8965c', '#dcc79a'];
+    for (var i = 0; i < 900; i++) {
+      ctx.fillStyle = pal[(Math.random() * pal.length) | 0];
+      ctx.fillRect((Math.random() * S) | 0, (Math.random() * S) | 0, 1, 1);
+    }
+    for (var j = 0; j < 30; j++) {   // scattered darker grit/pebbles
+      ctx.fillStyle = 'rgba(120,92,54,0.5)';
+      ctx.fillRect((Math.random() * S) | 0, (Math.random() * S) | 0, 1, 1);
+    }
+    // grid lines on the top + left edges → a full grid once the texture tiles
+    ctx.fillStyle = 'rgba(84,62,34,0.5)';
+    ctx.fillRect(0, 0, S, 3); ctx.fillRect(0, 0, 3, S);
+    ctx.fillStyle = 'rgba(232,214,170,0.28)';   // a faint highlight just inside the line
+    ctx.fillRect(0, 3, S, 1); ctx.fillRect(3, 0, 1, S);
+    var tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    var tile = (window.Grid && Grid.TILE) || 2;
+    tex.repeat.set(WORLD_SIZE / tile, WORLD_SIZE / tile);   // one texture cell per movement tile → grid lines align
+    return tex;
+  }
+
   // Flat desert floor (no dunes → no geometry clipping with objects).
   function buildTerrain() {
     var geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 1, 1);
     geo.rotateX(-Math.PI / 2);
     groundMat = new THREE.MeshStandardMaterial({
-      color: 0xceb27f, roughness: 1.0, metalness: 0.0, flatShading: true   // desert sand
+      color: 0xd8bd8a, roughness: 1.0, metalness: 0.0, flatShading: true   // desert sand
     });
+    if (!Game.headless) groundMat.map = makeSandTexture();
     ground = new THREE.Mesh(geo, groundMat);
     ground.receiveShadow = true;
     ground.name = 'ground';
@@ -166,25 +198,47 @@ var World = (function () {
     if (renderer) renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  // Shift the world from hot day toward an ominous dusk as the ritual advances
-  // (level 0 = noon, 1 = blood dusk). Warms/darkens sky + light.
-  var DAY_SKY = { r: 0xe3, g: 0xd3, b: 0xa8 }, DUSK_SKY = { r: 0x3a, g: 0x18, b: 0x22 };
+  // ---- Time of day + lighting -----------------------------------------
+  // Two independent darkeners feed one lighting pass, so they never fight:
+  //   • the natural day/night cycle (`_tod`, a smooth 8-min loop = 4 day/4 night)
+  //   • the co-op ritual dusk (`_dusk`, driven by sigils via setDusk)
+  // The darker of the two wins; dusk paints the sky blood-red, night deep blue.
+  var DAY_SKY   = { r: 0xe3, g: 0xd3, b: 0xa8 };
+  var DUSK_SKY  = { r: 0x3a, g: 0x18, b: 0x22 };   // ritual blood-dusk
+  var NIGHT_SKY = { r: 0x0c, g: 0x14, b: 0x2c };   // natural night
   var _dusk = 0;
-  function setDusk(level) {
-    level = Utils.clamp(level, 0, 1);
-    _dusk = level;
+  var _tod = 0;                 // 0 = noon, 0.5 = midnight
+  var DAY_LEN = 480;            // seconds for a full day+night (≈4 min each)
+
+  function nightLevel() { return 0.5 - 0.5 * Math.cos(_tod * Math.PI * 2); }
+
+  function applyLighting() {
+    var night = nightLevel();
+    var useDusk = _dusk >= night;         // ritual dusk overrides natural night when deeper
+    var dark = Math.max(night, _dusk);
+    var tgt = useDusk ? DUSK_SKY : NIGHT_SKY;
     if (scene && scene.background) {
-      var r = Math.round(DAY_SKY.r + (DUSK_SKY.r - DAY_SKY.r) * level);
-      var g = Math.round(DAY_SKY.g + (DUSK_SKY.g - DAY_SKY.g) * level);
-      var b = Math.round(DAY_SKY.b + (DUSK_SKY.b - DAY_SKY.b) * level);
+      var r = Math.round(DAY_SKY.r + (tgt.r - DAY_SKY.r) * dark);
+      var g = Math.round(DAY_SKY.g + (tgt.g - DAY_SKY.g) * dark);
+      var b = Math.round(DAY_SKY.b + (tgt.b - DAY_SKY.b) * dark);
       scene.background.setRGB(r / 255, g / 255, b / 255);
     }
-    if (sunLight) { sunLight.intensity = 1.3 - level * 0.8; sunLight.color.setRGB(1, 0.94 - level * 0.35, 0.82 - level * 0.5); }
-    if (hemiLight) hemiLight.intensity = 1.0 - level * 0.5;
+    if (sunLight) {
+      sunLight.intensity = Math.max(0.12, 1.3 - dark * 1.05);
+      if (useDusk) sunLight.color.setRGB(1, 0.94 - dark * 0.35, 0.82 - dark * 0.5);
+      else sunLight.color.setRGB(1 - night * 0.45, 0.94 - night * 0.30, 0.82 + night * 0.12);
+      // sun/moon arcs overhead: high at noon, low at dawn/dusk, below at night
+      var sa = _tod * Math.PI * 2;
+      sunLight.position.set(Math.sin(sa) * 45, Math.max(4, Math.cos(sa) * 42 + 6), -18);
+    }
+    if (hemiLight) hemiLight.intensity = Math.max(0.18, 1.0 - dark * 0.62);
   }
+
+  function setDusk(level) { _dusk = Utils.clamp(level, 0, 1); applyLighting(); }
 
   function update(dt, t) {
     updateSandDrift(dt, t);
+    if (dt) { _tod += dt / DAY_LEN; if (_tod >= 1) _tod -= 1; applyLighting(); }
   }
 
   function render() {

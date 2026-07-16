@@ -22,6 +22,8 @@ const MIME = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".glb": "model/gltf-binary",
+  ".gltf": "model/gltf+json",
 };
 
 // ---- live-reload: newest source mtime ----
@@ -294,6 +296,20 @@ const server = Bun.serve({
       return Response.json({ count: [...players.values()].filter(p => p.ready).length });
     }
 
+    // list custom model files so the client can auto-bind them by name
+    if (path === "/__models") {
+      let files = [];
+      try { files = readdirSync(join(ROOT, "models")).filter((f) => f.toLowerCase().endsWith(".glb")); } catch {}
+      return Response.json({ files }, { headers: { "Cache-Control": "no-store" } });
+    }
+
+    // list custom skill-icon images so the client can auto-bind them to skills by name
+    if (path === "/__skillicons") {
+      let files = [];
+      try { files = readdirSync(join(ROOT, "skillicons")).filter((f) => /\.(png|gif|jpg|jpeg|webp)$/i.test(f)); } catch {}
+      return Response.json({ files }, { headers: { "Cache-Control": "no-store" } });
+    }
+
     // static files
     if (path === "/") path = "/index.html";
     const full = normalize(join(ROOT, path));
@@ -379,7 +395,7 @@ const server = Bun.serve({
       } else if (msg.type === "chat" && typeof msg.text === "string") {
         const p = players.get(ws.data.id);
         server.publish("game", JSON.stringify({ type: "chat", id: ws.data.id, name: p ? p.name : "?", text: msg.text.slice(0, 120) }));
-      } else if (msg.type === "chooseMode" && ws.data.id === hostId && mode === "pending" && (msg.mode === "versus" || msg.mode === "coop")) {
+      } else if (msg.type === "chooseMode" && ws.data.id === hostId && mode === "pending" && (msg.mode === "versus" || msg.mode === "coop" || msg.mode === "story")) {
         // host locks in the game mode (write-once); versus does one clean restart
         mode = msg.mode;
         server.publish("game", JSON.stringify({ type: "mode", mode, coop }));

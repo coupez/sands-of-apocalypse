@@ -11,9 +11,12 @@ var UI = (function () {
 
   function $(id) { return document.getElementById(id); }
   function hex6(c) { return '#' + ('000000' + c.toString(16)).slice(-6); }
-  // an item's icon, tinted to its tier colour if it has one
+  // an item's icon: a low-poly rendered image if we have a mesh for it,
+  // else the emoji (tinted to its tier colour if it has one).
   function iconHtml(item) {
     if (!item) return '';
+    var url = (typeof Icons !== 'undefined' && Icons.get) ? Icons.get(item) : null;
+    if (url) return '<img class="ico" draggable="false" src="' + url + '" alt="">';
     return item.tint ? '<span style="color:' + hex6(item.tint) + '">' + item.icon + '</span>' : item.icon;
   }
 
@@ -23,6 +26,7 @@ var UI = (function () {
     el.hpGlobe = $('hp-globe');
     el.invGrid = $('inventory-grid');
     el.invCount = $('inv-count');
+    el.invGoldNum = $('inv-gold-num');
     el.actionText = $('action-text');
     el.target = $('target-readout');
     el.toastLayer = $('toast-layer');
@@ -36,8 +40,16 @@ var UI = (function () {
     el.skillsList = $('skills-list');
     el.equipGrid = $('equipment-grid');
     el.goldNum = $('gold-num');
+    el.runBtn = $('run-btn');
+    el.energyPct = $('energy-pct');
+    if (el.runBtn) el.runBtn.addEventListener('click', function () {
+      if (window.Player && Game.player) Player.toggleRun();
+      updateVitals();
+    });
+    wireChat();
 
     buildSkills();
+    wireSkillTiles();
     buildInventory();
     buildEquipment();
     wireTabs();
@@ -49,7 +61,11 @@ var UI = (function () {
     setActiveTab('inventory');   // default open panel
   }
 
-  function updateGold() { if (el.goldNum) el.goldNum.textContent = Game.gold || 0; }
+  function updateGold() {
+    var g = Game.gold || 0;
+    if (el.goldNum) el.goldNum.textContent = g;
+    if (el.invGoldNum) el.invGoldNum.textContent = g;
+  }
 
   // ---------- versus scoreboard: relic altars + your points ----------
   var _vsHud = null;
@@ -70,8 +86,16 @@ var UI = (function () {
 
   // ---------- right-side tab panels ----------
   var _activeTab = null;
+  // a pixel-art <img> for a UI glyph, or '' if unavailable (keeps emoji fallback)
+  function pixImg(name) { var u = window.PixelIcons && PixelIcons.get(name); return u ? '<img class="pixel-icon" src="' + u + '" alt="">' : ''; }
+  var TAB_SPRITE = { inventory: 'bag', skills: 'skills', equipment: 'equip' };
+
   function wireTabs() {
     var btns = document.querySelectorAll('#tab-bar .tab-btn[data-tab]');
+    for (var t = 0; t < btns.length; t++) {   // swap emoji glyphs for pixel art
+      var sp = TAB_SPRITE[btns[t].getAttribute('data-tab')], img = sp && pixImg(sp);
+      if (img) btns[t].innerHTML = img;
+    }
     for (var i = 0; i < btns.length; i++) {
       (function (btn) {
         btn.addEventListener('click', function () {
@@ -82,12 +106,16 @@ var UI = (function () {
     }
     // music mute toggle (not a panel tab)
     var mb = document.getElementById('music-btn');
-    if (mb) mb.addEventListener('click', function () {
-      var on = window.Ambient ? Ambient.toggle() : false;
-      mb.textContent = on ? '🔊' : '🔇';
-      mb.classList.toggle('muted', !on);
-      mb.title = on ? 'Music: on (click to mute)' : 'Music: muted (click to unmute)';
-    });
+    if (mb) {
+      var mi = pixImg('music'); if (mi) mb.innerHTML = mi;
+      mb.addEventListener('click', function () {
+        var on = window.Ambient ? Ambient.toggle() : false;
+        var img = pixImg(on ? 'music' : 'musicoff');
+        if (img) mb.innerHTML = img; else mb.textContent = on ? '🔊' : '🔇';
+        mb.classList.toggle('muted', !on);
+        mb.title = on ? 'Music: on (click to mute)' : 'Music: muted (click to unmute)';
+      });
+    }
   }
   function setActiveTab(name) {
     _activeTab = name;
@@ -160,23 +188,179 @@ var UI = (function () {
     }
   }
 
-  // ---------- skills panel (built from Skills.SKILL_ORDER) ----------
+  // ---------- skills panel (RuneScape-style: 3 category columns of icon tiles) ----------
+  // Each skill is a compact tile — just the icon with its level in the corner
+  // (no name). Icon priority: custom art (skillicons/) > built-in pixel > emoji.
+  function skillIconHtml(k, d) {
+    var custom = (window.SkillIcons && SkillIcons.get(k));
+    if (custom) return '<img class="tile-ico pixel" src="' + custom + '" alt="">';
+    var pu = (window.PixelIcons && PixelIcons.get(k));
+    if (pu) return '<img class="tile-ico pixel" src="' + pu + '" alt="">';
+    return '<span class="tile-ico">' + d.icon + '</span>';
+  }
   function buildSkills() {
     if (!el.skillsList) return;
     el.skillsList.innerHTML = '';
-    var order = Skills.SKILL_ORDER;
-    for (var i = 0; i < order.length; i++) {
-      var k = order[i];
-      var d = Skills.data[k];
-      var row = document.createElement('div');
-      row.className = 'skill-row';
-      row.innerHTML =
-        '<span class="skill-icon">' + d.icon + '</span>' +
-        '<span class="skill-name">' + d.name + '</span>' +
-        '<span class="skill-level"><b id="lvl-' + k + '">1</b>/' + (d.max || 99) + '</span>' +
-        '<div class="xp-bar"><div class="xp-fill" id="xp-' + k + '"></div></div>';
-      el.skillsList.appendChild(row);
+    var cats = Skills.CATEGORIES;
+    // all columns fill to the tallest category so the grid is full; short columns
+    // get grayed placeholder boxes ("skills still to come").
+    var rows = 0;
+    for (var r = 0; r < cats.length; r++) rows = Math.max(rows, cats[r].skills.length);
+    for (var c = 0; c < cats.length; c++) {
+      var cat = cats[c];
+      var col = document.createElement('div');
+      col.className = 'skill-cat';
+      // header is a single line: category name on the left, its total level on the right
+      var head =
+        '<div class="cat-head">' +
+          '<span class="cat-name">' + cat.name + '</span>' +
+          '<span class="cat-total" id="cat-' + cat.key + '"' + (cat.key === 'combat' ? ' data-formula="1"' : '') + '>0</span>' +
+        '</div>';
+      var tiles = '';
+      for (var i = 0; i < cat.skills.length; i++) {
+        var k = cat.skills[i];
+        var d = Skills.data[k];
+        if (!d) continue;
+        // full-width box: icon on the left, level on the right; clickable + hoverable
+        tiles +=
+          '<div class="skill-tile' + (d.soon ? ' soon' : '') + '" data-skill="' + k + '">' +
+            skillIconHtml(k, d) +
+            '<span class="tile-lvl" id="lvl-' + k + '">1</span>' +
+          '</div>';
+      }
+      for (var p = cat.skills.length; p < rows; p++) tiles += '<div class="skill-tile placeholder"></div>';
+      col.innerHTML = head + '<div class="cat-grid">' + tiles + '</div>';
+      el.skillsList.appendChild(col);
     }
+  }
+
+  // thousands separator, e.g. 12345 -> "12,345"
+  function fmtXp(n) { return Math.floor(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  // hover text: current xp and xp needed to reach the next level
+  function skillTipText(k) {
+    var d = Skills.data[k];
+    if (!d) return '';
+    var cur = Math.floor(d.xp), mx = d.max || 99;
+    if (d.level >= mx) return d.name + ' — Lv ' + d.level + ' (MAX)  ·  ' + fmtXp(cur) + ' XP';
+    var next = Utils.xpForLevel(d.level + 1);
+    return d.name + ' — Lv ' + d.level + '  ·  ' + fmtXp(cur) + ' / ' + fmtXp(next) + ' XP  ·  ' +
+      fmtXp(Math.max(0, next - cur)) + ' to next' + (d.soon ? '  (not trainable yet)' : '');
+  }
+  // click a skill box -> open its (empty for now) panel; hover -> XP tooltip.
+  // Delegated on the skills-list container so it survives buildSkills() rebuilds.
+  // dedicated tooltip for skill boxes — a SEPARATE element from the world-hover
+  // #cursor-tooltip, so the per-frame world hover loop can't hide it (that was the
+  // flicker). Sits just above the cursor so it never overlaps the box it describes.
+  var _skillTipEl = null;
+  function skillTipEl() {
+    if (_skillTipEl) return _skillTipEl;
+    _skillTipEl = document.createElement('div');
+    _skillTipEl.id = 'skill-tip';
+    _skillTipEl.style.display = 'none';
+    document.body.appendChild(_skillTipEl);
+    return _skillTipEl;
+  }
+  function showSkillTip(text, x, y) {
+    if (Game.headless || !text) { hideSkillTip(); return; }
+    var t = skillTipEl();
+    t.textContent = text;
+    t.style.display = 'block';
+    var w = t.offsetWidth || 160, h = t.offsetHeight || 24;
+    t.style.left = Math.min(Math.max(6, x - w / 2), window.innerWidth - w - 6) + 'px';
+    t.style.top = Math.max(6, y - h - 12) + 'px';
+  }
+  function hideSkillTip() { if (_skillTipEl) _skillTipEl.style.display = 'none'; }
+
+  var _skillTilesWired = false;
+  function wireSkillTiles() {
+    if (_skillTilesWired || !el.skillsList) return;
+    _skillTilesWired = true;
+    el.skillsList.addEventListener('click', function (e) {
+      var tile = e.target.closest ? e.target.closest('.skill-tile') : null;
+      if (tile) openSkillMenu(tile.getAttribute('data-skill'));
+    });
+    // show on enter/move over any part of a box (or the Combat total → formula);
+    // hide only when leaving. placeholders have no data-skill so they show nothing.
+    function tipFor(e) {
+      var total = e.target.closest ? e.target.closest('.cat-total[data-formula]') : null;
+      if (total) return Skills.COMBAT_FORMULA_TEXT;
+      var tile = e.target.closest ? e.target.closest('.skill-tile') : null;
+      var k = tile && tile.getAttribute('data-skill');
+      return k ? skillTipText(k) : null;
+    }
+    el.skillsList.addEventListener('mouseover', function (e) { var t = tipFor(e); if (t) showSkillTip(t, e.clientX, e.clientY); else hideSkillTip(); });
+    el.skillsList.addEventListener('mousemove', function (e) { var t = tipFor(e); if (t) showSkillTip(t, e.clientX, e.clientY); else hideSkillTip(); });
+    el.skillsList.addEventListener('mouseleave', function () { hideSkillTip(); });
+  }
+
+  // ---------- skill detail panel (opens like the smith menu) ----------
+  // Attack lists the weapon tiers you can wield; Defense the armour tiers. Tiers
+  // above your level are shown blurred/locked. Other skills are empty for now.
+  function buildGearReqList(key) {
+    var isAtk = key === 'attack';
+    var noun = isAtk ? 'Weaponry' : 'Armour';
+    var repType = isAtk ? 'scimitar' : 'platebody';   // representative piece shown per tier
+    var lvl = Skills.data[key].level;
+    var metals = Skills.METALS || [];
+    var wrap = document.createElement('div');
+    wrap.className = 'req-list';
+    for (var j = 0; j < metals.length; j++) {
+      var M = metals[j], unlocked = lvl >= (M.req || 1);
+      var gear = Skills.GEAR[M.key + '_' + repType];
+      var row = document.createElement('div');
+      row.className = 'req-row ' + (unlocked ? 'unlocked' : 'locked');
+      // left: required level · centre: tier name · right: the weapon/armour icon
+      row.innerHTML = '<span class="req-lvl">' + (M.req || 1) + '</span>' +
+        '<span class="req-name">' + M.name + ' ' + noun + '</span>' +
+        '<span class="req-ico">' + (gear ? iconHtml(gear) : '') + '</span>';
+      wrap.appendChild(row);
+    }
+    return wrap;
+  }
+  // gathering skills show WHAT you can harvest at each level (ore/wood/plant tiers),
+  // same layout as the gear list: req level · resource name · item icon, locked blurred.
+  function skillResourceTiers(key) {
+    if (!window.Entities) return null;
+    if (key === 'mining') return (Entities.ROCK_TIERS || []).concat([{ name: 'Meteorite (Tin Akal)', reqLevel: 12, itemId: 'tinakal' }]);
+    if (key === 'woodcutting') return Entities.TREE_TIERS || null;
+    if (key === 'fishing') return Entities.FISH_TIERS || null;
+    return null;
+  }
+  function buildResourceTierList(key, tiers) {
+    var lvl = Skills.data[key].level;
+    var wrap = document.createElement('div');
+    wrap.className = 'req-list';
+    for (var i = 0; i < tiers.length; i++) {
+      var T = tiers[i], unlocked = lvl >= (T.reqLevel || 1);
+      var item = Skills.ITEMS[T.itemId];
+      var row = document.createElement('div');
+      row.className = 'req-row ' + (unlocked ? 'unlocked' : 'locked');
+      row.innerHTML = '<span class="req-lvl">' + (T.reqLevel || 1) + '</span>' +
+        '<span class="req-name">' + T.name + '</span>' +
+        '<span class="req-ico">' + (item ? iconHtml(item) : '') + '</span>';
+      wrap.appendChild(row);
+    }
+    return wrap;
+  }
+  function openSkillMenu(key) {
+    if (Game.headless) return;
+    var d = Skills.data[key];
+    if (!d) return;
+    _sellSession = null;
+    var m = ensureSmithMenu();
+    m.innerHTML = '';
+    var head = document.createElement('div');
+    head.className = 'smith-title skill-title';
+    head.textContent = d.name;                 // just the skill name, centred (no Lv x/20)
+    m.appendChild(head);
+    var body = document.createElement('div');
+    body.className = 'skill-menu-body';
+    var resTiers = skillResourceTiers(key);
+    if (key === 'attack' || key === 'defense') body.appendChild(buildGearReqList(key));
+    else if (resTiers) body.appendChild(buildResourceTierList(key, resTiers));
+    else body.innerHTML = '<div class="skill-menu-empty">Nothing here yet.</div>';
+    m.appendChild(body);
+    m.style.display = 'block';
   }
 
   // ---------- inventory ----------
@@ -384,9 +568,13 @@ var UI = (function () {
         var have = Skills.countItem(r.bar);
         var row = document.createElement('div');
         row.className = 'smith-item' + (why ? ' disabled' : '');
-        row.innerHTML = '<span class="si-icon">' + iconHtml(r) + '</span>' +
+        // everything above the base (copper) tier stays blurred until you've forged it (no spoilers)
+        var hiddenTier = (r.level > 1) && !(Game.craftedWeapons && Game.craftedWeapons[r.id]);
+        row.innerHTML = '<span class="si-icon' + (hiddenTier ? ' hidden-tier' : '') + '">' + iconHtml(r) + '</span>' +
           '<span class="si-name">' + r.name + '</span>' +
-          '<span class="si-cost">' + r.bars + '× ' + r.barName + ' (' + have + ')</span>' +
+          '<span class="si-cost">' + r.bars + '× ' + r.barName + ' (' + have + ')' +
+            (r.wood ? ' + ' + (r.woodN || 1) + '× ' + r.woodName : '') +
+            (r.prev ? ' + ' + r.prevName : '') + '</span>' +
           '<span class="si-note">' + (why || 'Smith') + '</span>';
         if (!why) row.addEventListener('click', function () {
           Skills.smith(r.id, anvilLevel);
@@ -500,6 +688,16 @@ var UI = (function () {
     el.hpFill.style.height = (pct * 100) + '%';
     el.hpNum.textContent = Math.ceil(hp);
     if (pct <= 0.34) el.hpGlobe.classList.add('low'); else el.hpGlobe.classList.remove('low');
+    // run energy percentage + toggle-button state
+    if (el.energyPct && p.maxEnergy) {
+      var ep = Utils.clamp(p.energy / p.maxEnergy, 0, 1);
+      el.energyPct.textContent = Math.round(ep * 100) + '%';
+      el.energyPct.classList.toggle('spent', ep <= 0.05);
+    }
+    if (el.runBtn) {
+      el.runBtn.classList.toggle('active', !!p.running);
+      el.runBtn.classList.toggle('empty', (p.energy || 0) <= 1);
+    }
   }
 
   // ---------- skills ----------
@@ -508,19 +706,12 @@ var UI = (function () {
     Skills.SKILL_ORDER.forEach(function (k) {
       var d = s[k];
       var lvlEl = $('lvl-' + k);
-      var barEl = $('xp-' + k);
       if (lvlEl) lvlEl.textContent = d.level;
-      if (barEl) {
-        var mx = d.max || 99;
-        var frac;
-        if (d.level >= mx) { frac = 1; }                 // maxed → full bar
-        else {
-          var lo = Utils.xpForLevel(d.level);
-          var hi = Utils.xpForLevel(Math.min(d.level + 1, mx));
-          frac = hi > lo ? (d.xp - lo) / (hi - lo) : 1;
-        }
-        barEl.style.width = Utils.clamp(frac, 0, 1) * 100 + '%';
-      }
+    });
+    // category totals = sum of member skill levels
+    Skills.CATEGORIES.forEach(function (cat) {
+      var t = $('cat-' + cat.key);
+      if (t) t.textContent = Skills.categoryLevel(cat.key);
     });
   }
 
@@ -643,6 +834,47 @@ var UI = (function () {
     setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 1100);
   }
 
+  // ---------- chat: type in the bottom-left box, text floats over your head ----------
+  var _overheadEl = null, _overheadT = 0;
+  function chatFocused() { return el.chatInput && document.activeElement === el.chatInput; }
+  function wireChat() {
+    el.chatInput = $('chat-input');
+    if (!el.chatInput) return;
+    el.chatInput.addEventListener('keydown', function (e) {
+      e.stopPropagation();               // don't let game hotkeys fire while typing
+      if (e.key === 'Enter') {
+        var t = el.chatInput.value.trim();
+        el.chatInput.value = '';
+        el.chatInput.blur();
+        if (t) { showOverhead(t); if (window.Net && Net.sendChat) Net.sendChat(t); }
+      } else if (e.key === 'Escape') { el.chatInput.value = ''; el.chatInput.blur(); }
+    });
+    // press Enter anywhere (when not already typing) to jump into the chat box
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !chatFocused() && el.chatInput) { e.preventDefault(); el.chatInput.focus(); }
+    });
+  }
+  // show text over the local player's head (also used for NPC replies later)
+  function showOverhead(text) {
+    if (Game.headless || !labelLayer) return;
+    if (!_overheadEl) { _overheadEl = document.createElement('div'); _overheadEl.className = 'overhead-chat'; labelLayer.appendChild(_overheadEl); }
+    _overheadEl.textContent = text;
+    _overheadEl.style.display = 'block';
+    _overheadT = 5;                       // seconds visible
+  }
+  function updateOverheadChat(dt) {
+    if (!_overheadEl || _overheadT <= 0) return;
+    _overheadT -= dt;
+    var p = Game.player;
+    if (_overheadT <= 0 || !p || !p.group) { _overheadEl.style.display = 'none'; return; }
+    var s = toScreen(new THREE.Vector3(p.position.x, p.position.y + 3.4, p.position.z));
+    if (!s) { _overheadEl.style.display = 'none'; return; }
+    _overheadEl.style.display = 'block';
+    _overheadEl.style.left = s.x + 'px';
+    _overheadEl.style.top = s.y + 'px';
+    _overheadEl.style.opacity = _overheadT < 1 ? _overheadT : 1;   // fade the last second
+  }
+
   // ---------- floating speech bubble (world-anchored, one-shot) ----------
   function spawnSpeech(worldVec, text) {
     if (Game.headless || !labelLayer) return;
@@ -700,8 +932,11 @@ var UI = (function () {
   }
 
   // ---------- floating enemy labels / hp bars ----------
+  var _playerBar = null, _playerBarFill = null;
+  function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
   function updateLabels(enemies) {
     if (Game.headless || !labelLayer) return;
+    var now = nowMs();
     for (var i = 0; i < enemies.length; i++) {
       var e = enemies[i];
       if (!e._labelEl) {
@@ -712,16 +947,37 @@ var UI = (function () {
         e._labelEl = lab;
         e._hpFill = lab.querySelector('i');
       }
-      var visible = e.active && e.state !== 'dead' && e.state !== 'respawning';
+      // only show while you're actually fighting it: damaged, or recently traded blows
+      var inCombat = (e.hp < e.maxHp) || (e._combatUntil && e._combatUntil > now);
+      var visible = e.active && e.state !== 'dead' && e.state !== 'respawning' && inCombat;
       if (!visible) { e._labelEl.style.display = 'none'; continue; }
-      var top = new THREE.Vector3(e.position.x, e.position.y + 3.0, e.position.z);
-      var s = toScreen(top);
+      var s = toScreen(new THREE.Vector3(e.position.x, e.position.y + 3.0, e.position.z));
       if (!s) { e._labelEl.style.display = 'none'; continue; }
       e._labelEl.style.display = 'block';
       e._labelEl.style.left = s.x + 'px';
       e._labelEl.style.top = s.y + 'px';
       e._hpFill.style.width = Utils.clamp(e.hp / e.maxHp, 0, 1) * 100 + '%';
     }
+    updatePlayerBar(now);
+  }
+  // the player's own HP bar above their head, shown while in combat
+  function updatePlayerBar(now) {
+    var p = Game.player;
+    if (!p) return;
+    if (!_playerBar) {
+      _playerBar = document.createElement('div');
+      _playerBar.className = 'entity-label player';
+      _playerBar.innerHTML = '<div class="entity-hpbar"><i></i></div>';
+      labelLayer.appendChild(_playerBar);
+      _playerBarFill = _playerBar.querySelector('i');
+    }
+    var inCombat = (p.stats.hp < p.stats.maxHp) || (Game.playerCombatUntil && Game.playerCombatUntil > now);
+    var s = (!p.isDead && inCombat) ? toScreen(new THREE.Vector3(p.position.x, p.position.y + 3.4, p.position.z)) : null;
+    if (!s) { _playerBar.style.display = 'none'; return; }
+    _playerBar.style.display = 'block';
+    _playerBar.style.left = s.x + 'px';
+    _playerBar.style.top = s.y + 'px';
+    _playerBarFill.style.width = Utils.clamp(p.stats.hp / p.stats.maxHp, 0, 1) * 100 + '%';
   }
 
   // ---------- flashes / screens ----------
@@ -770,7 +1026,7 @@ var UI = (function () {
 
   return {
     init: init,
-    updateVitals: updateVitals, updateSkills: updateSkills,
+    updateVitals: updateVitals, updateSkills: updateSkills, buildSkills: buildSkills,
     updateInventory: updateInventory,
     updateEquipment: updateEquipment, setActiveTab: setActiveTab, toast: toast,
     updateGold: updateGold, updateScore: updateScore, openSmithMenu: openSmithMenu, openSellMenu: openSellMenu, openStationMenu: openStationMenu,
@@ -779,6 +1035,7 @@ var UI = (function () {
     showTip: showTip, hideTip: hideTip, showCountdown: showCountdown, clearOverlays: clearOverlays,
     spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
     updateCampLabels: updateCampLabels, updateMerchantLabels: updateMerchantLabels,
+    showOverhead: showOverhead, updateOverheadChat: updateOverheadChat, chatFocused: chatFocused,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,
     showDeathScreen: showDeathScreen, hideDeathScreen: hideDeathScreen,
     showVictory: showVictory,

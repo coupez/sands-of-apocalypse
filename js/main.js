@@ -17,15 +17,21 @@ var Main = (function () {
     var svg = "<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36'><text y='28' font-size='28'>" + glyph + "</text></svg>";
     return "url(\"data:image/svg+xml;utf8," + encodeURIComponent(svg) + "\") " + hx + " " + hy + ", pointer";
   }
+  // pixel-art cursor (falls back to an emoji SVG cursor if pixel art is unavailable)
+  function pixCursor(sprite, emoji, hx, hy) {
+    var url = window.PixelIcons && PixelIcons.getScaled ? PixelIcons.getScaled(sprite, 2) : null;
+    return url ? ('url(' + url + ') ' + hx + ' ' + hy + ', auto') : emojiCursor(emoji, 4, 4);
+  }
   function cursorFor(type) {
     if (!CURSORS.tree) {
-      CURSORS.tree = emojiCursor('🪓', 4, 4);
-      CURSORS.rock = emojiCursor('⛏️', 4, 4);
+      CURSORS.tree = pixCursor('woodcutting', '🪓', 4, 2);
+      CURSORS.rock = pixCursor('mining', '⛏️', 4, 2);
       CURSORS.crystal = CURSORS.rock;
-      CURSORS.fishpool = emojiCursor('🎣', 4, 4);
-      CURSORS.enemy = emojiCursor('⚔️', 4, 4);
-      CURSORS.drop = emojiCursor('🫳', 4, 4);
-      CURSORS.use = emojiCursor('👆', 4, 4);
+      CURSORS.meteorite = CURSORS.rock;
+      CURSORS.fishpool = pixCursor('fishing', '🌿', 6, 4);
+      CURSORS.enemy = pixCursor('attack', '⚔️', 14, 2);
+      CURSORS.drop = pixCursor('hand', '🫳', 8, 4);
+      CURSORS.use = pixCursor('hand', '👆', 8, 4);
     }
     if (type === 'player' || type === 'boss') return CURSORS.enemy;
     if (type === 'station' || type === 'obelisk' || type === 'chest' || type === 'essaltar') return CURSORS.use;
@@ -37,7 +43,8 @@ var Main = (function () {
       case 'tree': return 'Chop ' + ref.name;
       case 'rock': return 'Mine ' + ref.name;
       case 'crystal': return 'Mine the ' + ref.name + ' (Lv ' + ref.reqLevel + ')';
-      case 'fishpool': return 'Fish ' + ref.name;
+      case 'meteorite': return 'Mine the ' + ref.name + ' (max Mining + Woodcutting)';
+      case 'fishpool': return 'Harvest ' + ref.name;
       case 'chest': return 'Open ' + (ref.name || 'chest');
       case 'station': return 'Use ' + ref.name + (ref.lit === false && (ref.kind === 'furnace' || ref.kind === 'campfire') ? ' (unlit)' : '');
       case 'obelisk': return 'The Central Altar';
@@ -116,13 +123,16 @@ var Main = (function () {
     });
     // Shift = Dark Souls-style dodge roll (i-frames)
     window.addEventListener('keydown', function (e) {
+      // while typing in the chat box, don't let game hotkeys fire
+      if (window.UI && UI.chatFocused && UI.chatFocused()) return;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         if (!Player.isDead) Player.dodge();
       }
-      // debug: press "2" to grant the Heart of the Obelisk
+      // debug: press "2" to unlock everything — max skills, stations, gold + key materials
       if (e.key === '2' && window.Skills) {
-        Skills.addItem('orb');
-        if (window.UI) UI.showActionText('[debug] The Heart of the Obelisk appears in your pack.');
+        if (Skills.maxAll) Skills.maxAll(); else Skills.addItem('orb');
+        if (window.Entities && Entities.debugMaxStations) Entities.debugMaxStations();
+        if (window.UI) UI.showActionText('[debug] MAX — all skills & stations maxed, gold + endgame materials granted.');
       }
       // "B" opens the co-op build menu
       if ((e.key === 'b' || e.key === 'B') && Game.mode === 'coop' && window.UI && UI.openBuildMenu) UI.openBuildMenu();
@@ -159,7 +169,7 @@ var Main = (function () {
     if (ref.type === 'tree' && s.woodcutting.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Woodcutting for ' + ref.name + '.';
     if (ref.type === 'rock' && s.mining.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Mining for ' + ref.name + '.';
     if (ref.type === 'crystal' && s.mining.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Mining to work the ' + ref.name + '.';
-    if (ref.type === 'fishpool' && s.fishing.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Fishing for ' + ref.name + '.';
+    if (ref.type === 'fishpool' && s.fishing.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Harvesting for ' + ref.name + '.';
     if (ref.type === 'enemy' && s.attack.level < ref.reqLevel) return 'You need level ' + ref.reqLevel + ' Attack to fight the ' + ref.name + '.';
     return null;
   }
@@ -174,7 +184,7 @@ var Main = (function () {
       Player.interactWith(ref);
       if (ref.type === 'tree') UI.showActionText('You approach the ' + ref.name + '…');
       else if (ref.type === 'rock') UI.showActionText('You approach the ' + ref.name + '…');
-      else if (ref.type === 'fishpool') UI.showActionText('You wade to the ' + ref.name + '…');
+      else if (ref.type === 'fishpool') UI.showActionText('You step up to the ' + ref.name + '…');
       else if (ref.type === 'chest') UI.showActionText('You head for the chest…');
       else if (ref.type === 'station') UI.showActionText('You head to the ' + ref.name + '…');
       else if (ref.type === 'obelisk') UI.showActionText('You approach the Obelisk…');
@@ -213,12 +223,16 @@ var Main = (function () {
   // one simulation step (shared by live loop and self-test)
   function step(dt, t) {
     CameraRig.update(dt);
+    // refresh the camera's world matrix now so DOM overlays projected this frame
+    // (overhead chat, name labels, HP bars) track the mesh instead of lagging a frame
+    if (Game.camera) Game.camera.updateMatrixWorld();
     Player.update(dt, t);
     Entities.update(dt, t);
     World.update(dt, t);
     if (window.Coop && Coop.update) Coop.update(dt);
     UI.updateLabels(Entities.enemies);
     UI.updateMerchantLabels(Entities.stations);
+    UI.updateOverheadChat(dt);
     if (Net.enabled) Net.update(dt);
   }
 

@@ -1,0 +1,20 @@
+# Grid reference cube — SANDS OF APOCALYPSE
+# Exactly ONE grid tile: 2 x 2 world units on the floor, 2 units tall.
+# The whole map's movement grid is 2-unit tiles, so design to this scale:
+# import this cube, and every object should sit within a 2x2 footprint.
+# Tile centres are 2 units apart; keep things centred on that spacing.
+o GridReferenceCube
+v -1.0 0.0 -1.0
+v  1.0 0.0 -1.0
+v  1.0 0.0  1.0
+v -1.0 0.0  1.0
+v -1.0 2.0 -1.0
+v  1.0 2.0 -1.0
+v  1.0 2.0  1.0
+v -1.0 2.0  1.0
+f 1 2 3 4
+f 5 8 7 6
+f 1 5 6 2
+f 2 6 7 3
+f 3 7 8 4
+f 4 8 5 1

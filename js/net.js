@@ -98,7 +98,7 @@ var Net = (function () {
           UI.announce((msg.name || 'A wanderer') + ' reached ' + msg.skill + ' level ' + msg.level + (msg.max ? '!' : ''), !!msg.max);
         }
       }
-      else if (msg.type === 'chat') { /* reserved */ }
+      else if (msg.type === 'chat') { if (msg.id !== myId) remoteChat(msg.id, msg.text); }
     };
     ws.onclose = function () { connected = false; if (window.Entities) Entities.goOffline(); setStatus(); scheduleReconnect(); };
     ws.onerror = function () { try { ws.close(); } catch (e) {} };
@@ -178,6 +178,7 @@ var Net = (function () {
     o.active = false;
     if (o.group && Game.scene) Game.scene.remove(o.group);
     if (o.labelEl && o.labelEl.parentNode) o.labelEl.parentNode.removeChild(o.labelEl);
+    if (o.chatEl && o.chatEl.parentNode) o.chatEl.parentNode.removeChild(o.chatEl);
     remoteMeshes = remoteMeshes.filter(function (m) { return m.userData.ref !== o; });
     delete others[id];
     setStatus();
@@ -193,7 +194,7 @@ var Net = (function () {
       // show a splat over the target's avatar for everyone else
       var o = others[msg.target];
       if (o && o.group && window.UI) {
-        var head = new THREE.Vector3(o.group.position.x, o.group.position.y + 2.7, o.group.position.z);
+        var head = new THREE.Vector3(o.group.position.x, o.group.position.y + 1.4, o.group.position.z);
         UI.spawnHitsplat(head, dmg, dmg > 0 ? 'hit' : 'miss');
       }
     }
@@ -327,6 +328,7 @@ var Net = (function () {
         }
       }
       positionLabel(o);
+      positionChat(o, dt);
     }
 
     // stream my state
@@ -345,6 +347,38 @@ var Net = (function () {
     o.labelEl.style.display = 'block';
     o.labelEl.style.left = ((v.x * 0.5 + 0.5) * window.innerWidth) + 'px';
     o.labelEl.style.top = ((-v.y * 0.5 + 0.5) * window.innerHeight) + 'px';
+  }
+
+  // a chat line another player typed — float it over their head (plain text, no bubble)
+  function remoteChat(id, text) {
+    var o = others[id];
+    if (!o || Game.headless) return;
+    if (!o.chatEl) {
+      o.chatEl = document.createElement('div');
+      o.chatEl.className = 'overhead-chat';
+      var layer = document.getElementById('label-layer');
+      if (layer) layer.appendChild(o.chatEl);
+    }
+    o.chatEl.textContent = String(text).slice(0, 120);
+    o.chatEl.style.display = 'block';
+    o.chatT = 5;
+  }
+  function positionChat(o, dt) {
+    if (!o.chatEl) return;
+    if (!(o.chatT > 0) || !Game.camera) { o.chatEl.style.display = 'none'; return; }
+    o.chatT -= dt;
+    if (o.chatT <= 0) { o.chatEl.style.display = 'none'; return; }
+    var top = new THREE.Vector3(o.group.position.x, o.group.position.y + 3.8, o.group.position.z);
+    var v = top.clone().project(Game.camera);
+    if (v.z > 1) { o.chatEl.style.display = 'none'; return; }
+    o.chatEl.style.display = 'block';
+    o.chatEl.style.left = ((v.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+    o.chatEl.style.top = ((-v.y * 0.5 + 0.5) * window.innerHeight) + 'px';
+    o.chatEl.style.opacity = o.chatT < 1 ? o.chatT : 1;
+  }
+  function sendChat(text) {
+    if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'chat', text: String(text).slice(0, 120) }));
   }
 
   function sendState() {
@@ -368,6 +402,7 @@ var Net = (function () {
     sendAttackEnemy: sendAttackEnemy, sendGather: sendGather, sendWin: sendWin, sendLevel: sendLevel,
     sendChooseMode: sendChooseMode, sendSigil: sendSigil,
     sendRitualStart: sendRitualStart, sendBossHit: sendBossHit, sendBuild: sendBuild, sendPlaceEssence: sendPlaceEssence,
+    sendChat: sendChat,
     get enabled() { return enabled; },
     get myName() { return myName; },
     get myId() { return myId; },

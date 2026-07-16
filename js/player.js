@@ -4,8 +4,14 @@
 
 var Player = (function () {
   var group, rightArm, leftArm, rightLeg, leftLeg, torso, head, weapon, bowModel;
+  var weaponModel = null;       // custom imported .glb held in the right hand (if any)
+  var _lastApp = null;          // remember the last appearance so models can re-apply on load
+  var charModel = null;         // custom imported player-character model (replaces the boxes)
+  var bodyMeshes = [];          // the procedural body meshes to hide once a model is in
+  var _charApplied = false;
+  var _charScale = null;        // world units per model unit (from the character) → sizes weapons to match
   var matHead, matBody, matLegs, matWeapon;   // recoloured by equipped gear tier
-  var BASE_HEAD = 0x7fa86a, BASE_BODY = 0x3b4a2a, BASE_LEGS = 0x232b18;
+  var BASE_HEAD = 0xd8b48a, BASE_BODY = 0xffffff, BASE_LEGS = 0x5a4632;   // desert-nomad skin / robe (white lets the robe texture show) / trousers
   var SPEED = 6.2;
 
   var state = 'idle';           // idle | moving | acting | dead
@@ -15,6 +21,8 @@ var Player = (function () {
   var actionKind = null;        // 'chop' | 'mine' | 'fish' | 'attack'
   var animPhase = 0;
   var swingFired = false;       // has this swing's effect fired yet?
+  var walkPath = null;          // queued tile-center waypoints (Grid pathfinding)
+  var goalKey = null;           // tile-key of the current path goal (for replanning)
   // swing timing (fractions of the action interval)
   var WINDUP_END = 0.48;        // reach the raised/wound-up pose by here
   var IMPACT = 0.72;            // the strike connects here — effect fires now
@@ -25,15 +33,39 @@ var Player = (function () {
   var EAT_LOCK = 3.0;         // attack lockout after eating
   var mySlot = 1;             // which camp this player belongs to (1 = N, 2 = S)
 
-  var BASE_MAXHP = 20;
-  var stats = { hp: 20, maxHp: 20, attackTick: 0 };
+  var stats = { hp: 15, maxHp: 15, attackTick: 0 };
 
-  // recompute max HP from base + equipment bonus; keep current HP in range
+  // Your base max HP is your Hit Points LEVEL (starts at 15). Equipment adds on top.
+  function baseMaxHp() {
+    return (window.Skills && Skills.data.hitpoints) ? Skills.data.hitpoints.level : 15;
+  }
+  // recompute max HP from Hit Points level + equipment bonus; keep current HP in range
   function applyBonuses(b) {
     b = b || {};
-    stats.maxHp = BASE_MAXHP + (b.hp || 0);
+    stats.maxHp = baseMaxHp() + (b.hp || 0);
     if (stats.hp > stats.maxHp) stats.hp = stats.maxHp;
   }
+
+  // ---- run / stamina ----
+  // A toggleable sprint drains energy while you're actually moving; it refills
+  // whenever you're not sprinting. At 0 you can't sprint until it recovers.
+  var RUN_MULT = 1.35;         // sprint speed multiplier (a gentle jog, not a blur)
+  var ENERGY_MAX = 100;
+  var ENERGY_DRAIN = 16;       // per second while sprinting AND moving
+  var ENERGY_REGEN = 6;        // per second otherwise (slow refill)
+  var ENERGY_MIN_RUN = 1;      // need at least this much to start/keep sprinting
+  var energy = ENERGY_MAX, running = false;
+  function setRunning(v) { running = !!v && energy > ENERGY_MIN_RUN; }
+  function toggleRun() { setRunning(!running); return running; }
+  function updateEnergy(dt, moving) {
+    if (running && moving) {
+      energy = Math.max(0, energy - ENERGY_DRAIN * dt);
+      if (energy <= 0) running = false;                 // gassed out — stop sprinting
+    } else {
+      energy = Math.min(ENERGY_MAX, energy + ENERGY_REGEN * dt);
+    }
+  }
+  function isRunning() { return running && energy > 0; }
 
   // death sequence
   var death = { active: false, phase: null, t: 0, baseY: 0, onDone: null };
@@ -41,23 +73,56 @@ var Player = (function () {
   // dodge roll (Dark Souls-style)
   var dodge = { active: false, t: 0, dur: 0.5, cooldown: 0, dir: { x: 0, z: 1 } };
 
+  // A tiny, chunky canvas texture (nearest-filtered, no mipmaps) — the low-res
+  // painted look of a PlayStation-1 character skin.
+  function ps1Tex(draw, size) {
+    var S = size || 32;
+    var cv = document.createElement('canvas'); cv.width = cv.height = S;
+    draw(cv.getContext('2d'), S);
+    var t = new THREE.CanvasTexture(cv);
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
+    return t;
+  }
+  function robeTexture() {
+    return ps1Tex(function (c, S) {
+      c.fillStyle = '#d8c49a'; c.fillRect(0, 0, S, S);                 // cloth
+      c.fillStyle = '#c7ac78'; c.fillRect(0, 0, S, 3);                 // collar band
+      c.fillStyle = '#8a2f2a'; c.fillRect(S * 0.42, 0, S * 0.16, S);   // red sash down the front
+      c.fillStyle = '#5a4028'; c.fillRect(0, S * 0.62, S, S * 0.12);   // belt
+      c.fillStyle = '#e6d6ac';                                         // cloth highlights
+      for (var i = 0; i < 40; i++) c.fillRect((Math.random() * S) | 0, (Math.random() * S) | 0, 1, 1);
+    });
+  }
+
   function build(scene) {
     group = new THREE.Group();
+    charModel = null; bodyMeshes = []; _charApplied = false;   // reset per (re)build
 
-    matHead = new THREE.MeshStandardMaterial({ color: BASE_HEAD, roughness: 0.9, flatShading: true });
-    matBody = new THREE.MeshStandardMaterial({ color: BASE_BODY, roughness: 1.0, flatShading: true });
-    matLegs = new THREE.MeshStandardMaterial({ color: BASE_LEGS, roughness: 1.0, flatShading: true });
-    matWeapon = new THREE.MeshStandardMaterial({ color: 0xc87838, roughness: 0.4, metalness: 0.7, flatShading: true });
-    var skin = new THREE.MeshStandardMaterial({ color: BASE_HEAD, roughness: 0.9, flatShading: true }); // arms stay skin
-    var dark = new THREE.MeshStandardMaterial({ color: BASE_LEGS, roughness: 1.0, flatShading: true });  // hood
+    // PS1-style: MeshLambert = per-vertex (gouraud) lighting, low-res maps.
+    matHead = new THREE.MeshLambertMaterial({ color: BASE_HEAD });
+    matBody = new THREE.MeshLambertMaterial({ color: BASE_BODY, map: robeTexture() });
+    matLegs = new THREE.MeshLambertMaterial({ color: BASE_LEGS });
+    matWeapon = new THREE.MeshLambertMaterial({ color: 0xc87838 });
+    var skin = new THREE.MeshLambertMaterial({ color: BASE_HEAD }); // arms stay skin
+    var dark = new THREE.MeshLambertMaterial({ color: BASE_LEGS });  // hood
 
     torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.5), matBody);
     torso.position.y = 1.5;
     group.add(torso);
 
-    // head + hood
-    head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), matHead);
+    // head — chunky PS1 block with a painted face + nomad headband
+    head = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.62, 0.62), matHead);
     head.position.y = 2.35;
+    var eyeMat = new THREE.MeshLambertMaterial({ color: 0x201810 });
+    for (var ei = -1; ei <= 1; ei += 2) {
+      var eye = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.09, 0.03), eyeMat);
+      eye.position.set(ei * 0.14, 0.03, 0.31); head.add(eye);
+    }
+    var brow = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.03), new THREE.MeshLambertMaterial({ color: 0x6b4a2a }));
+    brow.position.set(0, 0.12, 0.31); head.add(brow);
+    var band = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.16, 0.66), new THREE.MeshLambertMaterial({ color: 0xb9483a }));
+    band.position.set(0, 0.26, 0); head.add(band);   // red headband
     group.add(head);
 
     // arms (pivot at shoulder so swings look right)
@@ -128,10 +193,34 @@ var Player = (function () {
 
     group.traverse(function (o) { if (o.isMesh) { o.castShadow = true; } });
 
+    bodyMeshes = [torso, head, rArmMesh, lArmMesh, rLegMesh, lLegMesh];
+    applyCharModel();   // swap in the custom character model if it's loaded
+
     group.position.set(0, 0, 0);
     scene.add(group);
     Game.player = api;
     return api;
+  }
+
+  // Replace the procedural boxes with the imported character model (static).
+  // Keeps the limb groups (rightArm etc.) so the equipped weapon still attaches.
+  function applyCharModel() {
+    if (!group || _charApplied || !window.Models || !Models.getCharacter) return;
+    var m = Models.getCharacter();
+    if (!m) return;
+    m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1);   // exports already Y-up
+    m.updateMatrixWorld(true);
+    var sz = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+    _charScale = 2.66 / (sz.y || 1);         // world units per model unit (your modelling scale)
+    m.scale.setScalar(_charScale);           // match the game's ~2.66u character height
+    m.updateMatrixWorld(true);
+    var b = new THREE.Box3().setFromObject(m);
+    m.position.set(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);   // centre on xz, feet on the ground
+    m.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    group.add(m);
+    charModel = m;
+    for (var i = 0; i < bodyMeshes.length; i++) if (bodyMeshes[i]) bodyMeshes[i].visible = false;
+    _charApplied = true;
   }
 
   function terrainY(x, z) {
@@ -149,13 +238,28 @@ var Player = (function () {
     var diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
     group.rotation.y = cur + diff * Utils.clamp(12 * dt, 0, 1);
   }
+  // snap to look straight at a point — used so the character always faces the
+  // rock/tree/enemy it's interacting with, not just eventually.
+  function faceInstant(x, z) {
+    var dx = x - group.position.x, dz = z - group.position.z;
+    if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return;
+    group.rotation.y = Math.atan2(dx, dz);
+  }
+
+  // snap a world x/z to the centre of its grid tile (falls back to the raw point)
+  function snapPoint(x, z) {
+    if (window.Grid && Grid.tileCenter) { var t = Grid.worldToTile(x, z); return Grid.tileCenter(t.tx, t.tz); }
+    return { x: x, z: z };
+  }
 
   // ---- public commands ----
   function walkTo(point) {
     if (state === 'dead') return;
-    moveTarget = new THREE.Vector3(point.x, 0, point.z);
+    var c = snapPoint(point.x, point.z);           // click anywhere in a tile → walk to its centre
+    moveTarget = new THREE.Vector3(c.x, 0, c.z);
     interaction = null;
     actionKind = null;
+    walkPath = null; goalKey = null;   // force a fresh path
     state = 'moving';
   }
 
@@ -163,11 +267,25 @@ var Player = (function () {
     if (state === 'dead' || !entity) return;
     interaction = { entity: entity, type: entity.type };
     moveTarget = null;
+    walkPath = null; goalKey = null;   // force a fresh path
     state = 'moving';
   }
 
   function stop() {
     moveTarget = null; interaction = null; state = 'idle'; actionKind = null;
+    walkPath = null; goalKey = null;
+  }
+
+  // (re)plan a tile path to the destination (or to a tile adjacent to `ent`).
+  // Replans only when the goal tile changes, so it's cheap per-frame.
+  function ensurePath(dest, ent) {
+    if (!window.Grid || !Grid.findPath) { walkPath = null; return; }
+    var k;
+    if (ent) { var e = Grid.worldToTile(ent.position.x, ent.position.z); k = 'e' + e.tx + '_' + e.tz; }
+    else { var m = Grid.worldToTile(dest.x, dest.z); k = 'm' + m.tx + '_' + m.tz; }
+    if (k === goalKey && walkPath) return;
+    goalKey = k;
+    walkPath = ent ? Grid.findPathAdj(group.position, ent.position) : Grid.findPath(group.position, dest);
   }
 
   // ---- dodge roll ----
@@ -210,9 +328,11 @@ var Player = (function () {
     mySlot = (slot === 2) ? 2 : 1;
     var C = (window.World && World.CAMPS) ? World.CAMPS : { north: { x: 0, z: 0 }, south: { x: 0, z: 0 } };
     var c = (slot === 2) ? C.south : C.north;
-    group.position.set(c.x, terrainY(c.x, c.z), c.z);
+    var cc = snapPoint(c.x, c.z);                 // spawn centred on a tile
+    group.position.set(cc.x, terrainY(cc.x, cc.z), cc.z);
     group.rotation.y = Math.atan2(0 - c.x, 0 - c.z); // face the center of the map
     moveTarget = null; interaction = null; state = 'idle'; actionKind = null;
+    walkPath = null; goalKey = null;
     CameraRig.setTarget(group.position);
   }
 
@@ -254,17 +374,32 @@ var Player = (function () {
       var dx = dest.x - group.position.x, dz = dest.z - group.position.z;
       var d = Math.sqrt(dx * dx + dz * dz);
       if (d > stopDist) {
-        var step = Math.min(SPEED * dt, d - stopDist * 0.9);
-        group.position.x += (dx / d) * step;
-        group.position.z += (dz / d) * step;
-        faceTowards(dest.x, dest.z, dt);
+        // Follow a tile path around obstacles; fall back to a straight line for
+        // the final approach (or if no path was found).
+        ensurePath(dest, ent);
+        var usingPath = walkPath && walkPath.length > 0;
+        if (usingPath) {
+          var w0 = walkPath[0];
+          var w0d = Math.hypot(w0.x - group.position.x, w0.z - group.position.z);
+          if (w0d < 0.16) { walkPath.shift(); usingPath = walkPath.length > 0; }
+        }
+        var goX, goZ, maxStep = SPEED * (isRunning() ? RUN_MULT : 1) * dt;
+        if (usingPath) { var wp = walkPath[0]; goX = wp.x; goZ = wp.z; }
+        else { goX = dest.x; goZ = dest.z; maxStep = Math.min(maxStep, Math.max(0, d - stopDist * 0.9)); }
+        var gdx = goX - group.position.x, gdz = goZ - group.position.z, gd = Math.hypot(gdx, gdz);
+        if (gd > 0.0001 && maxStep > 0) {
+          var step = Math.min(maxStep, gd);
+          group.position.x += (gdx / gd) * step;
+          group.position.z += (gdz / gd) * step;
+          faceTowards(goX, goZ, dt);
+        }
         moving = true;
         state = 'moving';
         actionKind = null; actionTimer = 0; swingFired = false;
       } else {
-        // arrived
+        // arrived — lock the character's facing onto the target it's interacting with
         if (ent) {
-          faceTowards(ent.position.x, ent.position.z, dt);
+          faceInstant(ent.position.x, ent.position.z);
           if (ent.type === 'chest') {
             Entities.openChest(ent);
             interaction = null; state = 'idle'; actionKind = null;
@@ -286,7 +421,7 @@ var Player = (function () {
           } else {
             state = 'acting';
             var newKind = ent.type === 'tree' ? 'chop'
-                        : (ent.type === 'rock' || ent.type === 'crystal') ? 'mine'
+                        : (ent.type === 'rock' || ent.type === 'crystal' || ent.type === 'meteorite') ? 'mine'
                         : ent.type === 'fishpool' ? 'fish' : 'attack';
             if (newKind !== actionKind) { actionTimer = 0; swingFired = false; } // fresh swing on a new target/action
             actionKind = newKind;
@@ -296,11 +431,17 @@ var Player = (function () {
           moveTarget = null;
           state = 'idle';
           actionKind = null; actionTimer = 0; swingFired = false;
+          walkPath = null; goalKey = null;
+          var sc = snapPoint(group.position.x, group.position.z);   // rest exactly on the tile centre
+          group.position.x = sc.x; group.position.z = sc.z;
         }
       }
     } else {
       state = state === 'dead' ? 'dead' : 'idle';
     }
+
+    updateEnergy(dt, moving);
+    if (window.UI && UI.updateVitals) UI.updateVitals();   // reflect live energy drain/regen
 
     // keep on the ground
     group.position.y = terrainY(group.position.x, group.position.z);
@@ -317,7 +458,7 @@ var Player = (function () {
   // fires the actual game effect exactly at the swing's impact frame
   function fireActionEffect(ent) {
     if (actionKind === 'chop') { Skills.doWoodcut(ent); SFX.chop(); }
-    else if (actionKind === 'mine') { if (ent.type === 'crystal' && window.Entities) Entities.mineCrystal(ent); else Skills.doMine(ent); SFX.mine(); }
+    else if (actionKind === 'mine') { if (ent.type === 'crystal' && window.Entities) Entities.mineCrystal(ent); else if (ent.type === 'meteorite' && window.Entities) Entities.mineMeteorite(ent); else Skills.doMine(ent); SFX.mine(); }
     else if (actionKind === 'fish') { Skills.doFish(ent); SFX.mine(); }
     else if (actionKind === 'attack') {
       if (!canAttack()) { if (window.UI) UI.showActionText('You are too full to attack.'); return; }
@@ -358,8 +499,19 @@ var Player = (function () {
     return lerp(strike, 0, smooth((prog - IMPACT) / (1 - IMPACT))); // recover to rest
   }
 
+  // which melee archetype is equipped → drives the attack animation
+  function weaponArch() {
+    var id = (window.Game && Game.equipment) ? Game.equipment.rhand : null;
+    if (!id) return 'scimitar';
+    if (id.indexOf('_dagger') >= 0) return 'dagger';
+    if (id.indexOf('_greatsword') >= 0) return 'greatsword';
+    return 'scimitar';   // scimitars + the bronze 'sword' + fallback
+  }
+
   function animate(dt, t, moving) {
     animPhase += dt * (moving ? 10 : 3);
+    if (rightArm) rightArm.rotation.z = Utils.damp(rightArm.rotation.z, 0, 12, dt);   // relax any side-sweep
+    if (leftArm) leftArm.rotation.z = Utils.damp(leftArm.rotation.z, 0, 12, dt);
     if (state === 'acting' && actionKind) {
       var prog = Utils.clamp(actionTimer / actionInterval(), 0, 1);
       if (actionKind === 'fish') {
@@ -370,18 +522,35 @@ var Player = (function () {
         torso.rotation.x = f * 0.05;
         rightLeg.rotation.x = 0; leftLeg.rotation.x = 0;
       } else {
-        // windup -> strike(impact) -> recover, distinct amplitudes per action
-        var back, strike, la;
-        if (actionKind === 'attack') { back = -2.2; strike = 1.0; la = 0.35; }      // overhead weapon swing
-        else if (actionKind === 'chop') { back = -2.5; strike = 1.15; la = 0.85; }  // big two-handed chop
-        else { back = -1.7; strike = 1.05; la = 0.55; }                             // mine: shorter pick strike
-        var a = swingAngle(prog, back, strike);
-        rightArm.rotation.x = a;
-        leftArm.rotation.x = a * la;
-        // torso leans into the blow (peaks at impact), legs plant for weight
         var lean = smooth(prog < IMPACT ? prog / IMPACT : 1 - (prog - IMPACT) / (1 - IMPACT));
-        torso.rotation.x = lean * 0.18;
-        rightLeg.rotation.x = -0.15; leftLeg.rotation.x = 0.2;
+        if (actionKind === 'attack') {
+          var arch = weaponArch();
+          if (arch === 'dagger') {                 // quick forward STAB
+            var sd = swingAngle(prog, -0.5, -1.5);
+            rightArm.rotation.x = sd; leftArm.rotation.x = sd * 0.15;
+            torso.rotation.x = lean * 0.12;
+          } else if (arch === 'greatsword') {      // heavy overhead SLAM (two-handed)
+            var sg = swingAngle(prog, -2.75, 1.65);
+            rightArm.rotation.x = sg; leftArm.rotation.x = sg * 0.9;
+            torso.rotation.x = lean * 0.34;
+          } else {                                  // scimitar: diagonal up→down SWIPE
+            var ss = swingAngle(prog, -2.0, 1.15);
+            rightArm.rotation.x = ss;
+            rightArm.rotation.z = swingAngle(prog, -0.5, 0.7) * 0.7;   // sideways sweep across the body
+            leftArm.rotation.x = ss * 0.3;
+            torso.rotation.x = lean * 0.2;
+          }
+          rightLeg.rotation.x = -0.15; leftLeg.rotation.x = 0.2;
+        } else {
+          // gathering: chop / mine
+          var back, strike, la;
+          if (actionKind === 'chop') { back = -2.5; strike = 1.15; la = 0.85; }  // big two-handed chop
+          else { back = -1.7; strike = 1.05; la = 0.55; }                        // mine: shorter pick strike
+          var a = swingAngle(prog, back, strike);
+          rightArm.rotation.x = a; leftArm.rotation.x = a * la;
+          torso.rotation.x = lean * 0.18;
+          rightLeg.rotation.x = -0.15; leftLeg.rotation.x = 0.2;
+        }
       }
     } else if (moving) {
       var s2 = Math.sin(animPhase);
@@ -398,6 +567,12 @@ var Player = (function () {
       rightLeg.rotation.x = Utils.damp(rightLeg.rotation.x, 0, 6, dt);
       leftLeg.rotation.x = Utils.damp(leftLeg.rotation.x, 0, 6, dt);
       torso.rotation.x = Utils.damp(torso.rotation.x, 0, 6, dt);
+    }
+    // two-handed grip: the off-hand rests on the greatsword when not mid-swing
+    if (weaponArch() === 'greatsword' && state !== 'acting' && eatAnim <= 0 && prayAnim <= 0 && leftArm) {
+      rightArm.rotation.x = Utils.damp(rightArm.rotation.x, -0.5, 8, dt);
+      leftArm.rotation.x = Utils.damp(leftArm.rotation.x, -0.55, 8, dt);
+      leftArm.rotation.z = Utils.damp(leftArm.rotation.z, -0.7, 8, dt);
     }
     // eating gesture overrides the arm pose: hand to the mouth with a chew bob
     if (eatAnim > 0 && rightArm) {
@@ -438,10 +613,39 @@ var Player = (function () {
   function canAttack() { return eatLock <= 0 && !death.active && state !== 'dead'; }
   function startPraying() { prayAnim = 1.4; }
 
+  // scale + seat an imported weapon model into the right hand (procedural weapon
+  // sits blade-down at ~(0.05,-0.4,0.12); we match that footprint)
+  function detachWeaponModel() {
+    if (weaponModel && rightArm) rightArm.remove(weaponModel);
+    weaponModel = null;
+  }
+  // per-archetype in-hand orientation (models are Z-up, origin at the grip).
+  // dagger points up out of the fist; scimitar/greatsword face the other way and
+  // hang blade-down toward the ground. Tweak these if a weapon sits wrong.
+  var WEAPON_POSE = {
+    dagger:     { rot: [-Math.PI / 2, 0, 0],             pos: [0, -0.95, 0.18] },
+    scimitar:   { rot: [-Math.PI / 2, -Math.PI / 2, 0],  pos: [0, -0.95, 0.2] },    // flipped upside-down, grip at the hand tip
+    greatsword: { rot: [Math.PI / 2, Math.PI, 0],        pos: [0, -0.55, 0.22] }
+  };
+  function fitWeaponModel(m, arch) {
+    var P = WEAPON_POSE[arch] || WEAPON_POSE.dagger;
+    m.position.set(0, 0, 0);
+    m.rotation.set(P.rot[0], P.rot[1], P.rot[2]);
+    if (_charScale != null) {
+      m.scale.setScalar(_charScale);                       // YOUR exported scale (matched to the character)
+    } else {
+      m.scale.set(1, 1, 1); m.updateMatrixWorld(true);
+      var size = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+      m.scale.setScalar(1.4 / (Math.max(size.x, size.y, size.z) || 1));   // fallback: normalise to a hand-size
+    }
+    m.position.set(P.pos[0], P.pos[1], P.pos[2]);          // seat the grip at the hand (no recentring)
+  }
+
   // recolour the character to show equipped gear tiers (0/undefined = default)
   function applyAppearance(app) {
     if (!matHead) return;
     app = app || {};
+    _lastApp = app;
     matHead.color.setHex(app.head || BASE_HEAD); matHead.metalness = app.head ? 0.6 : 0;
     matBody.color.setHex(app.body || BASE_BODY); matBody.metalness = app.body ? 0.6 : 0;
     matLegs.color.setHex(app.legs || BASE_LEGS); matLegs.metalness = app.legs ? 0.6 : 0;
@@ -450,7 +654,23 @@ var Player = (function () {
     if (bowModel) bowModel.visible = ranged;
     if (app.weapon && !ranged) { matWeapon.color.setHex(app.weapon); weapon.visible = true; }
     else if (weapon) { weapon.visible = false; }
+
+    // a custom imported .glb for the equipped right-hand weapon overrides the above
+    detachWeaponModel();
+    var rhId = (window.Game && Game.equipment) ? Game.equipment.rhand : null;
+    if (rhId && window.Models && Models.ready(rhId) && rightArm) {
+      var m = Models.get(rhId);
+      if (m) {
+        fitWeaponModel(m, weaponArch());
+        weaponModel = m; rightArm.add(m);
+        if (weapon) weapon.visible = false;
+        if (bowModel) bowModel.visible = false;
+      }
+    }
   }
+
+  // re-apply the last appearance (used when a model finishes loading late)
+  function refreshAppearance() { if (_lastApp) applyAppearance(_lastApp); }
 
   function startDeath(onDone) {
     if (death.active) return;
@@ -558,8 +778,10 @@ var Player = (function () {
     walkTo: walkTo, interactWith: interactWith, stop: stop,
     takeDamage: takeDamage, heal: heal, startDeath: startDeath, reset: reset,
     applyBonuses: applyBonuses, moveToCamp: moveToCamp,
-    startEating: startEating, startPraying: startPraying, canAttack: canAttack, applyAppearance: applyAppearance,
+    startEating: startEating, startPraying: startPraying, canAttack: canAttack, applyAppearance: applyAppearance, refreshAppearance: refreshAppearance, applyCharModel: applyCharModel,
     dodge: dodge_, isInvulnerable: isInvulnerable,
+    toggleRun: toggleRun, setRunning: setRunning, isRunning: isRunning,
+    get energy() { return energy; }, get maxEnergy() { return ENERGY_MAX; }, get running() { return running; },
     get state() { return state; },
     get position() { return group ? group.position : new THREE.Vector3(); },
     get group() { return group; },

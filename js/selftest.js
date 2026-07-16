@@ -83,6 +83,55 @@ var SelfTest = (function () {
       assert('combat skills cap at 20', Skills.data.attack.max === 20 && Skills.data.strength.max === 20);
       assert('other skills cap at 12', Skills.data.mining.max === 12 && Skills.data.cooking.max === 12);
 
+      // -- skill categories (Combat / Resource Gathering / Skills), each with a total level --
+      assert('three skill categories exist', !!Skills.CATEGORIES && Skills.CATEGORIES.length === 3);
+      assert('categories are Combat / Gathering / Skills',
+        Skills.CATEGORIES[0].name === 'Combat' && Skills.CATEGORIES[1].name === 'Gathering' && Skills.CATEGORIES[2].name === 'Skills');
+      // renamed skills keep their internal keys (so training code is untouched)
+      assert('prayer renamed to Faith', Skills.data.prayer.name === 'Faith');
+      assert('ranged renamed to Range', Skills.data.ranged.name === 'Range');
+      assert('woodcutting renamed to Lumbering', Skills.data.woodcutting.name === 'Lumbering');
+      assert('smithing renamed to Crafting', Skills.data.smithing.name === 'Crafting');
+      assert('cooking renamed to Medical', Skills.data.cooking.name === 'Medical');
+      // new placeholder skills present (not trainable yet)
+      assert('new placeholder skills exist', !!Skills.data.defense && !!Skills.data.hitpoints &&
+        !!Skills.data.spirit && !!Skills.data.hunting && !!Skills.data.casting);
+      assert('placeholder skills are flagged soon', Skills.data.defense.soon === true && Skills.data.casting.soon === true);
+      // Gathering / Skills totals = the absolute sum of member levels
+      assert('Gathering total = sum of member levels', Skills.categoryLevel('gathering') === Skills.categorySum('gathering'));
+      // Combat total is a WEIGHTED formula (damage skills count most), not a raw sum:
+      // damage skills (Strength/Range/Spirit) must move it more than defensive ones.
+      var cbase = Skills.categoryLevel('combat');
+      var s0 = Skills.data.strength.level;
+      Skills.data.strength.level = Math.min(s0 + 12, Skills.data.strength.max);
+      var cStr = Skills.categoryLevel('combat');
+      Skills.data.strength.level = s0;
+      var d0 = Skills.data.defense.level;
+      Skills.data.defense.level = Math.min(d0 + 12, Skills.data.defense.max);
+      var cDef = Skills.categoryLevel('combat');
+      Skills.data.defense.level = d0;
+      assert('raising a damage skill raises the Combat total', cStr > cbase);
+      assert('damage skills weigh more than defensive ones', (cStr - cbase) > (cDef - cbase));
+      assert('Merchant dropped from the roster', !Skills.data.merchant);
+
+      // -- Hit Points starts at 15 and IS your base max health --
+      assert('Hit Points starts at level 15', Skills.data.hitpoints.start === 15 && Skills.data.hitpoints.level >= 15);
+
+      // -- equip requirements: weapons gate on Attack, armour on Defense, by metal tier --
+      assert('copper weapon equips at Attack 1', Skills.equipReq('bronze_dagger').skill === 'attack' && Skills.equipReq('bronze_dagger').level === 1);
+      assert('iron weapon needs Attack 5', Skills.equipReq('iron_dagger').level === 5);
+      assert('iron armour needs Defense 5', Skills.equipReq('iron_platebody').skill === 'defense' && Skills.equipReq('iron_platebody').level === 5);
+      assert('silver weapon needs Attack 8', Skills.equipReq('silver_scimitar').level === 8);
+      var _a0 = Skills.data.attack.level;
+      Skills.data.attack.level = 1;
+      assert('cannot equip an iron weapon below the Attack req', Skills.canEquip('iron_dagger') === false);
+      Skills.data.attack.level = 8;
+      assert('can equip an iron weapon once Attack is high enough', Skills.canEquip('iron_dagger') === true);
+      Skills.data.attack.level = _a0;
+
+      // -- run / energy API --
+      assert('run + energy API present', typeof Player.toggleRun === 'function' && Player.maxEnergy > 0 && Player.energy >= 0);
+
       // -- fishing (a shrimp pond near a camp: reqLevel 1) --
       var pool = Entities.pools.filter(function (p) { return p.active && p.reqLevel === 1; })[0];
       assert('found a level-1 fishing pond', !!pool, Entities.pools.length + ' ponds');
@@ -199,7 +248,7 @@ var SelfTest = (function () {
       assert('anvil exists in town', !!anvil);
       clearBag();
       Skills.addItem('bronzebar');
-      assert('can smith a Bronze Helmet (1 bar, Lv1)', Skills.smith('bronze_helmet', 1) === true);
+      assert('can smith a Copper Helmet (1 bar, Lv1)', Skills.smith('bronze_helmet', 1) === true);
       assert('bronze helmet is in the bag', invCount('bronze_helmet') === 1);
       assert('helmet equips into the head slot', (function () { Skills.equipFromInventory(invIndexOf('bronze_helmet')); return Game.equipment.head === 'bronze_helmet'; })());
       assert('smithing above the anvil level is blocked', Skills.smith('silver_platebody', 1) === false && invCount('silver_platebody') === 0);
@@ -207,33 +256,55 @@ var SelfTest = (function () {
       assert('smithing without enough bars is blocked', Skills.smith('bronze_platebody', 1) === false);
       assert('boots go in the new feet slot', (function () { clearBag(); Skills.addItem('bronzebar'); Skills.smith('bronze_boots', 1); Skills.equipFromInventory(invIndexOf('bronze_boots')); return Game.equipment.feet === 'bronze_boots'; })());
 
-      // -- the named merchant, deferred payment, and the Merchant skill --
+      // -- weapons upgrade tier-by-tier (need the previous metal's weapon) --
+      clearBag(); Skills.addItem('ironbar');
+      assert('iron weapon is blocked without the bronze one', Skills.smith('iron_dagger', 2) === false && invCount('iron_dagger') === 0);
+      Skills.addItem('bronze_dagger');
+      assert('iron dagger upgrades from an iron bar + a bronze dagger', Skills.smith('iron_dagger', 2) === true && invCount('iron_dagger') === 1 && invCount('bronze_dagger') === 0);
+      assert('bronze weapon needs no prior tier', (function () { clearBag(); Skills.addItem('bronzebar'); Skills.addItem('bronzebar'); return Skills.smith('bronze_scimitar', 1) === true; })());
+
+      // -- Tin Akal endgame tier: meteorite (master-gated) → smelt → smith with Elderwood --
+      var met = Entities.meteorites && Entities.meteorites[0];
+      assert('a fallen meteorite exists', !!met, Entities.meteorites ? Entities.meteorites.length + ' meteorites' : 'none');
+      if (met) {
+        clearBag();
+        Skills.data.mining.level = 1; Skills.data.woodcutting.level = 1;
+        Entities.mineMeteorite(met);
+        assert('meteorite is gated behind max Mining + Woodcutting', invCount('tinakal') === 0);
+        Skills.data.mining.level = 12; Skills.data.woodcutting.level = 12;
+        for (var mm = 0; mm < 300 && invCount('tinakal') < 1; mm++) Entities.mineMeteorite(met);
+        assert('a master mines Tin Akal from the meteorite', invCount('tinakal') >= 1);
+        if (furnace) {
+          furnace.level = 4;
+          if (!furnace.lit) { Skills.addItem('log'); Entities.useStation(furnace); }
+          Entities.useStation(furnace);
+          assert('a Lv4 furnace smelts Tin Akal into a bar', invCount('tinakalbar') >= 1, 'bars=' + invCount('tinakalbar'));
+        }
+        clearBag();
+        Skills.addItem('tinakalbar'); Skills.addItem('elderwood');
+        assert('Tin Akal weapon is blocked without the prior-tier Gold weapon', Skills.smith('tinakal_dagger', 4) === false && invCount('tinakal_dagger') === 0);
+        Skills.addItem('gold_dagger');
+        assert('Tin Akal Dagger smiths from bar + Elderwood + a Gold Dagger at Lv4', Skills.smith('tinakal_dagger', 4) === true && invCount('tinakal_dagger') === 1);
+      }
+
+      // -- the named merchant + deferred payment (Merchant is no longer a skill) --
       clearBag();
       Game.gold = 0;
       assert('name generator makes "Name of Place" Egyptian names', Utils.egyptianName().indexOf(' of ') > 0);
-      assert('Merchant skill exists (cap 12)', !!Skills.data.merchant && Skills.data.merchant.max === 12);
+      assert('Merchant is NOT a trainable skill anymore', !Skills.data.merchant);
       var merchant = Entities.stations.filter(function (s) { return s.kind === 'merchant'; })[0];
       assert('the merchant has a name above the camel', !!(merchant && merchant.camel && merchant.camel.name && merchant.camel.name.indexOf(' of ') > 0));
       if (merchant) {
         Skills.addItem('elderwood');
-        var mxp0 = Skills.data.merchant.xp;
         Entities.sellToMerchant(merchant, invIndexOf('elderwood'));
         assert('selling loads the caravan — payment is pending, not immediate',
           invIndexOf('elderwood') < 0 && (Game.gold || 0) === 0 && merchant.camel.pending > 0);
-        assert('selling trains the Merchant skill', Skills.data.merchant.xp > mxp0);
         Entities.sendCaravan(merchant);
         assert('caravan departs → merchant is busy', Entities.merchantBusy(merchant) === true);
         invadeInvulnerable();
         Main.advance(32);       // leave (~8s) + deliver (~8s) + return (~8s)
         assert('caravan returns and pays out the pending gold',
           Entities.merchantBusy(merchant) === false && Game.gold > 0 && merchant.camel.pending === 0);
-        // maxing Merchant gifts the Essence of the Merchant
-        Skills.data.merchant.xp = 0; Skills.addXp('merchant', 9999999);
-        assert('Merchant caps at level 12', Skills.data.merchant.level === 12);
-        Game.merchantEssence = false;
-        Skills.addItem('log');
-        Entities.sellToMerchant(merchant, invIndexOf('log'));
-        assert('maxing Merchant gifts the Essence of the Merchant', Skills.hasItem('messence'));
       }
       if (anvil) {
         var lvl0 = anvil.level;
@@ -366,7 +437,7 @@ var SelfTest = (function () {
       // -- level caps: gathering/production cap at 12, combat at 20 --
       Skills.data.woodcutting.xp = 0; Skills.addXp('woodcutting', 9999999);
       assert('woodcutting caps at level 12', Skills.data.woodcutting.level === 12, 'lvl=' + Skills.data.woodcutting.level);
-      Skills.data.attack.xp = 0; Skills.addXp('attack', 9999999);
+      Skills.data.attack.xp = 0; Skills.addXp('attack', 1e12);   // L20 needs ~320M xp on the geometric curve
       assert('attack caps at level 20', Skills.data.attack.level === 20, 'lvl=' + Skills.data.attack.level);
       clearBag();
 
@@ -558,8 +629,8 @@ var SelfTest = (function () {
 
       // -- co-op finale: summon Mahrûk; asymmetric weak points + stagger --
       assert('the ritual is ready to summon', Coop.state.ritualReady === true);
-      Skills.data.strength.xp = 0; Skills.addXp('strength', 9999999);
-      Skills.data.ranged.xp = 0; Skills.addXp('ranged', 9999999);
+      Skills.data.strength.xp = 0; Skills.addXp('strength', 1e12);   // max combat for the boss fight
+      Skills.data.ranged.xp = 0; Skills.addXp('ranged', 1e12);
       Player.stop();
       Entities.useObelisk();
       assert('summoning begins the boss fight', Coop.bossActive() === true && Coop.boss.hp === Coop.boss.maxHp);

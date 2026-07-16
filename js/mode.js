@@ -30,6 +30,10 @@ var Mode = (function () {
             '<div class="mc-ic">🤝</div><div class="mc-name">CO-OP</div>' +
             '<div class="mc-desc">Share a camp. Light the sigils together down whatever paths you choose — then survive what you accidentally summon.</div>' +
           '</button>' +
+          '<button class="mc-card" data-mode="story">' +
+            '<div class="mc-ic">🗺️</div><div class="mc-name">STORY MODE</div>' +
+            '<div class="mc-desc">Explore a hand-built desert. Loads the custom map from your "world map" folder — your world, your layout.</div>' +
+          '</button>' +
         '</div>' +
       '</div>';
     document.body.appendChild(chooserEl);
@@ -37,10 +41,24 @@ var Mode = (function () {
     for (var i = 0; i < btns.length; i++) {
       (function (b) {
         b.addEventListener('click', function () {
-          if (window.Net && Net.sendChooseMode) Net.sendChooseMode(b.getAttribute('data-mode'));
+          var mode = b.getAttribute('data-mode');
+          // Story mode is locked behind a password while it's still in development
+          if (mode === 'story' && !storyUnlocked()) return;
+          if (window.Net && Net.sendChooseMode) Net.sendChooseMode(mode);
         });
       })(btns[i]);
     }
+  }
+
+  // Story mode gate: only the password unlocks it (for now). Returns true if allowed.
+  var STORY_PASSWORD = 'Sterling';
+  var _storyOk = false;
+  function storyUnlocked() {
+    if (_storyOk) return true;
+    var pw = window.prompt('Story mode is still being built. Enter the password:');
+    if (pw === STORY_PASSWORD) { _storyOk = true; return true; }
+    window.alert("You've got a way to still go — a bit longer, Lucas.");
+    return false;
   }
 
   // ---- non-host "waiting for the host" overlay ----
@@ -62,9 +80,11 @@ var Mode = (function () {
     Game.mode = mode;
     if (coop) Game.coop = coop;
     hideChooser(); hideWait();
-    // co-op: everyone shares the north camp
-    if (mode === 'coop' && window.Player && Player.moveToCamp) Player.moveToCamp(1);
-    if (window.UI && UI.showActionText) {
+    // co-op / story: everyone shares the north camp
+    if ((mode === 'coop' || mode === 'story') && window.Player && Player.moveToCamp) Player.moveToCamp(1);
+    // story: build the world from the hand-placed custom map
+    if (mode === 'story' && window.WorldMap && WorldMap.load) WorldMap.load();
+    if (window.UI && UI.showActionText && mode !== 'story') {
       UI.showActionText(mode === 'coop'
         ? 'Co-op: light the sigils together — and beware what wakes.'
         : 'Versus: race your rival to the Obelisk!');

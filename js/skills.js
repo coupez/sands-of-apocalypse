@@ -4,20 +4,66 @@
 // ============================================================
 
 var Skills = (function () {
-  var SKILL_ORDER = ['attack', 'strength', 'ranged', 'prayer', 'woodcutting', 'mining', 'fishing', 'cooking', 'smithing', 'merchant'];
-  // combat skills cap at 20; gathering/production/prayer skills cap at 12
+  // Skills are grouped into three categories; each category shows a TOTAL level
+  // (the sum of its member skills' levels) in the panel header. `soon:true` marks
+  // a skill that exists in the tree but isn't trainable yet (placeholder Lv 1).
+  var CATEGORIES = [
+    { key: 'combat',    name: 'Combat',             skills: ['hitpoints', 'attack', 'defense', 'strength', 'ranged', 'spirit', 'prayer'] },
+    { key: 'gathering', name: 'Gathering',          skills: ['mining', 'woodcutting', 'fishing', 'hunting'] },
+    { key: 'skills',    name: 'Skills',             skills: ['smithing', 'casting', 'cooking'] }
+  ];
+  // combat skills cap at 20; gathering/production/faith skills cap at 12
   var data = {
-    attack:      { name: 'Attack',      icon: '⚔️', xp: 0, level: 1, max: 20 },
-    strength:    { name: 'Strength',    icon: '💪', xp: 0, level: 1, max: 20 },
-    ranged:      { name: 'Ranged',      icon: '🏹', xp: 0, level: 1, max: 20 },
-    prayer:      { name: 'Prayer',      icon: '🙏', xp: 0, level: 1, max: 12 },
-    woodcutting: { name: 'Woodcutting', icon: '🪓', xp: 0, level: 1, max: 12 },
-    mining:      { name: 'Mining',      icon: '⛏️', xp: 0, level: 1, max: 12 },
-    fishing:     { name: 'Fishing',     icon: '🎣', xp: 0, level: 1, max: 12 },
-    cooking:     { name: 'Cooking',     icon: '🍳', xp: 0, level: 1, max: 12 },
-    smithing:    { name: 'Smithing',    icon: '🔨', xp: 0, level: 1, max: 12 },
-    merchant:    { name: 'Merchant',    icon: '🪙', xp: 0, level: 1, max: 12 }
+    attack:       { name: 'Attack',        icon: '⚔️', xp: 0, level: 1, max: 20 },
+    strength:     { name: 'Strength',      icon: '💪', xp: 0, level: 1, max: 20 },
+    defense:      { name: 'Defense',       icon: '🛡️', xp: 0, level: 1, max: 20, soon: true },
+    ranged:       { name: 'Range',         icon: '🏹', xp: 0, level: 1, max: 20 },
+    hitpoints:    { name: 'Hit Points',    icon: '❤️', xp: 0, level: 15, max: 20, start: 15 },  // starts at 15 = your base health; +1 max HP per level
+    spirit:       { name: 'Spirit',        icon: '🔮', xp: 0, level: 1, max: 12, soon: true },  // magic (not wired yet)
+    prayer:       { name: 'Faith',         icon: '🙏', xp: 0, level: 1, max: 12 },               // key stays 'prayer'; trained by burying bones
+    mining:       { name: 'Mining',        icon: '⛏️', xp: 0, level: 1, max: 12 },
+    woodcutting:  { name: 'Lumbering',     icon: '🪓', xp: 0, level: 1, max: 12 },
+    fishing:      { name: 'Harvesting',    icon: '🌴', xp: 0, level: 1, max: 12 },
+    hunting:      { name: 'Hunting',       icon: '🥩', xp: 0, level: 1, max: 12, soon: true },
+    smithing:     { name: 'Crafting',      icon: '🔨', xp: 0, level: 1, max: 12 },
+    casting:      { name: 'Casting',       icon: '🪄', xp: 0, level: 1, max: 12, soon: true },   // magic (not wired yet)
+    cooking:      { name: 'Medical',       icon: '⚕️', xp: 0, level: 1, max: 12 }
   };
+  // flat order (all categories concatenated) for any consumer that wants a list
+  var SKILL_ORDER = CATEGORIES.reduce(function (a, c) { return a.concat(c.skills); }, []);
+  function categorySum(catKey) {
+    var cat = null;
+    for (var i = 0; i < CATEGORIES.length; i++) if (CATEGORIES[i].key === catKey) cat = CATEGORIES[i];
+    if (!cat) return 0;
+    var t = 0;
+    for (var j = 0; j < cat.skills.length; j++) { var d = data[cat.skills[j]]; if (d) t += d.level; }
+    return t;
+  }
+
+  // ---- category (total) levels ----
+  // Combat uses a RuneScape-style weighted formula, NOT a raw sum: your total combat
+  // level reflects how hard you actually hit. Your best DAMAGE style dominates —
+  // max(Strength, Range, Spirit) — since you only fight in one style at a time; Attack
+  // (accuracy) counts less, and Hit Points / Defense / Faith are minor support. Weights
+  // are tuned so a fresh character reads ~1 and a fully-maxed one reads ~19.
+  var COMBAT_WEIGHTS = { dmg: 0.40, attack: 0.20, hitpoints: 0.15, defense: 0.15, prayer: 0.10 };
+  function combatLevel() {
+    var dmg = Math.max(data.strength.level, data.ranged.level, data.spirit.level);   // your hardest-hitting style
+    var v = COMBAT_WEIGHTS.dmg * dmg
+          + COMBAT_WEIGHTS.attack * data.attack.level
+          + COMBAT_WEIGHTS.hitpoints * data.hitpoints.level
+          + COMBAT_WEIGHTS.defense * data.defense.level
+          + COMBAT_WEIGHTS.prayer * data.prayer.level;
+    return Math.round(v);
+  }
+  // Only Combat uses the weighted formula; Gathering / Skills totals are just the
+  // absolute sum of their member skills' levels.
+  function categoryLevel(catKey) {
+    if (catKey === 'combat') return combatLevel();
+    return categorySum(catKey);
+  }
+  // human-readable description of how Combat's total is computed (shown on hover)
+  var COMBAT_FORMULA_TEXT = 'Combat = 0.4×best(Str/Range/Spirit) + 0.2×Attack + 0.15×HP + 0.15×Defense + 0.1×Faith';
 
   var ITEMS = {
     log:      { id: 'log',      name: 'Dead Log',    icon: '🪵' },
@@ -28,16 +74,18 @@ var Skills = (function () {
     iron:     { id: 'iron',     name: 'Iron Ore',    icon: '◆', tint: 0x8a8f96 },
     silver:   { id: 'silver',   name: 'Silver Ore',  icon: '◆', tint: 0xd8dce2 },
     pore:     { id: 'pore',     name: 'Gold Ore',    icon: '◆', tint: 0xffd24a },
-    shrimp:  { id: 'shrimp',  name: 'Raw Sardine',   icon: '🐟' },
-    lobster: { id: 'lobster', name: 'Raw Crab',      icon: '🦀' },
-    whale:   { id: 'whale',   name: 'Raw Perch',     icon: '🐠' },
-    cshrimp: { id: 'cshrimp', name: 'Grilled Sardine', icon: '🍢' },
-    clobster:{ id: 'clobster',name: 'Grilled Crab',    icon: '🦀' },
-    cwhale:  { id: 'cwhale',  name: 'Grilled Perch',   icon: '🍖' },
-    bronzebar: { id: 'bronzebar', name: 'Bronze Bar', icon: '▬', tint: 0xc87838 },
+    shrimp:  { id: 'shrimp',  name: 'Dates',         icon: '🌰' },
+    lobster: { id: 'lobster', name: 'Prickly Pear',  icon: '🌵' },
+    whale:   { id: 'whale',   name: 'Figs',          icon: '🫐' },
+    cshrimp: { id: 'cshrimp', name: 'Honeyed Dates', icon: '🍯' },
+    clobster:{ id: 'clobster',name: 'Cactus Jam',    icon: '🍮' },
+    cwhale:  { id: 'cwhale',  name: 'Dried Figs',    icon: '🍇' },
+    bronzebar: { id: 'bronzebar', name: 'Copper Bar', icon: '▬', tint: 0xc87838 },
     ironbar:   { id: 'ironbar',   name: 'Iron Bar',   icon: '▬', tint: 0x8a8f96 },
     silverbar: { id: 'silverbar', name: 'Silver Bar', icon: '▬', tint: 0xd8dce2 },
     goldbar:   { id: 'goldbar',   name: 'Gold Bar',   icon: '▬', tint: 0xffd24a },
+    tinakal:    { id: 'tinakal',    name: 'Tin Akal',     icon: '◆', tint: 0x5fe0d0 },   // raw meteoric ore
+    tinakalbar: { id: 'tinakalbar', name: 'Tin Akal Bar', icon: '▬', tint: 0x5fe0d0 },
     essence:   { id: 'essence',   name: 'Bandit Essence',   icon: '🩸' },
     bones:     { id: 'bones',     name: 'Pile of Bones',    icon: '🦴' },
     messence:  { id: 'messence',  name: 'Essence of the Merchant', icon: '💰' },
@@ -60,7 +108,7 @@ var Skills = (function () {
   //   str (added strength), hp (added max HP). The Fanny Pack instakills.
   var GEAR = {
     // right-hand weapons
-    sword:   { id: 'sword',   name: 'Bronze Scimitar',    icon: '⚔️', slot: 'rhand', bonus: { maxHit: 4,   acc: 0.10 } },
+    sword:   { id: 'sword',   name: 'Copper Scimitar',    icon: '⚔️', slot: 'rhand', bonus: { maxHit: 4,   acc: 0.10 } },
     gun:     { id: 'gun',     name: 'Hunting Bow',        icon: '🏹', slot: 'rhand', bonus: { maxHit: 8,   acc: 0.20 }, ranged: true },
     bow:     { id: 'bow',     name: 'Desert Longbow',     icon: '🏹', slot: 'rhand', bonus: { maxHit: 5,   acc: 0.15 }, ranged: true },
     fanny:   { id: 'fanny',   name: "Genie's Lamp",       icon: '🪔', slot: 'rhand', bonus: { maxHit: 999, acc: 1.00 }, instakill: true },
@@ -72,7 +120,7 @@ var Skills = (function () {
     hazhood: { id: 'hazhood', name: 'Nomad Hood',         icon: '🧣', slot: 'head', bonus: { def: 2, str: 2 } },
     // body
     hazvest: { id: 'hazvest', name: 'Padded Tunic',       icon: '🥋', slot: 'body', bonus: { def: 6, hp: 8 } },
-    plate:   { id: 'plate',   name: 'Bronze Cuirass',     icon: '🧥', slot: 'body', bonus: { def: 9, hp: 10 } },
+    plate:   { id: 'plate',   name: 'Copper Cuirass',     icon: '🧥', slot: 'body', bonus: { def: 9, hp: 10 } },
     // legs
     greaves: { id: 'greaves', name: 'Leather Greaves',    icon: '👖', slot: 'legs', bonus: { def: 4, hp: 5 } }
   };
@@ -82,13 +130,18 @@ var Skills = (function () {
   // wearer's character mesh so other players can see your tier at a glance.
   // `level` here is the STATION level required to work this metal (its tier):
   // furnace/anvil must be upgraded to that level to smelt/smith it.
+  // `level` = STATION (anvil/furnace) level needed to WORK this metal.
+  // `req`   = ATTACK level (weapons) / DEFENSE level (armor) needed to EQUIP this tier.
   var METALS = [
-    { key: 'bronze', name: 'Bronze', bar: 'bronzebar', level: 1, color: 0xc87838 },
-    { key: 'iron',   name: 'Iron',   bar: 'ironbar',   level: 2, color: 0x8a8f96 },
-    { key: 'silver', name: 'Silver', bar: 'silverbar', level: 3, color: 0xd8dce2 },
-    { key: 'gold',   name: 'Gold',   bar: 'goldbar',   level: 4, color: 0xffd24a }
+    { key: 'bronze', name: 'Copper', bar: 'bronzebar', level: 1, req: 1,  color: 0xc87838 },   // display 'Copper'; id stays 'bronze'
+    { key: 'iron',   name: 'Iron',   bar: 'ironbar',   level: 2, req: 5,  color: 0x8a8f96 },
+    { key: 'silver', name: 'Silver', bar: 'silverbar', level: 3, req: 8,  color: 0xd8dce2 },
+    { key: 'gold',   name: 'Gold',   bar: 'goldbar',   level: 4, req: 11, color: 0xffd24a },
+    // meteoric endgame tier: bar is smelted from Meteorite ore (mined only at max
+    // Mining+Woodcutting) and each piece also needs Elderwood (the highest log).
+    { key: 'tinakal', name: 'Tin Akal', bar: 'tinakalbar', level: 4, req: 14, color: 0x5fe0d0, wood: 'elderwood' }
   ];
-  var METAL_COLOR = { bronze: 0xc87838, iron: 0x8a8f96, silver: 0xd8dce2, gold: 0xffd24a };
+  var METAL_COLOR = { bronze: 0xc87838, iron: 0x8a8f96, silver: 0xd8dce2, gold: 0xffd24a, tinakal: 0x5fe0d0 };
   // Three melee weapon archetypes give a real "choose your feel": the dagger
   // swings fast for small hits, the greatsword is slow but hits huge, the
   // scimitar sits between. `speed` scales the attack interval (lower = faster).
@@ -98,12 +151,14 @@ var Skills = (function () {
     { key: 'platelegs', slot: 'legs',  name: 'Platelegs', icon: '👖', bars: 2, per: { def: 3, hp: 2 } },
     { key: 'boots',     slot: 'feet',  name: 'Boots',     icon: '🥾', bars: 1, per: { def: 1, hp: 1 } },
     { key: 'shield',    slot: 'lhand', name: 'Shield',    icon: '🛡️', bars: 2, per: { def: 3, hp: 2 } },
-    { key: 'dagger',    slot: 'rhand', name: 'Dagger',    icon: '🗡️', bars: 1, per: { maxHit: 1, acc: 0.07 }, speed: 0.62 },
-    { key: 'scimitar',  slot: 'rhand', name: 'Scimitar',  icon: '⚔️', bars: 2, per: { maxHit: 3, acc: 0.03 }, speed: 1.0 },
-    { key: 'greatsword',slot: 'rhand', name: 'Greatsword',icon: '🔪', bars: 4, per: { maxHit: 6, acc: 0.0 },  speed: 1.7 }
+    // attack SPEED scales the swing interval (lower = faster). greatsword swings
+    // once per ~4 dagger hits (0.6 → 2.4); scimitar sits in between.
+    { key: 'dagger',    slot: 'rhand', name: 'Dagger',    icon: '🗡️', bars: 1, per: { maxHit: 1,  acc: 0.08 }, speed: 0.6 },  // fast, low damage
+    { key: 'scimitar',  slot: 'rhand', name: 'Scimitar',  icon: '⚔️', bars: 2, per: { maxHit: 3,  acc: 0.03 }, speed: 1.4 },  // balanced
+    { key: 'greatsword',slot: 'rhand', name: 'Greatsword',icon: '🔪', bars: 4, per: { maxHit: 10, acc: 0.0 },  speed: 2.4 }   // very slow, huge hits
   ];
   // ore -> bar produced when smelted (each ore makes its own metal bar)
-  var SMELT = { ore: 'bronzebar', iron: 'ironbar', silver: 'silverbar', pore: 'goldbar' };
+  var SMELT = { ore: 'bronzebar', iron: 'ironbar', silver: 'silverbar', pore: 'goldbar', tinakal: 'tinakalbar' };
 
   var SMITH_RECIPES = [];
   (function buildSmithing() {
@@ -115,13 +170,33 @@ var Skills = (function () {
         var id = M.key + '_' + T.key;
         // each gear TYPE has its own icon (helmet/sword/…) so pieces are
         // distinguishable at a glance; the metal tint still marks the tier.
-        GEAR[id] = { id: id, name: M.name + ' ' + T.name, icon: T.icon, tint: M.color, slot: T.slot, bonus: bonus };
+        GEAR[id] = { id: id, name: M.name + ' ' + T.name, icon: T.icon, tint: M.color, slot: T.slot, bonus: bonus,
+          reqSkill: T.speed ? 'attack' : 'defense', reqLevel: M.req };   // weapons gated by Attack, armour by Defense
         if (T.speed) GEAR[id].speed = T.speed;   // weapon attack-speed (archetype feel)
-        SMITH_RECIPES.push({ id: id, name: M.name + ' ' + T.name, icon: T.icon, tint: M.color,
-          bar: M.bar, barName: M.name + ' Bar', bars: T.bars, level: M.level });
+        var rec = { id: id, name: M.name + ' ' + T.name, icon: T.icon, tint: M.color,
+          bar: M.bar, barName: M.name + ' Bar', bars: T.bars, level: M.level };
+        if (M.wood) { rec.wood = M.wood; rec.woodN = 1; rec.woodName = (ITEMS[M.wood] ? ITEMS[M.wood].name : M.wood); }
+        // weapons upgrade tier-by-tier: to forge this one you must consume the
+        // previous metal's weapon of the same kind (bronze needs none).
+        if (T.speed && mi > 0) { var pm = METALS[mi - 1]; rec.prev = pm.key + '_' + T.key; rec.prevName = pm.name + ' ' + T.name; }
+        SMITH_RECIPES.push(rec);
       }
     }
   })();
+
+  // legacy/basic gear (defined by hand above) has no tier — everything equips at level 1.
+  // Weapons (offensive bonus) gate on Attack, everything else on Defense.
+  (function defaultEquipReqs() {
+    for (var id in GEAR) {
+      var g = GEAR[id];
+      if (g.reqLevel) continue;
+      g.reqLevel = 1;
+      g.reqSkill = (g.ranged || g.instakill || (g.bonus && g.bonus.maxHit)) ? 'attack' : 'defense';
+    }
+  })();
+  // the Attack/Defense level needed to equip a piece of gear
+  function equipReq(id) { var g = GEAR[id]; return g ? { level: g.reqLevel || 1, skill: g.reqSkill || 'attack' } : { level: 1, skill: 'attack' }; }
+  function canEquip(id) { var r = equipReq(id); var d = data[r.skill]; return !d || d.level >= r.level; }
 
   function isGear(id) { return !!GEAR[id]; }
   function countItem(id) { var n = 0; for (var i = 0; i < Game.inventory.length; i++) if (Game.inventory[i] && Game.inventory[i].id === id) n++; return n; }
@@ -132,13 +207,19 @@ var Skills = (function () {
     if (!r) return 'no recipe';
     if ((stationLevel || 1) < r.level) return 'Needs anvil Lv ' + r.level;
     if (countItem(r.bar) < r.bars) return 'Needs ' + r.bars + ' ' + r.barName;
+    if (r.wood && countItem(r.wood) < (r.woodN || 1)) return 'Needs ' + (r.woodN || 1) + ' ' + r.woodName;
+    if (r.prev && countItem(r.prev) < 1) return 'Needs a ' + r.prevName + ' to upgrade';
     return null;
   }
   function smith(id, stationLevel) {
     var r = smithRecipe(id), why = canSmith(r, stationLevel);
     if (why) { if (window.UI) UI.showActionText(why); return false; }
     for (var b = 0; b < r.bars; b++) removeItem(r.bar);   // frees slots, so the result always fits
+    if (r.wood) for (var w = 0; w < (r.woodN || 1); w++) removeItem(r.wood);
+    if (r.prev) removeItem(r.prev);   // consume the lower-tier weapon it's forged from
     addItem(r.id);
+    if (!Game.craftedWeapons) Game.craftedWeapons = {};
+    Game.craftedWeapons[r.id] = true;   // now revealed in the smith menu
     if (r.id.indexOf('_greatsword') >= 0 && r.id.indexOf('bronze_') !== 0) Game.forgedRitual = true;   // ritual weapon: iron+ greatsword (Forge sigil)
     addXp('smithing', 8 + r.level * 4);
     if (window.UI) UI.showActionText('You smith a ' + r.name + '.');
@@ -151,7 +232,8 @@ var Skills = (function () {
     log: 2, palmwood: 4, blog: 8, elderwood: 16,
     ore: 4, iron: 9, silver: 18, pore: 36,
     shrimp: 3, lobster: 6, whale: 12, cshrimp: 5, clobster: 9, cwhale: 15,
-    bronzebar: 10, ironbar: 22, silverbar: 45, goldbar: 90
+    bronzebar: 10, ironbar: 22, silverbar: 45, goldbar: 90,
+    tinakal: 120, tinakalbar: 240
   };
   function sellValue(id) { return SELL_VALUE[id] || 0; }
   function addGold(n) { Game.gold = (Game.gold || 0) + n; if (window.UI) UI.updateGold(); }
@@ -169,8 +251,15 @@ var Skills = (function () {
   }
 
   function init() {
-    for (var k in data) { data[k].xp = 0; data[k].level = 1; }
+    // most skills start at level 1; Hit Points starts at 15 (its `start`) so you
+    // begin with 15 base health. Seed its xp to the threshold for that level.
+    for (var k in data) {
+      var st = data[k].start || 1;
+      data[k].level = st;
+      data[k].xp = st > 1 ? Utils.xpForLevel(st) : 0;
+    }
     Game.gold = 0;
+    Game.craftedWeapons = {};   // which weapons you've forged (reveals the blurred smith-menu icon)
     if (window.UI && UI.updateGold) UI.updateGold();
     // fixed-size inventory: 28 slots, each null or an item stack (holes allowed
     // so items can be dragged to any square).
@@ -190,6 +279,8 @@ var Skills = (function () {
     s.level = Math.min(Utils.levelForXp(s.xp), s.max || 99);
     if (s.level > before) {
       SFX.level();
+      // Hit Points level IS your base max health — recompute it and heal the gain.
+      if (skill === 'hitpoints') { applyEquipmentToStats(); if (window.Player && Player.heal) Player.heal(s.level - before); }
       if (window.UI) UI.toast(s.name, s.level);
       // global announcement to every player; a maxed skill gets an ominous one
       var maxed = s.level >= (s.max || 99);
@@ -336,8 +427,8 @@ var Skills = (function () {
     if (addItem(catchId)) {
       addXp('fishing', pool.xp || 30);
       Game.log.push('fish');
-      if (window.UI) UI.showActionText('You catch ' + (ITEMS[catchId] ? 'a ' + ITEMS[catchId].name : 'something') + '.');
-      // fishing spots don't deplete; they teem with mutated life
+      if (window.UI) UI.showActionText('You harvest ' + (ITEMS[catchId] ? ITEMS[catchId].name : 'something') + '.');
+      // harvest plants don't deplete; the desert always provides
     } else if (window.UI) UI.showActionText('Your inventory is full!');
   }
 
@@ -383,6 +474,12 @@ var Skills = (function () {
     if (!item) return false;
     var g = GEAR[item.id];
     if (!g) { if (window.UI) UI.showActionText("You can't equip that."); return false; }
+    // gated by Attack (weapons) or Defense (armour): you must be a high enough level
+    if (!canEquip(g.id)) {
+      var r = equipReq(g.id), sk = data[r.skill];
+      if (window.UI) UI.showActionText('You need ' + (sk ? sk.name : r.skill) + ' level ' + r.level + ' to equip the ' + g.name + '.');
+      return false;
+    }
     var prev = Game.equipment[g.slot];
     // remove one of the clicked item from its stack
     item.count--;
@@ -407,18 +504,32 @@ var Skills = (function () {
     return true;
   }
 
+  // debug: max every skill + gold + a starter kit of endgame materials
+  function maxAll() {
+    for (var k in data) { if (!data.hasOwnProperty(k)) continue; data[k].xp = 20000000; data[k].level = data[k].max || 99; }
+    Game.gold = (Game.gold || 0) + 100000;
+    Game.merchantEssence = true;
+    var give = ['elderwood', 'elderwood', 'tinakal', 'tinakalbar', 'tinakalbar',
+      'bronzebar', 'ironbar', 'silverbar', 'goldbar', 'essence', 'messence', 'rockessence', 'orb'];
+    for (var i = 0; i < give.length; i++) addItem(give[i]);
+    if (window.UI) { UI.updateSkills(); if (UI.updateGold) UI.updateGold(); UI.updateInventory(); }
+  }
+
   return {
-    init: init, addXp: addXp, addItem: addItem,
+    init: init, addXp: addXp, addItem: addItem, maxAll: maxAll,
     doWoodcut: doWoodcut, doMine: doMine, doFish: doFish,
     equipFromInventory: equipFromInventory, unequip: unequip,
     eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
     bury: bury, isBones: isBones, craftBow: craftBow, isRanged: isRanged, weaponSpeed: weaponSpeed,
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
     smith: smith, canSmith: canSmith, smithRecipe: smithRecipe, countItem: countItem,
+    equipReq: equipReq, canEquip: canEquip,
     appearance: appearance,
     sellItem: sellItem, sellValue: sellValue, addGold: addGold, spendGold: spendGold,
     COOK: COOK, SMELT: SMELT, SMITH_RECIPES: SMITH_RECIPES, METALS: METALS,
     get data() { return data; },
-    ITEMS: ITEMS, GEAR: GEAR, EQUIP_SLOTS: EQUIP_SLOTS, SKILL_ORDER: SKILL_ORDER
+    ITEMS: ITEMS, GEAR: GEAR, EQUIP_SLOTS: EQUIP_SLOTS, SKILL_ORDER: SKILL_ORDER,
+    CATEGORIES: CATEGORIES, categoryLevel: categoryLevel, categorySum: categorySum,
+    COMBAT_FORMULA_TEXT: COMBAT_FORMULA_TEXT
   };
 })();
