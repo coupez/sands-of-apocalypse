@@ -89,6 +89,23 @@ html, body {
 .hitsplat.crit { background: radial-gradient(circle at 35% 30%, #ffd23f, #d67b00); box-shadow: 0 0 10px #ffcf3f; }
 .hitsplat.heal { background: radial-gradient(circle at 35% 30%, #6dffa0, #14803e); }
 .hitsplat.lightning { background: radial-gradient(circle at 35% 30%, #eaf4ff, #3aa0e6); box-shadow: 0 0 10px #7ec8ff; color: #0a2a44; }
+
+/* XP drop — floats up above the player's head, no background */
+.xp-pop {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-weight: 800;
+  font-size: 15px;
+  color: #ffe58a;
+  text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 1px 2px #000;
+  pointer-events: none;
+  animation: xpfloat 1.2s ease-out forwards;
+}
+@keyframes xpfloat {
+  0%   { transform: translate(-50%, -40%) scale(0.7); opacity: 0; }
+  20%  { transform: translate(-50%, -60%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -160%) scale(1); opacity: 0; }
+}
 @keyframes splat {
   0%   { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
   18%  { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }

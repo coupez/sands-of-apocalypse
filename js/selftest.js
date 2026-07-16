@@ -97,7 +97,7 @@ var SelfTest = (function () {
       assert('new placeholder skills exist', !!Skills.data.defense && !!Skills.data.hitpoints &&
         !!Skills.data.spirit && !!Skills.data.hunting && !!Skills.data.casting);
       assert('placeholder skills are flagged soon', Skills.data.defense.soon === true && Skills.data.casting.soon === true);
-      assert('Spirit Hunting is a single skill in Gathering', !!Skills.data.spirithunting && Skills.CATEGORIES[1].skills.indexOf('spirithunting') >= 0);
+      assert('Spirit Hunting is a single skill in Skills', !!Skills.data.spirithunting && Skills.CATEGORIES[2].skills.indexOf('spirithunting') >= 0);
       // Electric Paper enchants the equipped weapon with lightning
       assert('Electric Paper is an enchant item', Skills.isEnchant('electricpaper') === true);
       clearBag(); Skills.addItem('bronze_scimitar'); Skills.equipFromInventory(invIndexOf('bronze_scimitar'));

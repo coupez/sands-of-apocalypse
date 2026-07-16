@@ -139,6 +139,11 @@ var Main = (function () {
         Skills.addItem('bronze_scimitar');
         if (window.UI) UI.showActionText('[debug] A Copper Scimitar appears in your bag.');
       }
+      // debug: press "4" for Electric Paper (click it in the bag to enchant your weapon)
+      if (e.key === '4' && window.Skills && Skills.addItem) {
+        Skills.addItem('electricpaper');
+        if (window.UI) UI.showActionText('[debug] Electric Paper added — click it in your bag to charge your weapon.');
+      }
       // "B" opens the co-op build menu
       if ((e.key === 'b' || e.key === 'B') && Game.mode === 'coop' && window.UI && UI.openBuildMenu) UI.openBuildMenu();
     });

@@ -324,6 +324,24 @@ var UI = (function () {
     if (key === 'mining') return (Entities.ROCK_TIERS || []).concat([{ name: 'Meteorite (Tin Akal)', reqLevel: 12, itemId: 'tinakal' }]);
     if (key === 'woodcutting') return Entities.TREE_TIERS || null;
     if (key === 'fishing') return Entities.FISH_TIERS || null;
+    // Casting = smelt/cast metal bars; each tier needs the SAME level as mining that ore.
+    if (key === 'casting') {
+      var rocks = Entities.ROCK_TIERS || [], metals = Skills.METALS || [], out = [];
+      for (var m = 0; m < metals.length; m++) {
+        var M = metals[m], req = (M.key === 'tinakal') ? 12 : (rocks[m] ? rocks[m].reqLevel : 1);
+        out.push({ reqLevel: req, name: M.name + ' Bar', itemId: M.bar });
+      }
+      return out;
+    }
+    // Herbalism (cooking) = cook harvested foods; req mirrors the harvest level.
+    if (key === 'cooking') {
+      var fish = Entities.FISH_TIERS || [], COOK = Skills.COOK || {}, foods = [];
+      for (var f = 0; f < fish.length; f++) {
+        var cooked = COOK[fish[f].itemId], it = Skills.ITEMS[cooked];
+        foods.push({ reqLevel: fish[f].reqLevel, name: it ? it.name : cooked, itemId: cooked });
+      }
+      return foods;
+    }
     return null;
   }
   function buildResourceTierList(key, tiers) {
@@ -836,6 +854,32 @@ var UI = (function () {
     setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 1100);
   }
 
+  // ---------- XP drop: floats "+N" above the player's head when you gain XP ----------
+  // XP from a single action (e.g. a mine tick, or attack+strength+hp on one hit) is
+  // batched over a short window into one popup so it's not spammy.
+  var _xpAccum = 0, _xpTimer = null;
+  function spawnXpGain(amount) {
+    if (Game.headless || amount <= 0) return;
+    _xpAccum += amount;
+    if (_xpTimer) return;
+    _xpTimer = setTimeout(flushXpGain, 320);
+  }
+  function flushXpGain() {
+    _xpTimer = null;
+    var amt = Math.round(_xpAccum); _xpAccum = 0;
+    var p = Game.player;
+    if (amt <= 0 || !hitLayer || !p || !p.group) return;
+    var s = toScreen(new THREE.Vector3(p.position.x, p.position.y + 3.6, p.position.z));
+    if (!s) return;
+    var d = document.createElement('div');
+    d.className = 'xp-pop';
+    d.textContent = '+' + amt;
+    d.style.left = s.x + 'px';
+    d.style.top = s.y + 'px';
+    hitLayer.appendChild(d);
+    setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 1200);
+  }
+
   // ---------- chat: type in the bottom-left box, text floats over your head ----------
   var _overheadEl = null, _overheadT = 0;
   function chatFocused() { return el.chatInput && document.activeElement === el.chatInput; }
@@ -1035,7 +1079,7 @@ var UI = (function () {
     openBuildMenu: openBuildMenu,
     showActionText: showActionText, setTarget: setTarget, announce: announce,
     showTip: showTip, hideTip: hideTip, showCountdown: showCountdown, clearOverlays: clearOverlays,
-    spawnHitsplat: spawnHitsplat, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
+    spawnHitsplat: spawnHitsplat, spawnXpGain: spawnXpGain, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
     updateCampLabels: updateCampLabels, updateMerchantLabels: updateMerchantLabels,
     showOverhead: showOverhead, updateOverheadChat: updateOverheadChat, chatFocused: chatFocused,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,

@@ -98,6 +98,34 @@ var Grid = (function () {
     return out;   // world centers, start tile excluded
   }
 
+  // is the straight line between two world points clear of blocked tiles?
+  function lineWalkable(ax, az, bx, bz) {
+    var dist = Math.sqrt((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+    var steps = Math.max(1, Math.ceil(dist / (TILE * 0.34)));   // dense enough to hit every tile crossed
+    for (var i = 0; i <= steps; i++) {
+      var t = i / steps, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+      var tt = worldToTile(x, z);
+      if (!walkable(tt.tx, tt.tz)) return false;
+    }
+    return true;
+  }
+  // String-pull the tile path: keep only the waypoints you can't reach in a straight
+  // line, so the character walks smooth diagonals instead of stair-stepping tile centres.
+  function smooth(fromWorld, pts) {
+    if (!pts || pts.length < 2) return pts;
+    var out = [], cx = fromWorld.x, cz = fromWorld.z, i = 0;
+    while (i < pts.length) {
+      var j = i;
+      for (var k = pts.length - 1; k > i; k--) {
+        if (lineWalkable(cx, cz, pts[k].x, pts[k].z)) { j = k; break; }
+      }
+      out.push(pts[j]);
+      cx = pts[j].x; cz = pts[j].z;
+      i = j + 1;
+    }
+    return out;
+  }
+
   // Path to a walkable tile at (toWorld). Returns array of world waypoints, or null.
   function findPath(fromWorld, toWorld) {
     ensure();
@@ -110,7 +138,7 @@ var Grid = (function () {
     var path = astar(s.tx, s.tz, function (x, z) { return x === goal.tx && z === goal.tz; }, goal.tx, goal.tz);
     if (!path) return null;
     if (goal.tx === tt.tx && goal.tz === tt.tz) path.push({ x: toWorld.x, z: toWorld.z }); // exact stop on open ground
-    return path;
+    return smooth(fromWorld, path);
   }
 
   // Path to a tile ADJACENT to (or on) the target's tile — for interacting with a blocked object.
@@ -123,7 +151,7 @@ var Grid = (function () {
     if (isGoal(s.tx, s.tz)) return [];
     if (!walkable(s.tx, s.tz)) { var ns = nearestWalkable(s.tx, s.tz); if (ns) s = ns; }
     var p = astar(s.tx, s.tz, isGoal, tt.tx, tt.tz);
-    if (p) return p;
+    if (p) return smooth(fromWorld, p);
     return findPath(fromWorld, targetWorld);   // no clean adjacent tile → get as close as possible
   }
 

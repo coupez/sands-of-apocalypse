@@ -9,9 +9,9 @@ var Skills = (function () {
   // a skill that exists in the tree but isn't trainable yet (placeholder Lv 1).
   var CATEGORIES = [
     { key: 'combat',     name: 'Combat',         skills: ['hitpoints', 'attack', 'defense', 'strength', 'ranged', 'spirit', 'prayer'] },
-    { key: 'gathering',  name: 'Gathering',      skills: ['mining', 'woodcutting', 'fishing', 'hunting', 'spirithunting'] },
+    { key: 'gathering',  name: 'Gathering',      skills: ['mining', 'woodcutting', 'fishing', 'hunting'] },
     // casting sits first so it lands right beside Mining; it's metal-casting (anvil work), a sibling of Crafting
-    { key: 'skills',     name: 'Skills',         skills: ['casting', 'smithing', 'cooking'] }
+    { key: 'skills',     name: 'Skills',         skills: ['casting', 'smithing', 'cooking', 'spirithunting'] }
   ];
   // combat skills cap at 20; gathering/production/faith skills cap at 12
   var data = {
@@ -280,6 +280,7 @@ var Skills = (function () {
   function addXp(skill, amount) {
     var s = data[skill];
     if (!s || amount <= 0) return;
+    if (window.UI && UI.spawnXpGain) UI.spawnXpGain(amount);   // floating "+N" over the player's head
     var before = s.level;
     s.xp += amount;
     s.level = Math.min(Utils.levelForXp(s.xp), s.max || 99);
