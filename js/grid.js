@@ -173,9 +173,11 @@ var Grid = (function () {
     return best;
   }
 
+  function setBlocked(tx, tz, v) { ensure(); if (inB(tx, tz)) blocked[idx(tx, tz)] = v ? 1 : 0; }
   return {
-    ensure: ensure, clearBlocks: clearBlocks, blockCircle: blockCircle,
+    ensure: ensure, clearBlocks: clearBlocks, blockCircle: blockCircle, setBlocked: setBlocked,
     worldToTile: worldToTile, tileCenter: tileCenter, walkable: walkable,
+    nearestWalkable: nearestWalkable,
     findPath: findPath, findPathAdj: findPathAdj, stepToward: stepToward,
     get TILE() { return TILE; }
   };

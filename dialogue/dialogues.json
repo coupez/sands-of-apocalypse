@@ -1,0 +1,27 @@
+{
+  "trapped_wanderer": {
+    "name": "Trapped Wanderer",
+    "start": "intro",
+    "nodes": {
+      "intro": {
+        "npc": "I don't know how to get out of here. I've been trapped here.",
+        "options": [
+          { "text": "Don't worry — I'll find us a way out of here.", "goto": "hopeful" },
+          { "text": "Sounds like your problem. I'm not staying.", "goto": "bitter" }
+        ]
+      },
+      "hopeful": {
+        "npc": "You'd truly help me? Bless you, stranger. Together, maybe we can break through the cave.",
+        "options": [
+          { "text": "Count on it. Sit tight.", "goto": "end" }
+        ]
+      },
+      "bitter": {
+        "npc": "...Cold as the night sands. May they show you the same mercy you showed me.",
+        "options": [
+          { "text": "Whatever. (Leave)", "goto": "end" }
+        ]
+      }
+    }
+  }
+}

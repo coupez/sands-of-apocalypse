@@ -75,18 +75,22 @@
     <!-- Top-center: global level-up announcements -->
     <div id="announce-layer"></div>
 
-    <!-- Bottom-left: chat box (type + Enter → text floats over your head) -->
-    <div id="chat-box">
-      <input id="chat-input" type="text" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Press Enter to chat…" />
-    </div>
-
-    <!-- Bottom-left: controls hint -->
-    <div id="controls-hint">
-      <b>Left-click</b> move / interact &nbsp;•&nbsp;
-      <b>WASD / Arrows</b> camera &nbsp;•&nbsp;
-      <b>Q / E</b> rotate &nbsp;•&nbsp;
-      <b>Wheel</b> zoom &nbsp;•&nbsp;
-      <b>Shift</b> dodge roll
+    <!-- Bottom-left: chat + NPC dialogue box.
+         Chat mode = a scrolling log + a text input (Enter to send; your line
+         floats over your head). Talking to an NPC swaps this box to the NPC's
+         dialogue, with clickable answer options. -->
+    <div id="dialogue-panel">
+      <!-- chat mode (default) -->
+      <div id="chat-view">
+        <div id="chat-log"></div>
+        <input id="chat-input" type="text" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Press Enter to chat…" />
+      </div>
+      <!-- NPC dialogue mode (shown while talking) -->
+      <div id="npc-view">
+        <div id="npc-name"></div>
+        <div id="npc-text"></div>
+        <div id="npc-options"></div>
+      </div>
     </div>
 
     <!-- level-up toast -->
@@ -124,9 +128,11 @@
   <script src="js/models.js"></script>
   <script src="js/pixelicons.js"></script>
   <script src="js/skillicons.js"></script>
+  <script src="js/itemicons.js"></script>
   <script src="js/skills.js"></script>
   <script src="js/combat.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/dialogue.js"></script>
   <script src="js/worldmap.js"></script>
   <script src="js/mode.js"></script>
   <script src="js/coop.js"></script>

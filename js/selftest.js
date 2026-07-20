@@ -124,7 +124,7 @@ var SelfTest = (function () {
       assert('Merchant dropped from the roster', !Skills.data.merchant);
 
       // -- Hit Points starts at 15 and IS your base max health --
-      assert('Hit Points starts at level 15', Skills.data.hitpoints.start === 15 && Skills.data.hitpoints.level >= 15);
+      assert('Hit Points starts at level 5', Skills.data.hitpoints.start === 5 && Skills.data.hitpoints.level >= 5);
 
       // -- equip requirements: weapons gate on Attack, armour on Defense, by metal tier --
       assert('copper weapon equips at Attack 1', Skills.equipReq('bronze_dagger').skill === 'attack' && Skills.equipReq('bronze_dagger').level === 1);
@@ -443,6 +443,33 @@ var SelfTest = (function () {
         assert('lit campfire cooks raw shrimp into cooked', invCount('cshrimp') === 1, 'cshrimp=' + invCount('cshrimp'));
         assert('cooking trains Cooking', Skills.data.cooking.xp > 0, 'xp=' + Skills.data.cooking.xp);
       }
+      // -- primitive fire chain: strike flint into a starter, light kindling into a temp fire --
+      clearBag();
+      Skills.addItem('sharp_rock'); Skills.addItem('flint');
+      Skills.combine(invIndexOf('sharp_rock'), invIndexOf('flint'));
+      assert('sharp rock + flint makes a fire starter (rock kept, flint spent)',
+        invCount('fire_starter') === 1 && invCount('flint') === 0 && invCount('sharp_rock') === 1,
+        'fs=' + invCount('fire_starter') + ' rock=' + invCount('sharp_rock'));
+      var fires0 = Entities.tempFires.length;
+      Skills.addItem('bundle_of_sticks');
+      Skills.combine(invIndexOf('fire_starter'), invIndexOf('bundle_of_sticks'));
+      assert('fire starter + kindling lights a temporary fire', Entities.tempFires.length === fires0 + 1,
+        'fires=' + Entities.tempFires.length);
+      assert('lighting a fire consumes the starter and kindling',
+        invCount('fire_starter') === 0 && invCount('bundle_of_sticks') === 0);
+      var _tf = Entities.tempFires[Entities.tempFires.length - 1];
+      assert('the hand-lit fire is already burning and can cook', !!_tf && _tf.lit === true && _tf.level >= 1);
+      if (_tf) {
+        Skills.addItem('raw_fish');
+        Entities.useStation(_tf);                     // a lit fire cooks the primitive catch
+        assert('a hand-lit fire cooks a raw fish into cooked fish',
+          invCount('cooked_fish') === 1 && invCount('raw_fish') === 0, 'cf=' + invCount('cooked_fish'));
+        assert('cooked fish is edible, raw fish is not',
+          Skills.isFood('cooked_fish') === true && Skills.isFood('raw_fish') === false);
+        _tf.life = -1; Entities.update(0.1, 0);
+        assert('a burned-out fire is removed', Entities.tempFires.indexOf(_tf) < 0);
+      }
+      clearBag();
       // -- level caps: gathering/production cap at 12, combat at 20 --
       Skills.data.woodcutting.xp = 0; Skills.addXp('woodcutting', 9999999);
       assert('woodcutting caps at level 12', Skills.data.woodcutting.level === 12, 'lvl=' + Skills.data.woodcutting.level);
@@ -518,29 +545,7 @@ var SelfTest = (function () {
       var hpP0 = Player.stats.hp;
       Combat.receivePvpDamage(7);
       assert('pvp: incoming damage applied', Player.stats.hp === hpP0 - 7, 'hp ' + hpP0 + '->' + Player.stats.hp);
-      Player.stats.hp = 50;
-      Player.dodge();
-      var hpP1 = Player.stats.hp;
-      Combat.receivePvpDamage(9);
-      assert('pvp: damage dodged with i-frames',
-        Player.stats.hp === hpP1 && Game.log.indexOf('pvpDodged') >= 0, 'hp=' + Player.stats.hp);
-      Main.advance(1.2); // end the roll + cooldown
-
-      // -- dodge roll (i-frames) --
-      Player.stats.maxHp = 20;
-      Player.stats.hp = 20;
-      var freshEnemy = Entities.enemies.filter(function (e) { return e.active; })[0] || Entities.enemies[0];
-      Player.dodge();
-      assert('dodge started', Game.log.indexOf('dodge') >= 0);
-      assert('i-frames active during roll', Player.isInvulnerable());
-      var hpPreDodge = Player.stats.hp;
-      Combat.enemyAttack(freshEnemy); // should be fully avoided
-      assert('dodge avoids all damage',
-        Player.stats.hp === hpPreDodge && Game.log.indexOf('dodgeAvoided') >= 0,
-        'hp=' + Player.stats.hp);
-      Main.advance(1.2); // finish the roll + cooldown
-      assert('dodge ends & i-frames drop', !Player.isInvulnerable() && Player.state !== 'dodge',
-        'state=' + Player.state);
+      Main.advance(1.2);
 
       // -- death sequence --
       Player.stats.maxHp = 20;
@@ -570,6 +575,35 @@ var SelfTest = (function () {
       Player.interactWith({ type: 'player', active: true, hp: 0, state: 'dead', name: 'Ghost', position: { x: 8, y: 0, z: 8 } });
       Main.advance(0.3);
       assert('a target that dies is cleared', Player.interaction === null, 'interaction=' + (Player.interaction ? 'set' : 'null'));
+
+      // -- NPC dialogue: opens, branches on your answer, and closes --
+      if (window.Dialogue) {
+        Dialogue.start('trapped_wanderer', 'Trapped Wanderer');
+        var dlg0 = Dialogue.current();
+        assert('dialogue opens on the intro line', !!dlg0 && /trapped/i.test(dlg0.text), dlg0 && dlg0.text);
+        assert('dialogue offers two answers', !!dlg0 && dlg0.options.length === 2, dlg0 && dlg0.options.length);
+        assert('dialogue reports it is open', Dialogue.isOpen());
+        Dialogue.choose(0);                       // first answer → branch A
+        var dlgA = Dialogue.current();
+        assert('answer A branches to its own line', !!dlgA && dlgA.text !== dlg0.text, dlgA && dlgA.text);
+        Dialogue.close();
+        assert('dialogue closes', !Dialogue.isOpen());
+        Dialogue.start('trapped_wanderer');
+        Dialogue.choose(1);                       // second answer → different branch B
+        var dlgB = Dialogue.current();
+        assert('answer B branches differently than A', !!dlgB && dlgB.text !== dlgA.text, dlgB && dlgB.text);
+        Dialogue.choose(0);                       // its option ends the conversation
+        assert('choosing an ending option closes the dialogue', !Dialogue.isOpen());
+      }
+
+      // -- talkable NPC entity: a copy of the player you can converse with --
+      if (Entities.makeNpc) {
+        var npc = Entities.makeNpc(6, 6, { name: 'Test Wanderer', dialogueId: 'trapped_wanderer' });
+        assert('makeNpc creates an interactable npc', !!npc && npc.type === 'npc' && npc.active);
+        Entities.talkToNpc(npc);
+        assert('talking to an NPC opens its dialogue', !window.Dialogue || Dialogue.isOpen());
+        if (window.Dialogue) Dialogue.close();
+      }
 
       // -- full round restart: wipes progress + resets the world --
       Skills.addItem('log'); Skills.addGold(40); Skills.data.mining.xp = 0; Skills.addXp('mining', 400);
@@ -640,6 +674,7 @@ var SelfTest = (function () {
       assert('the ritual is ready to summon', Coop.state.ritualReady === true);
       Skills.data.strength.xp = 0; Skills.addXp('strength', 1e12);   // max combat for the boss fight
       Skills.data.ranged.xp = 0; Skills.addXp('ranged', 1e12);
+      Skills.data.hitpoints.xp = 0; Skills.addXp('hitpoints', 1e12);   // max HP so slams don't kill + no mid-fight relevel clamps hp
       Player.stop();
       Entities.useObelisk();
       assert('summoning begins the boss fight', Coop.bossActive() === true && Coop.boss.hp === Coop.boss.maxHp);

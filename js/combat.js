@@ -100,13 +100,6 @@ var Combat = (function () {
   function enemyAttack(enemy) {
     var player = Game.player;
     if (!player || player.isDead) return;
-    if (player.isInvulnerable && player.isInvulnerable()) {
-      var pp0 = player.position;
-      _v.set(pp0.x, pp0.y + 1.4, pp0.z);
-      if (window.UI) UI.spawnHitsplat(_v, 'DODGE', 'miss');
-      Game.log.push('dodgeAvoided');
-      return;
-    }
     // armour alone lowers the enemy's chance to land a blow (Defence skill removed)
     var def = Skills.equipBonus().def;
     var hitChance = Utils.clamp(0.6 - def * 0.02, 0.15, 0.85);
@@ -184,11 +177,6 @@ var Combat = (function () {
     if (!player || player.isDead) return;
     var p = player.position;
     _v.set(p.x, p.y + 1.4, p.z);
-    if (player.isInvulnerable && player.isInvulnerable()) {
-      if (window.UI) UI.spawnHitsplat(_v, 'DODGE', 'miss');
-      Game.log.push('pvpDodged');
-      return;
-    }
     if (window.UI) UI.spawnHitsplat(_v, dmg, dmg > 0 ? 'hit' : 'miss');
     markCombat(null);
     Game.log.push('pvpHit:' + dmg);

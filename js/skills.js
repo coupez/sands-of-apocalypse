@@ -19,13 +19,13 @@ var Skills = (function () {
     strength:     { name: 'Strength',      icon: '💪', xp: 0, level: 1, max: 20 },
     defense:      { name: 'Defense',       icon: '🛡️', xp: 0, level: 1, max: 20, soon: true },
     ranged:       { name: 'Range',         icon: '🏹', xp: 0, level: 1, max: 20 },
-    hitpoints:    { name: 'Hit Points',    icon: '❤️', xp: 0, level: 15, max: 20, start: 15 },  // starts at 15 = your base health; +1 max HP per level
+    hitpoints:    { name: 'Hit Points',    icon: '❤️', xp: 0, level: 5, max: 20, start: 5 },  // starts at 5 = your base health; +1 max HP per level
     spirit:       { name: 'Spirit',        icon: '🔮', xp: 0, level: 1, max: 12, soon: true },  // magic (not wired yet)
     prayer:       { name: 'Faith',         icon: '🙏', xp: 0, level: 1, max: 12 },               // key stays 'prayer'; trained by burying bones
     mining:       { name: 'Mining',        icon: '⛏️', xp: 0, level: 1, max: 12 },
     woodcutting:  { name: 'Lumbering',     icon: '🪓', xp: 0, level: 1, max: 12 },
     fishing:      { name: 'Harvesting',    icon: '🌴', xp: 0, level: 1, max: 12 },
-    hunting:      { name: 'Hunting',       icon: '🥩', xp: 0, level: 1, max: 12, soon: true },
+    hunting:      { name: 'Hunting',       icon: '🥩', xp: 0, level: 1, max: 12 },   // trained by fishing/catching (e.g. sardines)
     smithing:     { name: 'Crafting',      icon: '🔨', xp: 0, level: 1, max: 12 },
     casting:      { name: 'Casting',       icon: '🫗', xp: 0, level: 1, max: 12, soon: true },   // metal casting (anvil work), not magic
     cooking:      { name: 'Herbalism',     icon: '🌿', xp: 0, level: 1, max: 12 },               // nature → food + medicine
@@ -72,6 +72,7 @@ var Skills = (function () {
     palmwood: { id: 'palmwood', name: 'Palm Wood',   icon: '🪵' },
     blog:     { id: 'blog',     name: 'Ebony Log',   icon: '🟫' },
     elderwood:{ id: 'elderwood',name: 'Elderwood',   icon: '🟤' },
+    stick:    { id: 'stick',    name: 'Stick',        icon: '🥢' },
     ore:      { id: 'ore',      name: 'Copper Ore',  icon: '◆', tint: 0xc87838 },
     iron:     { id: 'iron',     name: 'Iron Ore',    icon: '◆', tint: 0x8a8f96 },
     silver:   { id: 'silver',   name: 'Silver Ore',  icon: '◆', tint: 0xd8dce2 },
@@ -93,17 +94,63 @@ var Skills = (function () {
     messence:  { id: 'messence',  name: 'Essence of the Merchant', icon: '💰' },
     rockessence:{ id: 'rockessence', name: 'Essence of the Rock', icon: '🔮' },
     electricpaper: { id: 'electricpaper', name: 'Electric Paper', icon: '⚡' },   // enchants your weapon with lightning for 20s
-    orb:       { id: 'orb',       name: 'Heart of the Obelisk', icon: '❤️' }
+    orb:       { id: 'orb',       name: 'Heart of the Obelisk', icon: '❤️' },
+    // pickaxes: mining tools. `pick` = power P used in the story-mode mining formula.
+    pickaxe_bronze: { id: 'pickaxe_bronze', name: 'Copper Pickaxe', icon: '⛏️', tint: 0xc87838, pick: 1 },
+    pickaxe_iron:   { id: 'pickaxe_iron',   name: 'Iron Pickaxe',   icon: '⛏️', tint: 0x8a8f96, pick: 2 },
+    pickaxe_silver: { id: 'pickaxe_silver', name: 'Silver Pickaxe', icon: '⛏️', tint: 0xd8dce2, pick: 3 },
+    pickaxe_gold:   { id: 'pickaxe_gold',   name: 'Gold Pickaxe',   icon: '⛏️', tint: 0xffd24a, pick: 4 },
+    // axes: woodcutting tools. `axe` = power (parallels pickaxes)
+    axe_bronze: { id: 'axe_bronze', name: 'Copper Axe', icon: '🪓', tint: 0xc87838, axe: 1 },
+    axe_iron:   { id: 'axe_iron',   name: 'Iron Axe',   icon: '🪓', tint: 0x8a8f96, axe: 2 },
+    axe_silver: { id: 'axe_silver', name: 'Silver Axe', icon: '🪓', tint: 0xd8dce2, axe: 3 },
+    axe_gold:   { id: 'axe_gold',   name: 'Gold Axe',   icon: '🪓', tint: 0xffd24a, axe: 4 },
+    reed:       { id: 'reed',       name: 'Reed',       icon: '🌾' },
+    rope:       { id: 'rope',       name: 'Rope',       icon: '🪢' },
+    // primitive tool-crafting chain (story tutorial)
+    rock:               { id: 'rock',               name: 'Rock',               icon: '🪨' },
+    flint:              { id: 'flint',              name: 'Flint',              icon: '🪨' },
+    sharp_rock:         { id: 'sharp_rock',         name: 'Sharp Rock',         icon: '🔪' },
+    reed_fibers:        { id: 'reed_fibers',        name: 'Reed Fibers',        icon: '🧵' },
+    smooth_stick:       { id: 'smooth_stick',       name: 'Smooth Stick',       icon: '🎋' },
+    handle_with_string: { id: 'handle_with_string', name: 'Handle with String', icon: '🪄' },
+    primitive_axe:      { id: 'primitive_axe',      name: 'Primitive Axe',      icon: '🪓', axe: 1 },   // craftable axe → can chop
+    sturdy_handle:             { id: 'sturdy_handle',             name: 'Sturdy Handle',             icon: '🦯' },
+    sturdy_handle_with_string: { id: 'sturdy_handle_with_string', name: 'Sturdy Handle with String', icon: '🎣' },
+    primitive_pickaxe:         { id: 'primitive_pickaxe',         name: 'Primitive Pickaxe',         icon: '⛏️', pick: 1 },   // craftable pickaxe → can mine
+    bundle_of_sticks:          { id: 'bundle_of_sticks',          name: 'Bundle of Sticks',          icon: '🎋' },
+    fire_starter:              { id: 'fire_starter',              name: 'Fire Starter',              icon: '🔥' },
+    primitive_fishing_net:     { id: 'primitive_fishing_net',     name: 'Primitive Fishing Net',     icon: '🕸️' },
+    raw_fish:                  { id: 'raw_fish',                  name: 'Raw Sardine',               icon: '🐟' },
+    cooked_fish:               { id: 'cooked_fish',               name: 'Cooked Sardine',            icon: '🍢' }
   };
+
+  // "Use item on item" crafting: combine two inventory items into a new one.
+  // Order-independent. `keep: [ids]` marks tool inputs that are NOT consumed.
+  var COMBINE_RECIPES = [
+    { a: 'rock', b: 'rock', out: 'sharp_rock' },                                  // 2 rocks → sharp rock (one discarded)
+    { a: 'sharp_rock', b: 'reed', out: 'reed_fibers', keep: ['sharp_rock'] },     // cut reeds → fibers (rock kept)
+    { a: 'sharp_rock', b: 'stick', out: 'smooth_stick', keep: ['sharp_rock'] },   // whittle a stick → smooth stick (rock kept)
+    { a: 'reed_fibers', b: 'smooth_stick', out: 'handle_with_string' },           // lash → handle with string
+    { a: 'handle_with_string', b: 'sharp_rock', out: 'primitive_axe' },           // haft the head → primitive axe
+    { a: 'primitive_axe', b: 'log', out: 'sturdy_handle', keep: ['primitive_axe'] },   // hew a log with the axe → sturdy handle
+    { a: 'reed_fibers', b: 'sturdy_handle', out: 'sturdy_handle_with_string' },        // lash it
+    { a: 'sharp_rock', b: 'sturdy_handle_with_string', out: 'primitive_pickaxe' },     // haft the head → primitive pickaxe (mines the boulder)
+    { a: 'reed_fibers', b: 'reed_fibers', out: 'primitive_fishing_net' },              // weave fibers → fishing net
+    { a: 'stick', b: 'stick', out: 'bundle_of_sticks' },                               // bundle kindling
+    // fire chain: strike the flint for a fire starter, then set the kindling alight
+    { a: 'sharp_rock', b: 'flint', out: 'fire_starter', keep: ['sharp_rock'] },        // strike sparks off the flint
+    { a: 'fire_starter', b: 'bundle_of_sticks', action: 'lightFire' }                  // light a fire (a temporary cooking spot)
+  ];
   // consumable weapon enchants: id -> { element, seconds }
   var ENCHANTS = { electricpaper: { element: 'lightning', seconds: 20 } };
   function isEnchant(id) { return !!ENCHANTS[id]; }
 
   // Only COOKED seafood is edible; eat raw and you gain nothing. Cook it at a
   // campfire first. id -> HP healed when eaten.
-  var FOOD = { cshrimp: 2, clobster: 4, cwhale: 6 };
-  // raw -> cooked mapping used by the campfire
-  var COOK = { shrimp: 'cshrimp', lobster: 'clobster', whale: 'cwhale' };
+  var FOOD = { cshrimp: 2, clobster: 4, cwhale: 6, cooked_fish: 3 };   // sardines are small
+  // raw -> cooked mapping used by the campfire (raw_fish = story-mode primitive fishing)
+  var COOK = { shrimp: 'cshrimp', lobster: 'clobster', whale: 'cwhale', raw_fish: 'cooked_fish' };
   function isFood(id) { return Object.prototype.hasOwnProperty.call(FOOD, id); }
 
   // Equipment slots: head, body, legs, feet, and a weapon/off-hand in each hand.
@@ -206,6 +253,64 @@ var Skills = (function () {
 
   function isGear(id) { return !!GEAR[id]; }
   function countItem(id) { var n = 0; for (var i = 0; i < Game.inventory.length; i++) if (Game.inventory[i] && Game.inventory[i].id === id) n++; return n; }
+  // The strongest pickaxe the player is carrying (0 = none). Drives story mining odds.
+  function bestPickaxePower() {
+    var best = 0;
+    for (var i = 0; i < Game.inventory.length; i++) {
+      var it = Game.inventory[i];
+      if (it) { var d = ITEMS[it.id]; if (d && d.pick && d.pick > best) best = d.pick; }
+    }
+    return best;
+  }
+  // The strongest axe the player is carrying (0 = none). Gates story woodcutting.
+  function bestAxePower() {
+    var best = 0;
+    for (var i = 0; i < Game.inventory.length; i++) {
+      var it = Game.inventory[i];
+      if (it) { var d = ITEMS[it.id]; if (d && d.axe && d.axe > best) best = d.axe; }
+    }
+    return best;
+  }
+  // Story mode: make sure the player starts with a basic pickaxe to mine with.
+  function grantStoryStarter() { if (bestPickaxePower() <= 0) addItem('pickaxe_bronze'); }
+
+  // Does this item have a left-click "primary use" (equip / eat / bury / enchant)?
+  // Items WITHOUT one are the ones you select (white outline) to combine.
+  function hasPrimaryUse(id) { return isGear(id) || isFood(id) || isBones(id) || isEnchant(id); }
+  function findCombineRecipe(idA, idB) {
+    for (var i = 0; i < COMBINE_RECIPES.length; i++) {
+      var r = COMBINE_RECIPES[i];
+      if ((r.a === idA && r.b === idB) || (r.a === idB && r.b === idA)) return r;
+    }
+    return null;
+  }
+  // Use inventory item A on item B. If a recipe matches, consume both and add the
+  // result. Returns true if something was crafted.
+  function combine(indexA, indexB) {
+    var a = Game.inventory[indexA], b = Game.inventory[indexB];
+    if (!a || !b || indexA === indexB) return false;
+    var r = findCombineRecipe(a.id, b.id);
+    if (!r) return false;
+    if (r.action) {
+      // recipe triggers a world action (e.g. lighting a fire) rather than making an item.
+      var fn = window.Entities && Entities[r.action];
+      if (fn && fn() === true) {                    // action fired → consume both inputs
+        Game.inventory[indexA] = null;
+        Game.inventory[indexB] = null;
+        if (window.UI) UI.updateInventory();
+        Game.log.push('craft:' + r.action);
+      }
+      // else: the action showed its own reason (e.g. no room) and kept the items.
+      return true;                                  // matched a recipe → never "nothing happens"
+    }
+    var keep = r.keep || [];                       // tool inputs that survive the craft
+    if (keep.indexOf(a.id) < 0) Game.inventory[indexA] = null;
+    if (keep.indexOf(b.id) < 0) Game.inventory[indexB] = null;
+    addItem(r.out);
+    if (window.UI) { UI.updateInventory(); UI.showActionText('You make ' + (ITEMS[r.out] ? ITEMS[r.out].name : r.out) + '.'); }
+    Game.log.push('craft:' + r.out);
+    return true;
+  }
 
   function smithRecipe(id) { for (var i = 0; i < SMITH_RECIPES.length; i++) if (SMITH_RECIPES[i].id === id) return SMITH_RECIPES[i]; return null; }
   // returns null if craftable, else a reason string. Gated by the anvil's level.
@@ -418,37 +523,55 @@ var Skills = (function () {
   function doWoodcut(tree) {
     if (!tree || !tree.active) return;
     if (data.woodcutting.level < (tree.reqLevel || 1)) return;
+    if (Game.mode === 'story' && bestAxePower() <= 0) return;   // story woodcutting needs an axe (gate message on click)
     if (Utils.rand() > successChance(data.woodcutting.level, tree.reqLevel || 1)) return;
     if (addItem(tree.itemId || 'log')) {
       addXp('woodcutting', tree.xp || 25);
       Game.log.push('woodcut');
       if (window.UI) UI.showActionText('You cut some ' + (ITEMS[tree.itemId || 'log'].name) + '.');
-      if (Game.online) { if (window.Net && Net.sendGather) Net.sendGather('tree', tree.index); }
-      else { tree.amount--; if (tree.amount <= 0) Entities.depleteResource(tree); }
+      if (Game.mode !== 'story' && Game.online) { if (window.Net && Net.sendGather) Net.sendGather('tree', tree.index); }
+      else if (!tree.noDeplete) { tree.amount--; if (tree.amount <= 0) Entities.depleteResource(tree); }   // dead palm never depletes
     } else if (window.UI) UI.showActionText('Your inventory is full!');
   }
 
   function doMine(rock) {
     if (!rock || !rock.active) return;
     if (data.mining.level < (rock.reqLevel || 1)) return;
-    if (Utils.rand() > successChance(data.mining.level, rock.reqLevel || 1)) return;
+    var story = (Game.mode === 'story');
+    if (story) {
+      // Story mining: your pickaxe + level vs the rock's hardness decide each swing.
+      //   p = clamp(0.05 + 0.06·level + 0.12·pick − 0.15·hardness, 5%, 92%)
+      var P = bestPickaxePower();
+      if (P <= 0) return;                        // no pickaxe — the click gate already said why
+      var H = (rock.tier || 0) + 1;              // copper=1 … gold=4
+      var pMine = Utils.clamp(0.05 + 0.06 * data.mining.level + 0.12 * P - 0.15 * H, 0.05, 0.92);
+      if (Utils.rand() > pMine) return;          // swing missed — hardness beat pick+skill
+      if (rock.noYield) {                         // clearable boulder: no item, no xp, gone forever
+        if (window.UI) UI.showActionText('You break away the ' + (rock.name || 'boulder') + '.');
+        Entities.depleteResource(rock);
+        return;
+      }
+    } else if (Utils.rand() > successChance(data.mining.level, rock.reqLevel || 1)) return;
     if (addItem(rock.itemId || 'ore')) {
       addXp('mining', rock.xp || 35);
       if ((rock.itemId || 'ore') === 'pore') Game.minedGold = true;   // co-op Deep sigil
       Game.log.push('mine');
       if (window.UI) UI.showActionText('You mine some ' + (ITEMS[rock.itemId || 'ore'].name) + '.');
-      if (Game.online) { if (window.Net && Net.sendGather) Net.sendGather('rock', rock.index); }
+      // Story mode is client-local (rocks are spawned from the map, not the server's list).
+      if (!story && Game.online) { if (window.Net && Net.sendGather) Net.sendGather('rock', rock.index); }
+      else if (story && (rock.tier || 0) === 0) Entities.depleteResource(rock);  // copper = one ore, then it respawns
       else { rock.amount--; if (rock.amount <= 0) Entities.depleteResource(rock); }
     } else if (window.UI) UI.showActionText('Your inventory is full!');
   }
 
   function doFish(pool) {
     if (!pool || !pool.active) return;
-    if (data.fishing.level < (pool.reqLevel || 1)) return;
-    if (Utils.rand() > successChance(data.fishing.level, pool.reqLevel || 1)) return;
+    var sk = (pool.skill && data[pool.skill]) ? pool.skill : 'fishing';   // sardine spots train Hunting; reeds/plants train Harvesting
+    if (data[sk].level < (pool.reqLevel || 1)) return;
+    if (Utils.rand() > successChance(data[sk].level, pool.reqLevel || 1)) return;
     var catchId = pool.itemId || 'shrimp';
     if (addItem(catchId)) {
-      addXp('fishing', pool.xp || 30);
+      addXp(sk, pool.xp || 30);
       Game.log.push('fish');
       if (window.UI) UI.showActionText('You harvest ' + (ITEMS[catchId] ? ITEMS[catchId].name : 'something') + '.');
       // harvest plants don't deplete; the desert always provides
@@ -541,11 +664,13 @@ var Skills = (function () {
   return {
     init: init, addXp: addXp, addItem: addItem, maxAll: maxAll,
     doWoodcut: doWoodcut, doMine: doMine, doFish: doFish,
+    bestPickaxePower: bestPickaxePower, bestAxePower: bestAxePower, grantStoryStarter: grantStoryStarter,
     equipFromInventory: equipFromInventory, unequip: unequip,
     eat: eat, dropItem: dropItem, hasItem: hasItem, removeItem: removeItem,
     bury: bury, isBones: isBones, craftBow: craftBow, isRanged: isRanged, weaponSpeed: weaponSpeed,
     useEnchant: useEnchant, isEnchant: isEnchant,
     equipBonus: equipBonus, isGear: isGear, isFood: isFood,
+    hasPrimaryUse: hasPrimaryUse, combine: combine, findCombineRecipe: findCombineRecipe,
     smith: smith, canSmith: canSmith, smithRecipe: smithRecipe, countItem: countItem,
     equipReq: equipReq, canEquip: canEquip,
     appearance: appearance,

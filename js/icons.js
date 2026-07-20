@@ -10,7 +10,7 @@
 // ============================================================
 
 var Icons = (function () {
-  var S = 256;                 // render resolution (CSS scales down)
+  var S = 48;                  // low render resolution → chunky, PS1-mosaic icons (CSS renders them pixelated)
   var renderer, scene, camera; // lazily created on first use
   var ready = false, broken = false;
   var cache = {};              // key -> dataURL | null
@@ -20,7 +20,7 @@ var Icons = (function () {
     try {
       var cv = document.createElement('canvas');
       cv.width = S; cv.height = S;
-      renderer = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, preserveDrawingBuffer: true });
+      renderer = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: false, preserveDrawingBuffer: true });
       renderer.setSize(S, S, false);
       if (THREE.sRGBEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
       scene = new THREE.Scene();
@@ -195,6 +195,84 @@ var Icons = (function () {
     return g;
   }
 
+  // ---- primitive tool-crafting chain meshes ----------------------------
+  function stoneMesh(col, sharp) {
+    var geo = sharp ? new THREE.TetrahedronGeometry(1.05, 0) : new THREE.DodecahedronGeometry(0.95, 0);
+    var p = geo.attributes.position;
+    for (var i = 0; i < p.count; i++) { var f = 0.82 + Math.random() * 0.36; p.setXYZ(i, p.getX(i) * f, p.getY(i) * f, p.getZ(i) * f); }
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, facetMat(col || 0x8a8175, { flat: true, rough: sharp ? 0.78 : 0.95, metal: 0.05 }));
+  }
+  // a stick lying along X (so it frames nicely in the icon)
+  function stickBar(o) {
+    o = o || {};
+    var g = new THREE.Group();
+    var body = new THREE.Mesh(new THREE.CylinderGeometry(o.r || 0.13, (o.r || 0.13) * (o.taper || 1), o.len || 1.9, o.seg || 8), facetMat(o.col || 0xcaa76a, { rough: 0.85, metal: 0.03 }));
+    body.rotation.z = Math.PI / 2; if (o.bend) body.rotation.y = o.bend; g.add(body);
+    return g;
+  }
+  // wrap a few string rings around an X-aligned shaft
+  function stringRings(g, x0, n, rad, col) {
+    var sm = facetMat(col || 0x9caf5a, { rough: 0.9 });
+    for (var i = 0; i < n; i++) { var ring = new THREE.Mesh(new THREE.TorusGeometry(rad, rad * 0.24, 6, 10), sm); ring.rotation.y = Math.PI / 2; ring.position.x = x0 + i * rad * 0.75; g.add(ring); }
+    return g;
+  }
+  function fibersMesh() {
+    var g = new THREE.Group(), mat = facetMat(0x9caf5a, { rough: 0.85, metal: 0.02 });
+    for (var i = 0; i < 7; i++) { var a = (i / 7) * Math.PI * 2; var s = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.6, 5), mat); s.position.set(Math.cos(a) * 0.18, 0, Math.sin(a) * 0.18); s.rotation.z = Math.cos(a) * 0.28; s.rotation.x = Math.sin(a) * 0.28; g.add(s); }
+    return g;
+  }
+  function reedMesh() {
+    var g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 1.9, 6), facetMat(0x7a9a4a, { rough: 0.85 })));
+    var tuft = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 6), facetMat(0xbfa85a, { rough: 0.8 })); tuft.position.y = 1.1; g.add(tuft);
+    return g;
+  }
+  function pickedStickMesh() {
+    var g = stickBar({ col: 0x9a7a4a, r: 0.11, len: 1.9, bend: 0.14 });
+    var twig = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.5, 5), facetMat(0x9a7a4a, { rough: 0.9 })); twig.position.set(0.35, 0.2, 0); twig.rotation.z = -0.6; g.add(twig);
+    return g;
+  }
+  function sturdyHandleMesh(withString) {
+    var g = new THREE.Group();
+    var body = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 2.0, 8), facetMat(0xb98a4a, { rough: 0.8 })); body.rotation.z = Math.PI / 2; g.add(body);
+    var knob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.26, 1), facetMat(0xa87a3a, { rough: 0.85 })); knob.position.x = -1.02; g.add(knob);
+    if (withString) stringRings(g, 0.45, 3, 0.24);
+    return g;
+  }
+  function primitiveAxeMesh() {
+    var g = stickBar({ col: 0xc9a86a, r: 0.12, len: 2.0 });
+    var head = new THREE.Mesh(new THREE.TetrahedronGeometry(0.5, 0), facetMat(0x9a9186, { flat: true, rough: 0.8 })); head.position.set(0.85, 0.18, 0); head.rotation.z = 0.7; head.scale.set(1, 1, 0.55); g.add(head);
+    stringRings(g, 0.6, 2, 0.17);
+    g.rotation.set(0.15, -0.55, 0.9);   // tilt so it reads clearly as an axe in the icon
+    return g;
+  }
+  function primitivePickaxeMesh() {
+    var g = new THREE.Group();
+    var handle = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 2.0, 8), facetMat(0xb98a4a, { rough: 0.8 })); handle.rotation.z = Math.PI / 2; g.add(handle);
+    var head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 1.2), facetMat(0x8a8175, { flat: true, rough: 0.85 })); head.position.set(0.9, 0.12, 0); g.add(head);
+    for (var s = -1; s <= 1; s += 2) { var tip = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.36, 5), facetMat(0x9a9186, { flat: true, rough: 0.8 })); tip.position.set(0.9, 0.12, s * 0.72); tip.rotation.x = s * Math.PI / 2; g.add(tip); }
+    stringRings(g, 0.35, 2, 0.19);
+    g.rotation.set(0.15, -0.4, 0.9);    // tilt so the pick head is clearly visible
+    return g;
+  }
+  function bundleOfSticksMesh() {
+    var g = new THREE.Group(), mat = facetMat(0x9a7a4a, { rough: 0.9 });
+    for (var i = 0; i < 5; i++) { var a = (i / 5) * Math.PI * 2; var s = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 1.8, 6), mat); s.rotation.z = Math.PI / 2; s.position.set(0, Math.cos(a) * 0.2, Math.sin(a) * 0.2); s.rotation.y = (i - 2) * 0.05; g.add(s); }
+    stringRings(g, -0.15, 2, 0.34, 0x8a5a3a);   // tied in the middle
+    return g;
+  }
+  function fishingNetMesh() {
+    var g = new THREE.Group();
+    var hoop = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.08, 8, 20), facetMat(0xc9a86a, { rough: 0.85 })); g.add(hoop);
+    var strMat = facetMat(0x9caf5a, { rough: 0.9 });
+    for (var i = -2; i <= 2; i++) {
+      var h = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.7, 4), strMat); h.rotation.z = Math.PI / 2; h.position.y = i * 0.32; g.add(h);
+      var v = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.7, 4), strMat); v.position.x = i * 0.32; g.add(v);
+    }
+    return g;
+  }
+
   // id -> factory(color). `color` is the item's tint when it has one.
   var FACT = {
     log:       function () { return logMesh({ bark: 0x8a7a5c, cut: 0xc9b487 }); },
@@ -221,7 +299,22 @@ var Icons = (function () {
     rockessence: function () { return gem('oct', 0x8a4bd6, 0.5, 1.4); },
     messence:    function () { return gem('oct', 0xffd24a, 0.25, 1.0, true); },
     bones:       function () { return bonesMesh(); },
-    orb:         function () { return gem('dodec', 0xff2a2a, 0.85); }
+    orb:         function () { return gem('dodec', 0xff2a2a, 0.85); },
+    // primitive tool-crafting chain
+    rock:         function () { return stoneMesh(0x8a8175, false); },
+    flint:        function () { return stoneMesh(0xc0392b, true); },   // red sharp flint
+    sharp_rock:   function () { return stoneMesh(0x9a9186, true); },
+    reed:         function () { return reedMesh(); },
+    reed_fibers:  function () { return fibersMesh(); },
+    stick:        function () { return pickedStickMesh(); },
+    smooth_stick: function () { return stickBar({ col: 0xcaa76a, r: 0.13, len: 2.0 }); },
+    handle_with_string:        function () { var g = stickBar({ col: 0xc9a86a, r: 0.14, len: 1.9 }); stringRings(g, 0.5, 3, 0.2); return g; },
+    sturdy_handle:             function () { return sturdyHandleMesh(false); },
+    sturdy_handle_with_string: function () { return sturdyHandleMesh(true); },
+    primitive_axe:      function () { return primitiveAxeMesh(); },
+    primitive_pickaxe:  function () { return primitivePickaxeMesh(); },
+    bundle_of_sticks:      function () { return bundleOfSticksMesh(); },
+    primitive_fishing_net: function () { return fishingNetMesh(); }
   };
 
   // ---- render one object to a data-URL --------------------------------

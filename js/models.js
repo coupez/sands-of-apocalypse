@@ -22,14 +22,14 @@ var Models = (function () {
   var CHAR_FILE = 'PlayerCharacter/Player_Character_Test.glb';
   var charLoaded = null;
   var weaponTex = null;                          // shared UV atlas for ALL weapon models
-  var WEAPON_TEX = 'WeaponsTextureSheet.png';
+  var WEAPON_TEX = 'Textures/WeaponsTextureSheet.png';
   // used to keep UV-less models visible (tier colour) until they're re-exported with UVs
   var TIER_COLOR = { bronze: 0xc87838, iron: 0x8a8f96, silver: 0xd8dce2, gold: 0xffd24a, tinakal: 0x5fe0d0 };
 
   // load the shared weapon texture; every weapon's UVs are mapped onto it
   function loadWeaponTex() {
     if (typeof THREE === 'undefined' || !THREE.TextureLoader) return;
-    new THREE.TextureLoader().load('models/' + encodeURIComponent(WEAPON_TEX), function (t) {
+    new THREE.TextureLoader().load(WEAPON_TEX, function (t) {
       t.flipY = false;                            // glTF UV convention (origin top-left)
       t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
       if (THREE.sRGBEncoding !== undefined) t.encoding = THREE.sRGBEncoding;

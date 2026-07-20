@@ -70,9 +70,6 @@ var Player = (function () {
   // death sequence
   var death = { active: false, phase: null, t: 0, baseY: 0, onDone: null };
 
-  // dodge roll (Dark Souls-style)
-  var dodge = { active: false, t: 0, dur: 0.5, cooldown: 0, dir: { x: 0, z: 1 } };
-
   // A tiny, chunky canvas texture (nearest-filtered, no mipmaps) — the low-res
   // painted look of a PlayStation-1 character skin.
   function ps1Tex(draw, size) {
@@ -288,39 +285,6 @@ var Player = (function () {
     walkPath = ent ? Grid.findPathAdj(group.position, ent.position) : Grid.findPath(group.position, dest);
   }
 
-  // ---- dodge roll ----
-  function dodge_() {
-    if (state === 'dead' || death.active || dodge.active || dodge.cooldown > 0) return;
-    dodge.active = true;
-    dodge.t = 0;
-    dodge.cooldown = 0.9;
-    // roll in the current facing direction
-    dodge.dir.x = Math.sin(group.rotation.y);
-    dodge.dir.z = Math.cos(group.rotation.y);
-    // interrupt whatever we were doing
-    interaction = null; moveTarget = null; actionKind = null;
-    state = 'dodge';
-    SFX.dodge();
-    if (window.UI) UI.showActionText('Roll!');
-    Game.log.push('dodge');
-  }
-
-  function isInvulnerable() { return dodge.active && dodge.t < 0.42; }
-
-  function updateDodge(dt) {
-    dodge.t += dt;
-    var p = Utils.clamp(dodge.t / dodge.dur, 0, 1);
-    var speed = 15 * (1 - p * 0.65);         // fast burst, easing out
-    group.position.x += dodge.dir.x * speed * dt;
-    group.position.z += dodge.dir.z * speed * dt;
-    group.rotation.x = -p * Math.PI * 2;      // full forward roll
-    var face = Math.atan2(dodge.dir.x, dodge.dir.z);
-    group.rotation.y = face;
-    group.position.y = terrainY(group.position.x, group.position.z) + Math.sin(p * Math.PI) * 0.3;
-    if (p >= 1) { dodge.active = false; group.rotation.x = 0; state = 'idle'; }
-    CameraRig.setTarget(group.position);
-  }
-
   // ---- update ----
   // Spawn/teleport the player to their camp (slot 1 = north, 2 = south).
   function moveToCamp(slot) {
@@ -336,6 +300,24 @@ var Player = (function () {
     CameraRig.setTarget(group.position);
   }
 
+  // Story mode: drop the player onto the hand-placed spawn marker (world x/z).
+  function spawnAt(x, z) {
+    if (!group) return;
+    var cc = snapPoint(x, z);                      // centre on the tile
+    if (window.Grid && Grid.worldToTile && Grid.walkable && Grid.nearestWalkable && Grid.tileCenter) {
+      var t = Grid.worldToTile(cc.x, cc.z);
+      if (!Grid.walkable(t.tx, t.tz)) {            // spawn marker sits in/behind a wall → nudge onto open ground
+        var nw = Grid.nearestWalkable(t.tx, t.tz);
+        if (nw) { var c = Grid.tileCenter(nw.tx, nw.tz); cc.x = c.x; cc.z = c.z; }
+      }
+    }
+    group.position.set(cc.x, terrainY(cc.x, cc.z), cc.z);
+    group.rotation.y = Math.atan2(0 - cc.x, 0 - cc.z);  // face the level centre
+    moveTarget = null; interaction = null; state = 'idle'; actionKind = null;
+    walkPath = null; goalKey = null;
+    if (window.CameraRig && CameraRig.setTarget) CameraRig.setTarget(group.position);
+  }
+
   // A target stops being valid once it's gone — enemies flip active=false, but
   // remote players stay "active" through death/respawn, so check their state too.
   function targetValid(e) {
@@ -347,12 +329,10 @@ var Player = (function () {
   function update(dt, t) {
     if (!group) return;
 
-    if (dodge.cooldown > 0) dodge.cooldown = Math.max(0, dodge.cooldown - dt);
     if (eatAnim > 0) eatAnim = Math.max(0, eatAnim - dt);
     if (prayAnim > 0) prayAnim = Math.max(0, prayAnim - dt);
     if (eatLock > 0) eatLock = Math.max(0, eatLock - dt);
     if (death.active) { updateDeath(dt); return; }
-    if (dodge.active) { updateDodge(dt); return; }
 
     // Determine where to walk. For interactions, chase the entity's live pos.
     var dest = null, stopDist = 0.15, ent = null;
@@ -383,14 +363,22 @@ var Player = (function () {
           var w0d = Math.hypot(w0.x - group.position.x, w0.z - group.position.z);
           if (w0d < 0.16) { walkPath.shift(); usingPath = walkPath.length > 0; }
         }
-        var goX, goZ, maxStep = SPEED * (isRunning() ? RUN_MULT : 1) * dt;
+        var goX, goZ, maxStep = SPEED * (isRunning() ? RUN_MULT : 1) * dt, freeMove = false;
         if (usingPath) { var wp = walkPath[0]; goX = wp.x; goZ = wp.z; }
-        else { goX = dest.x; goZ = dest.z; maxStep = Math.min(maxStep, Math.max(0, d - stopDist * 0.9)); }
+        else { goX = dest.x; goZ = dest.z; maxStep = Math.min(maxStep, Math.max(0, d - stopDist * 0.9)); freeMove = true; }
         var gdx = goX - group.position.x, gdz = goZ - group.position.z, gd = Math.hypot(gdx, gdz);
         if (gd > 0.0001 && maxStep > 0) {
           var step = Math.min(maxStep, gd);
-          group.position.x += (gdx / gd) * step;
-          group.position.z += (gdz / gd) * step;
+          var nx = group.position.x + (gdx / gd) * step;
+          var nz = group.position.z + (gdz / gd) * step;
+          // A* waypoints are always walkable, but the straight-line fallback (no path
+          // found — e.g. a click outside the walls) must NOT cross a blocked tile.
+          if (freeMove && window.Grid && Grid.worldToTile && Grid.walkable) {
+            var nt = Grid.worldToTile(nx, nz);
+            if (!Grid.walkable(nt.tx, nt.tz)) { nx = group.position.x; nz = group.position.z; }
+          }
+          group.position.x = nx;
+          group.position.z = nz;
           faceTowards(goX, goZ, dt);
         }
         moving = true;
@@ -411,6 +399,15 @@ var Player = (function () {
             interaction = null; state = 'idle'; actionKind = null;
           } else if (ent.type === 'drop') {
             Entities.pickupDrop(ent);
+            interaction = null; state = 'idle'; actionKind = null;
+          } else if (ent.type === 'pick') {
+            Entities.pickupImported(ent);   // story-mode "_PICK" object (sticks…)
+            interaction = null; state = 'idle'; actionKind = null;
+          } else if (ent.type === 'gate') {
+            Entities.useGate(ent);          // story-mode "_GATE" (cave entrance placeholder)
+            interaction = null; state = 'idle'; actionKind = null;
+          } else if (ent.type === 'npc') {
+            Entities.talkToNpc(ent);        // story-mode talkable NPC → opens dialogue
             interaction = null; state = 'idle'; actionKind = null;
           } else if (ent.type === 'ballista') {
             Combat.fireBallista(ent);
@@ -589,7 +586,6 @@ var Player = (function () {
   // ---- damage / death ----
   function takeDamage(dmg) {
     if (state === 'dead' || death.active) return;
-    if (isInvulnerable()) return; // i-frames during dodge
     stats.hp = Utils.clamp(stats.hp - dmg, 0, stats.maxHp);
     UI.updateVitals();
     UI.flashDamage();
@@ -746,7 +742,6 @@ var Player = (function () {
 
   function reset() {
     death.active = false; death.phase = null; death.t = 0; death._cx = undefined;
-    dodge.active = false; dodge.t = 0; dodge.cooldown = 0;
     eatAnim = 0; prayAnim = 0; eatLock = 0;
     state = 'idle';
     interaction = null; moveTarget = null; actionKind = null; actionTimer = 0;
@@ -777,9 +772,8 @@ var Player = (function () {
     build: build, update: update,
     walkTo: walkTo, interactWith: interactWith, stop: stop,
     takeDamage: takeDamage, heal: heal, startDeath: startDeath, reset: reset,
-    applyBonuses: applyBonuses, moveToCamp: moveToCamp,
+    applyBonuses: applyBonuses, moveToCamp: moveToCamp, spawnAt: spawnAt,
     startEating: startEating, startPraying: startPraying, canAttack: canAttack, applyAppearance: applyAppearance, refreshAppearance: refreshAppearance, applyCharModel: applyCharModel,
-    dodge: dodge_, isInvulnerable: isInvulnerable,
     toggleRun: toggleRun, setRunning: setRunning, isRunning: isRunning,
     get energy() { return energy; }, get maxEnergy() { return ENERGY_MAX; }, get running() { return running; },
     get state() { return state; },

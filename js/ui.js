@@ -15,6 +15,9 @@ var UI = (function () {
   // else the emoji (tinted to its tier colour if it has one).
   function iconHtml(item) {
     if (!item) return '';
+    // custom drop-in PNG (itemicons/) wins over the procedural render / model
+    var custom = (window.ItemIcons && item.id) ? ItemIcons.get(item.id) : null;
+    if (custom) return '<img class="ico" draggable="false" src="' + custom + '" alt="">';
     var url = (typeof Icons !== 'undefined' && Icons.get) ? Icons.get(item) : null;
     if (url) return '<img class="ico" draggable="false" src="' + url + '" alt="">';
     return item.tint ? '<span style="color:' + hex6(item.tint) + '">' + item.icon + '</span>' : item.icon;
@@ -59,6 +62,8 @@ var UI = (function () {
     updateEquipment();
     updateGold();
     setActiveTab('inventory');   // default open panel
+    // a couple of greeter lines so the chat box isn't blank (replaces the old hint bar)
+    appendChat(null, 'Left-click to move & interact · Middle-drag to orbit · Press Enter to chat.');
   }
 
   function updateGold() {
@@ -396,6 +401,10 @@ var UI = (function () {
 
   // drag-and-drop: rearrange items into whatever slot you want
   var _dragFrom = null;
+  // "use item on item" crafting: the index of the currently-selected item (white outline)
+  var _combineSel = null;
+  function setCombineSel(index) { _combineSel = index; updateInventory(); }
+  function clearCombineSel() { if (_combineSel !== null) { _combineSel = null; updateInventory(); } }
   function addDragHandlers(slot, index) {
     slot.setAttribute('draggable', 'true');
     slot.addEventListener('dragstart', function (e) {
@@ -426,14 +435,29 @@ var UI = (function () {
       showSkillTip(tip, e.clientX, e.clientY);
     });
     slot.addEventListener('mouseleave', hideSkillTip);
-    // left-click runs the item's primary action (equip gear / eat food)
+    // left-click: primary action (equip/eat/…) OR select-to-combine for items with none
     slot.addEventListener('click', function () {
       var it = Game.inventory[index];
-      if (!it) return;
-      if (Skills.isGear(it.id)) Skills.equipFromInventory(index);
-      else if (Skills.isFood(it.id)) Skills.eat(index);
-      else if (Skills.isBones(it.id)) Skills.bury(index);
-      else if (Skills.isEnchant(it.id)) Skills.useEnchant(index);
+      if (!it) { clearCombineSel(); return; }
+      // second click of a combine: use the selected item on this one
+      if (_combineSel !== null && _combineSel !== index) {
+        var made = Skills.combine(_combineSel, index);
+        if (!made && window.UI) UI.showActionText('Nothing interesting happens.');
+        clearCombineSel();
+        return;
+      }
+      // items with a primary use act immediately (and cancel any selection)
+      if (Skills.hasPrimaryUse(it.id)) {
+        clearCombineSel();
+        if (Skills.isGear(it.id)) Skills.equipFromInventory(index);
+        else if (Skills.isFood(it.id)) Skills.eat(index);
+        else if (Skills.isBones(it.id)) Skills.bury(index);
+        else if (Skills.isEnchant(it.id)) Skills.useEnchant(index);
+        return;
+      }
+      // no primary use → toggle the white-outline selection so it can be used on another item
+      if (_combineSel === index) clearCombineSel();
+      else setCombineSel(index);
     });
     // right-click opens the item's action menu (Use/Equip/Eat + Drop)
     slot.addEventListener('contextmenu', function (e) {
@@ -467,7 +491,7 @@ var UI = (function () {
       var item = Game.inventory[i];
       if (item) {
         count++;
-        slot.className = 'inv-slot filled' + (i === poppedIndex ? ' pop' : '');
+        slot.className = 'inv-slot filled' + (i === poppedIndex ? ' pop' : '') + (i === _combineSel ? ' combine-sel' : '');
         var countTag = (item.count > 1) ? '<span class="count">' + item.count + '</span>' : '';
         slot.innerHTML = countTag + iconHtml(item);
         slot.title = item.name + (item.count > 1 ? ' x' + item.count : '') + ' — right-click for options';
@@ -503,6 +527,8 @@ var UI = (function () {
     else if (Skills.isFood(item.id)) opts.push({ label: 'Eat ' + item.name, fn: function () { Skills.eat(index); } });
     else if (Skills.isBones(item.id)) opts.push({ label: 'Bury ' + item.name + ' (Prayer)', fn: function () { Skills.bury(index); } });
     else if (Skills.isEnchant(item.id)) opts.push({ label: 'Use ' + item.name, fn: function () { Skills.useEnchant(index); } });
+    // "Use" starts a combine (works for any item, even ones with a primary use)
+    opts.push({ label: 'Use ' + item.name, fn: function () { setCombineSel(index); } });
     opts.push({ label: 'Drop ' + item.name, fn: function () { Skills.dropItem(index); } });
     showContextMenu(x, y, opts);
   }
@@ -883,8 +909,15 @@ var UI = (function () {
   // ---------- chat: type in the bottom-left box, text floats over your head ----------
   var _overheadEl = null, _overheadT = 0;
   function chatFocused() { return el.chatInput && document.activeElement === el.chatInput; }
+  function dialogueOpen() { return window.Dialogue && Dialogue.isOpen && Dialogue.isOpen(); }
   function wireChat() {
     el.chatInput = $('chat-input');
+    el.chatLog = $('chat-log');
+    el.chatView = $('chat-view');
+    el.npcView = $('npc-view');
+    el.npcName = $('npc-name');
+    el.npcText = $('npc-text');
+    el.npcOptions = $('npc-options');
     if (!el.chatInput) return;
     el.chatInput.addEventListener('keydown', function (e) {
       e.stopPropagation();               // don't let game hotkeys fire while typing
@@ -892,13 +925,53 @@ var UI = (function () {
         var t = el.chatInput.value.trim();
         el.chatInput.value = '';
         el.chatInput.blur();
-        if (t) { showOverhead(t); if (window.Net && Net.sendChat) Net.sendChat(t); }
+        if (t) { showOverhead(t); appendChat('You', t); if (window.Net && Net.sendChat) Net.sendChat(t); }
       } else if (e.key === 'Escape') { el.chatInput.value = ''; el.chatInput.blur(); }
     });
-    // press Enter anywhere (when not already typing) to jump into the chat box
+    // press Enter anywhere (when not already typing, and not mid-conversation) to
+    // jump into the chat box
     window.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && !chatFocused() && el.chatInput) { e.preventDefault(); el.chatInput.focus(); }
+      if (e.key === 'Enter' && !chatFocused() && !dialogueOpen() && el.chatInput) { e.preventDefault(); el.chatInput.focus(); }
     });
+  }
+  // append a line to the scrolling chat log (keeps the last ~40 lines)
+  function appendChat(who, text) {
+    if (Game.headless || !el.chatLog) return;
+    var d = document.createElement('div');
+    d.className = 'cl-line' + (who ? '' : ' cl-sys');
+    d.innerHTML = who ? ('<b>' + String(who).replace(/</g, '&lt;') + ':</b> ' + String(text).replace(/</g, '&lt;'))
+                      : String(text).replace(/</g, '&lt;');
+    el.chatLog.appendChild(d);
+    while (el.chatLog.children.length > 40) el.chatLog.removeChild(el.chatLog.firstChild);
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
+  }
+
+  // ---------- NPC dialogue (swaps the bottom-left box to the conversation) ----------
+  // Called by Dialogue.render with { name, text, options:[{text,goto}] }.
+  function showDialogue(c) {
+    if (Game.headless || !el.npcView || !c) return;
+    if (el.chatView) el.chatView.style.display = 'none';
+    el.npcView.style.display = 'block';
+    if (el.npcName) el.npcName.textContent = c.name || '';
+    if (el.npcText) el.npcText.textContent = c.text || '';
+    if (!el.npcOptions) return;
+    el.npcOptions.innerHTML = '';
+    var opts = c.options || [];
+    for (var i = 0; i < opts.length; i++) {
+      (function (idx) {
+        var b = document.createElement('div');
+        b.className = 'npc-opt';
+        b.innerHTML = '<span class="opt-num">' + (idx + 1) + '.</span>' + String(opts[idx].text || '').replace(/</g, '&lt;');
+        b.addEventListener('click', function () { if (window.Dialogue) Dialogue.choose(idx); });
+        el.npcOptions.appendChild(b);
+      })(i);
+    }
+  }
+  // hide the NPC view and return to the chat box
+  function hideDialogue() {
+    if (!el.npcView) return;
+    el.npcView.style.display = 'none';
+    if (el.chatView) el.chatView.style.display = 'block';
   }
   // show text over the local player's head (also used for NPC replies later)
   function showOverhead(text) {
@@ -974,6 +1047,18 @@ var UI = (function () {
       s._labelEl.style.display = 'block';
       s._labelEl.style.left = pt.x + 'px';
       s._labelEl.style.top = pt.y + 'px';
+    }
+  }
+
+  // Remove every floating world label/nameplate DOM node (camp, merchant, enemy),
+  // keeping the player's own HP bar. Used when entering story mode, which wipes the
+  // default world's entities — their label divs would otherwise freeze on screen.
+  function clearEntityLabels() {
+    if (!labelLayer) return;
+    var els = labelLayer.querySelectorAll('.entity-label');
+    for (var i = 0; i < els.length; i++) {
+      if (els[i].classList && els[i].classList.contains('player')) continue;   // keep the player HP bar
+      if (els[i].parentNode) els[i].parentNode.removeChild(els[i]);
     }
   }
 
@@ -1080,8 +1165,9 @@ var UI = (function () {
     showActionText: showActionText, setTarget: setTarget, announce: announce,
     showTip: showTip, hideTip: hideTip, showCountdown: showCountdown, clearOverlays: clearOverlays,
     spawnHitsplat: spawnHitsplat, spawnXpGain: spawnXpGain, spawnSpeech: spawnSpeech, updateLabels: updateLabels,
-    updateCampLabels: updateCampLabels, updateMerchantLabels: updateMerchantLabels,
+    updateCampLabels: updateCampLabels, updateMerchantLabels: updateMerchantLabels, clearEntityLabels: clearEntityLabels,
     showOverhead: showOverhead, updateOverheadChat: updateOverheadChat, chatFocused: chatFocused,
+    appendChat: appendChat, showDialogue: showDialogue, hideDialogue: hideDialogue,
     flashDamage: flashDamage, hideBoot: hideBoot, setBootStatus: setBootStatus,
     showDeathScreen: showDeathScreen, hideDeathScreen: hideDeathScreen,
     showVictory: showVictory,

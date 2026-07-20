@@ -310,6 +310,13 @@ const server = Bun.serve({
       return Response.json({ files }, { headers: { "Cache-Control": "no-store" } });
     }
 
+    // list custom inventory-item icon images so the client can auto-bind them by name
+    if (path === "/__itemicons") {
+      let files = [];
+      try { files = readdirSync(join(ROOT, "itemicons")).filter((f) => /\.(png|gif|jpg|jpeg|webp)$/i.test(f)); } catch {}
+      return Response.json({ files }, { headers: { "Cache-Control": "no-store" } });
+    }
+
     // static files
     if (path === "/") path = "/index.html";
     const full = normalize(join(ROOT, path));

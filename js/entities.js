@@ -18,6 +18,9 @@ var Entities = (function () {
   var essAltars = [];          // versus: essence altars on the central platform
   var crystals = [];           // resonant crystal pillars (Lv12 mining → rock essence)
   var meteorites = [];         // corner meteorite: mine at max Mining+Woodcutting → Tin Akal
+  var storyPicks = [];         // story-mode "_PICK" pickups (sticks…) — respawn after collection
+  var tempFires = [];          // player-lit fires (flint + kindling) — temporary cooking spots
+  var npcs = [];               // story-mode talkable NPCs (a copy of the player character)
 
   // No roaming enemies in the open field — combat lives at the E/W bandit camps
   // (and rats). Enemies still spawn hidden so the self-test + server indices align.
@@ -60,7 +63,8 @@ var Entities = (function () {
     { ore: 'iron',    tier: 2 }, { ore: 'ore',    tier: 1 }
   ];
   var COOK_PLAN = [
-    { raw: 'whale', tier: 3 }, { raw: 'lobster', tier: 2 }, { raw: 'shrimp', tier: 1 }
+    { raw: 'whale', tier: 3 }, { raw: 'lobster', tier: 2 }, { raw: 'shrimp', tier: 1 },
+    { raw: 'raw_fish', tier: 1 }   // story-mode primitive catch: any fire cooks it
   ];
 
   function terrainY(x, z) {
@@ -418,7 +422,7 @@ var Entities = (function () {
       }
       var pot = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.3, 0.5, 10),
         new THREE.MeshStandardMaterial({ color: 0x24241f, roughness: 0.7, metalness: 0.3, flatShading: true }));
-      pot.position.y = 0.72; g.add(pot);
+      pot.position.y = 0.72; g.add(pot); ent.pot = pot;
     } else if (kind === 'furnace') {
       ent.name = 'Furnace';
       var stone = new THREE.MeshStandardMaterial({ color: 0x565049, roughness: 1, flatShading: true });
@@ -473,6 +477,47 @@ var Entities = (function () {
       ent.opening.material.emissive.setHex(0xff5a10);
       ent.opening.material.emissiveIntensity = 1.6;
     }
+  }
+
+  // Light a fire from flint + kindling (the primitive fire chain). Places a
+  // pre-lit, temporary campfire on a free tile next to the player so you can
+  // cook without a built camp — it burns out after FIRE_LIFE seconds.
+  // Returns true if a fire was placed (so Skills.combine consumes the items).
+  var FIRE_LIFE = 120;   // seconds a hand-lit fire lasts
+  function lightFire() {
+    var p = Game.player && Game.player.position;
+    if (!p) return false;
+    // pick a walkable tile: prefer one of the 4 neighbours (so the fire sits
+    // beside you, not under you), else fall back to your own tile.
+    var fx = p.x, fz = p.z, placed = false;
+    if (window.Grid && Grid.worldToTile) {
+      var t = Grid.worldToTile(p.x, p.z);
+      var nb = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      for (var k = 0; k < nb.length; k++) {
+        var tx = t.tx + nb[k][0], tz = t.tz + nb[k][1];
+        if (Grid.walkable && Grid.walkable(tx, tz)) {
+          var c = Grid.tileCenter(tx, tz); fx = c.x; fz = c.z; placed = true; break;
+        }
+      }
+      if (!placed) { var c0 = Grid.tileCenter(t.tx, t.tz); fx = c0.x; fz = c0.z; }
+    }
+    var fire = makeStation(fx, fz, 'campfire');
+    if (fire.pot) { fire.mesh.remove(fire.pot); fire.pot = null; }   // a hand-lit fire has no cooking pot
+    fire.name = 'Fire';
+    fire.level = fire.maxLevel;   // a hand-lit fire cooks every tier it can reach
+    fire.temp = true; fire.life = FIRE_LIFE;
+    lightStation(fire);           // already burning — no log needed
+    stations.push(fire);
+    tempFires.push(fire);
+    if (window.UI) UI.showActionText('You strike sparks into the kindling — a fire crackles to life.');
+    return true;
+  }
+  // Remove a burned-out temporary fire from the world.
+  function extinguishFire(fire) {
+    var si = stations.indexOf(fire); if (si >= 0) stations.splice(si, 1);
+    var ti = tempFires.indexOf(fire); if (ti >= 0) tempFires.splice(ti, 1);
+    untag(fire);
+    if (fire.mesh && fire.mesh.parent) fire.mesh.parent.remove(fire.mesh);
   }
 
   // Use a station with whatever is in the bag (item-data flow).
@@ -1623,7 +1668,9 @@ var Entities = (function () {
     if (!window.Grid || !Grid.tileCenter) return;
     function snap(arr) {
       for (var i = 0; i < arr.length; i++) {
-        var e = arr[i], p = e.mesh && e.mesh.position;
+        var e = arr[i];
+        if (e.imported) continue;   // imported meshes stay exactly where the artist placed them
+        var p = e.mesh && e.mesh.position;
         if (!p) continue;
         var t = Grid.worldToTile(p.x, p.z), c = Grid.tileCenter(t.tx, t.tz);
         e.mesh.position.x = c.x; e.mesh.position.z = c.z;
@@ -1644,48 +1691,236 @@ var Entities = (function () {
     }
   }
 
-  // ---------- Story Mode: build the world from a hand-placed layout ----------
-  function clearResources() {
-    function wipe(arr) { for (var i = 0; i < arr.length; i++) { untag(arr[i]); if (arr[i].mesh) scene.remove(arr[i].mesh); } arr.length = 0; }
-    wipe(trees); wipe(rocks); wipe(pools); wipe(crystals); wipe(meteorites);
+  // ---------- Story Mode: overlay game logic onto an imported level ----------
+  // The imported level (world map/Level_01.glb) supplies ALL the scenery as real
+  // geometry — floor, cliff walls, waterfall, palms, sticks. We keep that geometry
+  // untouched and only OVERLAY interactive game objects wherever a node's NAME is
+  // recognised: copper ore -> a minable rock, the character -> the spawn point, and
+  // so on. Nodes we don't recognise are left exactly as they are (decoration).
+  // Hide EVERY default versus/co-op visual so story mode shows only the imported
+  // level. We hide the whole scene (minus lights, the player, and the imported
+  // 'storyLevel' group) rather than enumerate each builder's meshes, so nothing is
+  // ever missed. The ground is left in the scene (invisible) so it stays
+  // raycastable and click-to-move keeps working.
+  function stripDefaultWorld() {
+    if (!scene) return;
+    var pg = (window.Player && Player.group) || (Game.player && Game.player.group);
+    for (var i = 0; i < scene.children.length; i++) {
+      var c = scene.children[i];
+      if (c.isLight || c === pg || c.name === 'storyLevel') continue;
+      c.visible = false;
+    }
   }
-  // spawn one game object from a named layout marker (name is case/spacing-insensitive)
-  function spawnByName(name, x, z) {
-    var n = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
-    function has() { for (var i = 0; i < arguments.length; i++) if (n.indexOf(arguments[i]) >= 0) return true; return false; }
-    if (has('copper_ore', 'bronze_ore')) rocks.push(makeRock(x, z, 0));
-    else if (has('iron_ore')) rocks.push(makeRock(x, z, 1));
-    else if (has('silver_ore')) rocks.push(makeRock(x, z, 2));
-    else if (has('gold_ore')) rocks.push(makeRock(x, z, 3));
-    else if (has('date_bush')) pools.push(makePond(x, z, 0));
-    else if (has('prickly', 'pear')) pools.push(makePond(x, z, 1));
-    else if (has('fig')) pools.push(makePond(x, z, 2));
-    else if (has('meteor')) makeMeteorite(x, z);
-    else if (has('crystal')) makeCrystalPillar(x, z);
-    else if (has('furnace')) stations.push(makeStation(x, z, 'furnace'));
-    else if (has('anvil')) stations.push(makeStation(x, z, 'anvil'));
-    else if (has('campfire')) stations.push(makeStation(x, z, 'campfire'));
-    else if (has('merchant')) stations.push(makeStation(x, z, 'merchant'));
-    else if (has('bandit') && has('east')) makeBanditCamp(x, z, 'east');
-    else if (has('bandit') && has('west')) makeBanditCamp(x, z, 'west');
-    else if (has('cactus')) makeCactus(x, z);
-    else if (has('boulder')) makeBoulder(x, z);
-    else if (has('palm')) trees.push(makeTree(x, z, 1));
-    else if (has('ebony')) trees.push(makeTree(x, z, 2));
-    else if (has('elder')) trees.push(makeTree(x, z, 3));
-    else if (has('dead_tree', 'tree')) trees.push(makeTree(x, z, 0));
-    else if (has('bush')) makeBush(x, z);
-    else if (has('spawn')) { Game.storySpawn = { x: x, z: z }; }
-    else return false;
-    return true;
+  // Empty every default entity list + the interactable/label state, so no phantom
+  // clicks, floating labels, HP bars or critters linger from the desert world.
+  function clearForStory() {
+    var lists = [trees, rocks, pools, crystals, meteorites, stations, enemies,
+                 bandits, banditCamps, barrels, chests, buildings, camps,
+                 rats, birds, builds, essAltars, drops, storyPicks, tempFires, npcs];
+    for (var i = 0; i < lists.length; i++) lists[i].length = 0;
+    obelisk = null;
+    interactMeshes.length = 0;
+    // the labels are DOM nodes on those entities — drop them or they freeze on screen
+    if (window.UI && UI.clearEntityLabels) UI.clearEntityLabels();
   }
-  // Replace the procedural resources with the hand-placed layout, keep camps/plaza.
+  // Bind an imported mesh as an interactable gathering node, so the player mines/chops
+  // the ARTIST's own geometry (not a procedural stand-in). It's shown/hidden on
+  // respawn/deplete via the `imported` branch in deplete/restoreResource.
+  function bindImportedResource(obj, x, z, type, opts) {
+    var ent = {
+      type: type, name: opts.name, reqLevel: opts.reqLevel || 1, itemId: opts.itemId,
+      xp: opts.xp || 12, tier: opts.tier || 0, noDeplete: !!opts.noDeplete,
+      noYield: !!opts.noYield, permanent: !!opts.permanent,   // clearable boulder: gives nothing, never comes back
+      mesh: obj, position: new THREE.Vector3(x, 0, z),
+      active: true, interactRange: opts.range || 2.6, reqTool: opts.reqTool || null, skill: opts.skill || null,
+      amount: opts.amount || 1, maxAmount: opts.amount || 1, respawn: 0, imported: true
+    };
+    // Small props (sticks, reeds) get a whole-tile invisible click box so they're
+    // easy to click/hover; the thin art mesh itself is a poor raycast target.
+    var clickTarget = obj;
+    if (opts.tileHitbox && scene) {
+      var TILE = (window.Grid && Grid.TILE) || 2;
+      var hb = new THREE.Mesh(new THREE.BoxGeometry(TILE, 3, TILE), new THREE.MeshBasicMaterial());
+      hb.visible = false;                 // invisible, but still raycastable
+      hb.position.set(x, 1.5, z);
+      scene.add(hb);
+      ent.hitbox = hb;
+      clickTarget = hb;
+    }
+    if (clickTarget) tag(clickTarget, ent);
+    return ent;
+  }
+  function oreTierFromName(n) {
+    if (n.indexOf('iron') >= 0) return 1;
+    if (n.indexOf('silver') >= 0) return 2;
+    if (n.indexOf('gold') >= 0) return 3;
+    return 0;   // copper / default
+  }
+  // Turn a map node name into a readable display name, e.g.
+  // "SuperSoftBolder_MINE" → "Super Soft Bolder", "DeadPalmTree_CHOP" → "Dead Palm Tree".
+  function prettyName(raw, fallback) {
+    var s = String(raw || '').replace(/_(inv|mine|chop|pick|harvest|gate|geo|fish|npc|talk)\b[\s\S]*$/i, '');   // strip the suffix
+    s = s.replace(/[_\d]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+/g, ' ').trim();  // split camelCase / underscores
+    return s || fallback || 'Rock';
+  }
+  // Pick up an imported "_PICK" object (e.g. a stick): add the item, hide the mesh,
+  // and set it to respawn (ticked from update via the storyPicks list). We keep it
+  // tagged — active=false makes it un-clickable until it reappears.
+  function pickupImported(ent) {
+    if (!ent || !ent.active) return;
+    if (window.Skills && Skills.addItem && Skills.addItem(ent.itemId || 'stick')) {
+      if (window.UI) UI.showActionText('You pick up a ' + (ent.itemId || 'stick') + '.');
+      // sticks deplete + respawn; an endless pile (noDeplete) just keeps giving
+      if (!ent.noDeplete) { ent.active = false; if (ent.mesh) ent.mesh.visible = false; ent.respawn = 15; }
+    } else if (window.UI) UI.showActionText('Your inventory is full!');
+  }
+  // Story "_GATE" (cave entrance): placeholder until deeper levels exist.
+  function useGate(ent) {
+    if (window.UI) UI.showActionText('The cave entrance is sealed for now — deeper levels are coming.');
+  }
+
+  // ---------- talkable NPCs (a copy of the player character) ----------
+  // A simple box-humanoid used when the custom player-character model isn't
+  // available (offline / not loaded yet) — a bluish-robed figure so it reads as
+  // "someone else" next to the player.
+  function makeSimpleFigure() {
+    var g = new THREE.Group();
+    var robe = new THREE.MeshLambertMaterial({ color: 0x5f7391 });    // cool robe → distinct from the player
+    var skin = new THREE.MeshLambertMaterial({ color: 0xd8b48a });
+    var dark = new THREE.MeshLambertMaterial({ color: 0x3a4658 });
+    var torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.5), robe); torso.position.y = 1.5; g.add(torso);
+    var head = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.6, 0.6), skin); head.position.y = 2.33; g.add(head);
+    var band = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.15, 0.64), dark); band.position.y = 0.26; head.add(band);
+    for (var s = -1; s <= 1; s += 2) {
+      var arm = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.0, 0.24), robe); arm.position.set(s * 0.6, 1.5, 0); g.add(arm);
+      var leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.95, 0.3), dark);  leg.position.set(s * 0.24, 0.48, 0); g.add(leg);
+    }
+    g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+    return g;
+  }
+  // Spawn a talkable NPC at (x,z). Uses a CLONE of the imported player-character
+  // model when it's loaded (so the NPC really is "a copy of the player"), else the
+  // simple figure above. Registered as an interactable of type 'npc'.
+  function makeNpc(x, z, opts) {
+    opts = opts || {};
+    // sit on the tile centre so it lines up with the grid like every other object
+    if (window.Grid && Grid.worldToTile && Grid.tileCenter) {
+      var t = Grid.worldToTile(x, z), c = Grid.tileCenter(t.tx, t.tz); x = c.x; z = c.z;
+    }
+    var g = new THREE.Group();
+    var m = (window.Models && Models.getCharacter) ? Models.getCharacter() : null;
+    if (m) {
+      m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1);
+      m.updateMatrixWorld(true);
+      var sz = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+      m.scale.setScalar(2.66 / (sz.y || 1));            // match the ~2.66u character height
+      m.updateMatrixWorld(true);
+      var b = new THREE.Box3().setFromObject(m);
+      m.position.set(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);   // centre xz, feet on ground
+      m.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+      g.add(m);
+    } else {
+      g.add(makeSimpleFigure());
+    }
+    g.position.set(x, terrainY(x, z), z);
+    if (scene) scene.add(g);
+
+    var ent = {
+      type: 'npc', name: opts.name || 'Wanderer', dialogueId: opts.dialogueId || 'trapped_wanderer',
+      mesh: g, position: new THREE.Vector3(x, 0, z), active: true, interactRange: opts.range || 2.8
+    };
+    // an invisible tall box makes the NPC an easy click/hover target (thin art is not)
+    var TILE = (window.Grid && Grid.TILE) || 2;
+    var hb = new THREE.Mesh(new THREE.BoxGeometry(TILE * 0.9, 3, TILE * 0.9), new THREE.MeshBasicMaterial());
+    hb.visible = false; hb.userData.hitbox = true; hb.position.set(x, 1.5, z);
+    if (scene) scene.add(hb);
+    ent.hitbox = hb;
+    tag(hb, ent);
+    npcs.push(ent);
+    return ent;
+  }
+  // Start a conversation with an NPC (turns to face the player first).
+  function talkToNpc(ent) {
+    if (!ent) return;
+    if (ent.mesh && Game.player && Game.player.position) {
+      var p = Game.player.position;
+      ent.mesh.rotation.y = Math.atan2(p.x - ent.position.x, p.z - ent.position.z);
+    }
+    if (window.Dialogue && Dialogue.start) Dialogue.start(ent.dialogueId, ent.name);
+    else if (window.UI) UI.showActionText(ent.name + ' has nothing to say.');
+  }
+  // Classify one imported node by its NAME SUFFIX and wire up its behaviour.
+  // Convention (case-insensitive substring): _MINE = mineable rock, _CHOP = choppable
+  // tree, _PICK = pick-up item, _INV = solid collision scenery (blocked in worldmap.js),
+  // SpawnPoint = player start, everything else (_Geo, Water…) = plain decoration.
+  function classifyStoryNode(nd) {
+    var n = String(nd.name || '').toLowerCase(), obj = nd.obj, x = nd.x, z = nd.z;
+    if (n.indexOf('spawn') >= 0) { Game.storySpawn = { x: x, z: z }; if (obj) obj.visible = false; return true; }
+    // a talkable NPC: node named "..._NPC" (or "_TALK"). The display name becomes a
+    // dialogue id, e.g. "OldHermit_NPC" → "old_hermit" (see dialogue/README.md).
+    if (n.indexOf('npc') >= 0 || n.indexOf('talk') >= 0) {
+      if (obj) obj.visible = false;   // hide the placeholder marker mesh from the .glb
+      var dispName = prettyName(nd.name, 'Wanderer');
+      var did = dispName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      makeNpc(x, z, { name: dispName, dialogueId: did });
+      return true;
+    }
+    if (n.indexOf('mine') >= 0) {
+      var tier = oreTierFromName(n), T = ROCK_TIERS[tier];
+      var isBoulder = /bolder|boulder/.test(n);   // a boulder is cleared away (no ore, never respawns)
+      rocks.push(bindImportedResource(obj, x, z, 'rock',
+        { name: prettyName(nd.name, 'Rock'), reqLevel: T.reqLevel, itemId: isBoulder ? null : T.itemId,
+          xp: isBoulder ? 0 : T.xp, tier: tier, amount: 1, noYield: isBoulder, permanent: isBoulder }));
+      return true;
+    }
+    if (n.indexOf('chop') >= 0) {   // dead palm: needs an axe, gives 2 Woodcutting xp, never depletes
+      trees.push(bindImportedResource(obj, x, z, 'tree',
+        { name: prettyName(nd.name, 'Dead Tree'), reqLevel: 1, itemId: 'log', xp: 2, tier: 0, amount: 99, noDeplete: true }));
+      return true;
+    }
+    if (n.indexOf('harvest') >= 0) {   // reeds: Harvesting skill (fishpool), 2 xp, no tool, never depletes
+      bindImportedResource(obj, x, z, 'fishpool', { name: 'Reeds', reqLevel: 1, itemId: 'reed', xp: 2, tileHitbox: true });
+      return true;
+    }
+    if (n.indexOf('pick') >= 0) {   // pickups: pile of rocks (endless), flint, or sticks (deplete+respawn)
+      var pItem, pName, pNoDep;
+      if (n.indexOf('rock') >= 0) { pItem = 'rock'; pName = 'Pile of Rocks'; pNoDep = true; }
+      else if (n.indexOf('flint') >= 0 || n.indexOf('flinkt') >= 0) { pItem = 'flint'; pName = 'Flint'; pNoDep = false; }
+      else { pItem = 'stick'; pName = 'Stick'; pNoDep = false; }
+      storyPicks.push(bindImportedResource(obj, x, z, 'pick', { name: pName, itemId: pItem, tileHitbox: true, noDeplete: pNoDep }));
+      return true;
+    }
+    if (n.indexOf('gate') >= 0) { bindImportedResource(obj, x, z, 'gate', { name: 'Cave Entrance' }); return true; }
+    // a fishing spot: ONLY nodes explicitly marked "_FISH" (the open water surface
+    // itself is NOT fishable). Requires a Primitive Fishing Net (reed fibers ×2) →
+    // gives a Raw Sardine to cook on a fire.
+    if (n.indexOf('fish') >= 0) {
+      // bound (not pushed to `pools`) so it stays a still water surface, no sway.
+      // Fishing trains HUNTING (a sardine is a Lv1 catch worth 2 xp).
+      bindImportedResource(obj, x, z, 'fishpool',
+        { name: prettyName(nd.name, 'Fishing Spot'), reqLevel: 1, itemId: 'raw_fish', xp: 2, reqTool: 'net', skill: 'hunting' });
+      return true;
+    }
+    return false;   // _INV (collision, handled in worldmap.js) / _Geo / decoration
+  }
+  // Wire game logic onto the imported level by node-name suffix (see classifyStoryNode).
+  // `nodes` is { name, x, z, obj } in final game-world coords (from worldmap.js).
   function applyStoryMap(nodes) {
-    clearResources();
+    stripDefaultWorld();   // hide the default desert — story mode is ONLY the imported level
+    clearForStory();       // wipe default interactables/labels so nothing phantom remains
     var count = 0;
     for (var i = 0; i < (nodes ? nodes.length : 0); i++) {
-      try { if (spawnByName(nodes[i].name, nodes[i].x, nodes[i].z)) count++; } catch (e) {}
+      try { if (classifyStoryNode(nodes[i])) count++; }
+      catch (e) { if (window.console) console.warn('[Story] node failed', nodes[i] && nodes[i].name, e); }
     }
+    // No hand-placed NPC in the level? Drop the test wanderer near the player's
+    // spawn (a few units toward the level centre) so there's always someone to talk to.
+    if (npcs.length === 0 && Game.storySpawn) {
+      var sp = Game.storySpawn, dx = -sp.x, dz = -sp.z, len = Math.hypot(dx, dz) || 1;
+      makeNpc(sp.x + (dx / len) * 4, sp.z + (dz / len) * 4, { name: 'Trapped Wanderer', dialogueId: 'trapped_wanderer' });
+    }
+    // (Ground height is handled by worldmap.js: in story mode the player follows the
+    //  imported floor surface exactly — see the World.ground.userData.heightAt probe.)
     trees.forEach(function (e, i) { e.index = i; });
     rocks.forEach(function (e, i) { e.index = i; });
     snapToGrid();
@@ -1712,6 +1947,7 @@ var Entities = (function () {
     stamp(meteorites, 2.0);
     stamp(essAltars, 1.2);
     stamp(stations, 1.3);   // kept < 1.4 so the orthogonally-adjacent tile stays walkable to interact from
+    stamp(npcs, 1.0);       // stop next to an NPC to talk (like a rock/station)
     if (obelisk && obelisk.position) Grid.blockCircle(obelisk.position.x, obelisk.position.z, 1.6);
   }
 
@@ -1762,7 +1998,8 @@ var Entities = (function () {
     for (var i = 0; i < kids.length; i++) if (kids[i] !== ent._rubble) kids[i].visible = vis;
   }
   function depleteResource(ent) {
-    if (ent.type === 'tree') { ent.branches.visible = false; ent.mesh.scale.y = 0.4; }
+    if (ent.imported) { if (ent.mesh) ent.mesh.visible = false; }   // imported node: just hide the artist's mesh
+    else if (ent.type === 'tree') { ent.branches.visible = false; ent.mesh.scale.y = 0.4; }
     else if (ent.type === 'rock') {
       // leave a pile of rubble instead of a shrunken ore rock
       if (!ent._rubble) { ent._rubble = makeRubble(ent.tier); ent.mesh.add(ent._rubble); }
@@ -1770,11 +2007,13 @@ var Entities = (function () {
       setRockBodyVisible(ent, false);
     }
     ent.active = false;
-    ent.respawn = ent.type === 'tree' ? 8 : 6;
+    ent.respawn = ent.permanent ? 0 : (ent.type === 'tree' ? 8 : 6);   // permanent (boulder) never comes back
+    if (ent.permanent) untag(ent);   // gone forever — not even clickable
   }
   function restoreResource(ent) {
     ent.active = true; ent.amount = ent.maxAmount; ent.respawn = 0;
-    if (ent.type === 'tree') { ent.branches.visible = true; ent.mesh.scale.set(1, 1, 1); }
+    if (ent.imported) { if (ent.mesh) ent.mesh.visible = true; }
+    else if (ent.type === 'tree') { ent.branches.visible = true; ent.mesh.scale.set(1, 1, 1); }
     else if (ent.type === 'rock') {
       if (ent._rubble) ent._rubble.visible = false;
       setRockBodyVisible(ent, true);
@@ -1987,9 +2226,10 @@ var Entities = (function () {
 
   function update(dt, t) {
     var i;
-    if (!Game.online) {  // server owns resource respawn when connected
+    if (!Game.online || Game.mode === 'story') {  // server owns respawn online, but story is always client-local
       for (i = 0; i < trees.length; i++) if (!trees[i].active && trees[i].respawn > 0) { trees[i].respawn -= dt; if (trees[i].respawn <= 0) restoreResource(trees[i]); }
       for (i = 0; i < rocks.length; i++) if (!rocks[i].active && rocks[i].respawn > 0) { rocks[i].respawn -= dt; if (rocks[i].respawn <= 0) restoreResource(rocks[i]); }
+      for (i = 0; i < storyPicks.length; i++) if (!storyPicks[i].active && storyPicks[i].respawn > 0) { storyPicks[i].respawn -= dt; if (storyPicks[i].respawn <= 0) restoreResource(storyPicks[i]); }
     }
     for (i = 0; i < barrels.length; i++) { var b = barrels[i]; b.light.intensity = b.baseIntensity * (0.7 + 0.5 * Math.abs(Math.sin(t * 3 + i)) + Utils.rand() * 0.1); if (b.flame) b.flame.scale.y = 0.85 + 0.2 * Math.abs(Math.sin(t * 9 + i)); }
     // animate each harvest plant: a gentle wind sway
@@ -2005,6 +2245,11 @@ var Entities = (function () {
       if (stn.flame) stn.flame.scale.y = 0.85 + 0.2 * Math.abs(Math.sin(t * 10 + i));
     }
     for (i = 0; i < stations.length; i++) if (stations[i].camel) updateCamel(stations[i], dt);
+    // burn down player-lit fires; when one dies, pull it from the world
+    for (i = tempFires.length - 1; i >= 0; i--) {
+      tempFires[i].life -= dt;
+      if (tempFires[i].life <= 0) extinguishFire(tempFires[i]);
+    }
     if (obelisk && obelisk.done) {   // victory glow: pulsing light, spinning cap
       obelisk.t += dt;
       obelisk.light.intensity = 3.5 + Math.sin(obelisk.t * 4) * 1.5;
@@ -2185,13 +2430,15 @@ var Entities = (function () {
     init: init, update: update, reset: reset, newRound: newRound, setHighlight: setHighlight,
     depleteResource: depleteResource, killEnemy: killEnemy, openChest: openChest,
     useStation: useStation, upgradeStation: upgradeStation, upgradeCost: upgradeCost,
+    lightFire: lightFire, get tempFires() { return tempFires; },
     sendCaravan: sendCaravan, merchantBusy: merchantBusy, sellToMerchant: sellToMerchant,
     useObelisk: useObelisk, remoteWin: remoteWin, get obelisk() { return obelisk; },
     useEssenceAltar: useEssenceAltar, onAltarClaimed: onAltarClaimed, get essAltars() { return essAltars; },
     mineCrystal: mineCrystal, get crystals() { return crystals; },
     mineMeteorite: mineMeteorite, get meteorites() { return meteorites; },
     debugMaxStations: debugMaxStations, applyStoryMap: applyStoryMap, applyRockModels: applyRockModels,
-    pickupDrop: pickupDrop, spawnRaid: spawnRaid, spawnImps: spawnImps, clearRaiders: clearRaiders, tagExternal: tagExternal, untagExternal: untagExternal,
+    pickupDrop: pickupDrop, pickupImported: pickupImported, useGate: useGate, makeNpc: makeNpc, talkToNpc: talkToNpc,
+    spawnRaid: spawnRaid, spawnImps: spawnImps, clearRaiders: clearRaiders, tagExternal: tagExternal, untagExternal: untagExternal,
     spawnBuild: spawnBuild,
     get bandits() { return bandits; }, get banditCamps() { return banditCamps; }, get builds() { return builds; },
     get drops() { return drops; }, get rats() { return rats; },
@@ -2204,6 +2451,7 @@ var Entities = (function () {
     get trees() { return trees; }, get rocks() { return rocks; },
     get enemies() { return enemies; }, get barrels() { return barrels; },
     get pools() { return pools; }, get chests() { return chests; }, get buildings() { return buildings; },
-    get stations() { return stations; }, get camps() { return camps; }
+    get stations() { return stations; }, get camps() { return camps; },
+    get npcs() { return npcs; }
   };
 })();

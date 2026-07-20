@@ -57,12 +57,51 @@ var World = (function () {
     return tex;
   }
 
+  // Give the ground a RuneScape-style per-vertex colour field: each grid vertex
+  // starts at the base sand colour nudged by a little HSL noise (patchy hue/sat/
+  // lightness), then the field is blurred toward its neighbours a few passes so
+  // adjacent tiles blend instead of hard-edging. Gouraud shading interpolates it
+  // across each tile — the subtle tile-to-tile variation the desert was missing.
+  function makeGroundColors(geo, N) {
+    var verts = (N + 1) * (N + 1), base = new THREE.Color(0xd8bd8a), hsl = {};
+    base.getHSL(hsl);
+    var h = new Array(verts), s = new Array(verts), l = new Array(verts), i;
+    for (i = 0; i < verts; i++) {
+      h[i] = hsl.h + (Math.random() - 0.5) * 0.03;   // slight hue drift
+      s[i] = hsl.s + (Math.random() - 0.5) * 0.18;    // patchy saturation
+      l[i] = hsl.l + (Math.random() - 0.5) * 0.16;    // light / dark patches
+    }
+    function idx(x, y) { return y * (N + 1) + x; }
+    for (var pass = 0; pass < 2; pass++) {            // blur toward neighbours
+      var nh = h.slice(), ns = s.slice(), nl = l.slice();
+      for (var y = 0; y <= N; y++) for (var x = 0; x <= N; x++) {
+        var sh = 0, ss = 0, sl = 0, c = 0;
+        for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+          var xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx > N || yy > N) continue;
+          var k = idx(xx, yy); sh += h[k]; ss += s[k]; sl += l[k]; c++;
+        }
+        var j = idx(x, y); nh[j] = sh / c; ns[j] = ss / c; nl[j] = sl / c;
+      }
+      h = nh; s = ns; l = nl;
+    }
+    var col = new Float32Array(verts * 3), tmp = new THREE.Color();
+    function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+    for (i = 0; i < verts; i++) {
+      tmp.setHSL(h[i], clamp01(s[i]), clamp01(l[i]));
+      col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  }
+
   // Flat desert floor (no dunes → no geometry clipping with objects).
   function buildTerrain() {
-    var geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 1, 1);
+    var N = Math.max(1, Math.round(WORLD_SIZE / ((window.Grid && Grid.TILE) || 2)));   // one segment per movement tile
+    var geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, N, N);
     geo.rotateX(-Math.PI / 2);
+    makeGroundColors(geo, N);
     groundMat = new THREE.MeshStandardMaterial({
-      color: 0xd8bd8a, roughness: 1.0, metalness: 0.0, flatShading: true   // desert sand
+      color: 0xffffff, roughness: 1.0, metalness: 0.0, vertexColors: true   // desert sand, per-tile colour
     });
     if (!Game.headless) groundMat.map = makeSandTexture();
     ground = new THREE.Mesh(geo, groundMat);
@@ -141,8 +180,8 @@ var World = (function () {
 
   function init(canvas) {
     scene = new THREE.Scene();
-    // warm, hazy desert sky (no fog)
-    scene.background = new THREE.Color(0xe3d3a8);
+    // clear blue desert sky (no fog)
+    scene.background = new THREE.Color(0x6fb0e6);
 
     camera = new THREE.PerspectiveCamera(
       55, window.innerWidth / window.innerHeight, 0.1, 400
@@ -153,7 +192,7 @@ var World = (function () {
     // Renderer — guarded so ?selftest can run even if WebGL is unavailable.
     if (!Game.headless) {
       renderer = new THREE.WebGLRenderer({
-        canvas: canvas, antialias: true, powerPreference: 'high-performance'
+        canvas: canvas, antialias: false, powerPreference: 'high-performance'   // AA off → jagged PS1 edges
       });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -203,7 +242,7 @@ var World = (function () {
   //   • the natural day/night cycle (`_tod`, a smooth 8-min loop = 4 day/4 night)
   //   • the co-op ritual dusk (`_dusk`, driven by sigils via setDusk)
   // The darker of the two wins; dusk paints the sky blood-red, night deep blue.
-  var DAY_SKY   = { r: 0xe3, g: 0xd3, b: 0xa8 };
+  var DAY_SKY   = { r: 0x6f, g: 0xb0, b: 0xe6 };   // clear blue daytime sky
   var DUSK_SKY  = { r: 0x3a, g: 0x18, b: 0x22 };   // ritual blood-dusk
   var NIGHT_SKY = { r: 0x0c, g: 0x14, b: 0x2c };   // natural night
   var _dusk = 0;
@@ -236,17 +275,37 @@ var World = (function () {
 
   function setDusk(level) { _dusk = Utils.clamp(level, 0, 1); applyLighting(); }
 
+  // Sharpen the sun's shadow for story mode: the imported area is large, so the
+  // default 512 map bands/acnes across the floor. Bigger map + normal bias fixes it.
+  function boostShadows() {
+    if (!sunLight || !sunLight.shadow) return;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.bias = -0.0003;
+    sunLight.shadow.normalBias = 2.0;
+    if (sunLight.shadow.map) { sunLight.shadow.map.dispose(); sunLight.shadow.map = null; }
+    sunLight.shadow.needsUpdate = true;
+  }
+
   function update(dt, t) {
     updateSandDrift(dt, t);
+    // Story mode is always high noon — no day/night cycle, no ritual dusk.
+    if (Game.mode === 'story') {
+      if (_tod !== 0 || _dusk !== 0) { _tod = 0; _dusk = 0; applyLighting(); }
+      return;
+    }
     if (dt) { _tod += dt / DAY_LEN; if (_tod >= 1) _tod -= 1; applyLighting(); }
   }
 
   function render() {
-    if (renderer && scene && camera) renderer.render(scene, camera);
+    if (renderer && scene && camera) {
+      // depth pre-pass for the story-mode water's intersection foam (no-op elsewhere)
+      if (window.WorldMap && WorldMap.prepFoam) WorldMap.prepFoam(renderer, scene, camera);
+      renderer.render(scene, camera);
+    }
   }
 
   return {
-    init: init, update: update, render: render, setDusk: setDusk,
+    init: init, update: update, render: render, setDusk: setDusk, boostShadows: boostShadows,
     get scene() { return scene; },
     get camera() { return camera; },
     get renderer() { return renderer; },
